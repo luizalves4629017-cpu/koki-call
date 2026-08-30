@@ -1,0 +1,6 @@
+{
+  "name": "Koki Call",
+  "description": "Aplicativo leve e rápido de chamadas de voz, vídeo e canais de texto com perfis estilo Discord, login persistente e controle exclusivo de Dono Master.",
+  "requestFramePermissions": ["camera", "microphone", "display-capture"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
