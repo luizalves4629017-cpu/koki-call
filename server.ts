@@ -4,12 +4,11 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import crypto from "crypto";
-import { fileURLToPath } from "url";
 import { Server as SocketIOServer, Socket } from "socket.io";
 import { createServer as createViteServer } from "vite";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Safe directory path resolution for CommonJS (dist/server.cjs on Render/Node v24) and ESM (tsx dev)
+const safeDirname = typeof __dirname !== "undefined" ? __dirname : process.cwd();
 
 interface ServerParticipant {
   id: string;
@@ -1650,10 +1649,20 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    // Robust static dist directory resolution for Render / Node.js production deployments
+    let distPath = path.resolve(process.cwd(), "dist");
+    if (!fs.existsSync(distPath)) {
+      if (fs.existsSync(path.resolve(safeDirname, "dist"))) {
+        distPath = path.resolve(safeDirname, "dist");
+      } else if (fs.existsSync(path.resolve(safeDirname, "..", "dist"))) {
+        distPath = path.resolve(safeDirname, "..", "dist");
+      } else {
+        distPath = safeDirname;
+      }
+    }
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      res.sendFile(path.resolve(distPath, "index.html"));
     });
   }
 
