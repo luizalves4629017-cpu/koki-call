@@ -23,6 +23,7 @@ import { EditOwnerProfileModal } from "./EditOwnerProfileModal";
 import { AdmissionModal } from "./AdmissionModal";
 import { FloatingAdmissionBanner } from "./FloatingAdmissionBanner";
 import { GrantVipModal } from "./GrantVipModal";
+import { GrantBadgesModal } from "./GrantBadgesModal";
 import { StoreModal } from "./StoreModal";
 import {
   saveUserProfile,
@@ -84,8 +85,10 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const [isOwnerProfileOpen, setIsOwnerProfileOpen] = useState<boolean>(false);
   const [isAdmissionOpen, setIsAdmissionOpen] = useState<boolean>(false);
   const [isGrantVipOpen, setIsGrantVipOpen] = useState<boolean>(false);
+  const [isGrantBadgesOpen, setIsGrantBadgesOpen] = useState<boolean>(false);
   const [isStoreOpen, setIsStoreOpen] = useState<boolean>(false);
   const [targetVipParticipant, setTargetVipParticipant] = useState<Participant | null>(null);
+  const [targetBadgeParticipant, setTargetBadgeParticipant] = useState<Participant | null>(null);
 
   const handlePerkPurchased = (perkId: StorePerkId, activeUntil: number) => {
     const updatedPerks = getPurchasedPerks();
@@ -693,6 +696,13 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       }
     };
 
+    const handleBadgesAssigned = (data: { badges: string[]; message?: string }) => {
+      if (Array.isArray(data?.badges)) {
+        setSelf((prev) => ({ ...prev, badges: data.badges }));
+        saveUserProfile({ badges: data.badges });
+      }
+    };
+
     socket.on("room:user-joined", handleUserJoined);
     socket.on("room:user-left", handleUserLeft);
     socket.on("room:user-updated", handleUserUpdated);
@@ -712,6 +722,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     socket.on("vip:expired", handleVipRevoked);
     socket.on("coins:received", handleCoinsReceived);
     socket.on("coins:updated", handleCoinsUpdated);
+    socket.on("badges:assigned", handleBadgesAssigned);
 
     if (self.isHost || isMaster) {
       socket.emit("host:get-pending-knocks", (knocks: KnockRequest[]) => {
@@ -748,6 +759,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       socket.off("vip:expired", handleVipRevoked);
       socket.off("coins:received", handleCoinsReceived);
       socket.off("coins:updated", handleCoinsUpdated);
+      socket.off("badges:assigned", handleBadgesAssigned);
     };
   }, [socket, self.id, self.isHost, isMaster, isChatOpen, createPeerConnection, onLeaveRoom, selectedProfileParticipant?.id, spotlightId, room.participants]);
 
@@ -1150,6 +1162,38 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     );
   };
 
+  // Host / Master Assign Custom Badges directly to member
+  const handleHostAssignBadges = (targetSocketId: string, badges: string[]) => {
+    socket.emit(
+      "host:assign-badges",
+      {
+        targetSocketId,
+        badges,
+        masterToken,
+        roomId: room.roomId,
+      },
+      (res: { success: boolean; message?: string; badges?: string[] }) => {
+        if (res && res.success) {
+          if (res.badges) {
+            setRoom((prev) => ({
+              ...prev,
+              participants: prev.participants.map((p) =>
+                p.id === targetSocketId ? { ...p, badges: res.badges } : p
+              ),
+            }));
+            if (selectedProfileParticipant?.id === targetSocketId) {
+              setSelectedProfileParticipant((prev) =>
+                prev ? { ...prev, badges: res.badges } : null
+              );
+            }
+          }
+        } else if (res && res.message) {
+          alert(res.message);
+        }
+      }
+    );
+  };
+
   // Update self profile (Discord status / bio / avatar / banner / badges) in real-time
   const handleUpdateSelfProfile = (updates: {
     name?: string;
@@ -1424,7 +1468,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         <UserProfileCard
           participant={selectedProfileParticipant}
           isSelf={selectedProfileParticipant.id === self.id}
-          isHostViewer={self.isHost}
+          isHostViewer={self.isHost || Boolean(isMaster)}
           userVolume={participantVolumes[selectedProfileParticipant.id] ?? 100}
           onVolumeChange={(newVol) => handleVolumeChange(selectedProfileParticipant.id, newVol)}
           onMuteParticipant={handleHostMuteUser}
@@ -1433,6 +1477,10 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           onOpenGrantVip={(p) => {
             setTargetVipParticipant(p);
             setIsGrantVipOpen(true);
+          }}
+          onOpenGrantBadges={(p) => {
+            setTargetBadgeParticipant(p);
+            setIsGrantBadgesOpen(true);
           }}
           onGiveCoins={handleHostGiveCoins}
           onClose={() => setSelectedProfileParticipant(null)}
@@ -1461,6 +1509,19 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           }}
           onGrantVip={handleHostGrantVip}
           onRevokeVip={handleHostRevokeVip}
+        />
+      )}
+
+      {/* Grant / Manage Custom Badges Modal (For Master and Host) */}
+      {(isMaster || self.isHost) && isGrantBadgesOpen && targetBadgeParticipant && (
+        <GrantBadgesModal
+          isOpen={isGrantBadgesOpen}
+          targetParticipant={targetBadgeParticipant}
+          onClose={() => {
+            setIsGrantBadgesOpen(false);
+            setTargetBadgeParticipant(null);
+          }}
+          onAssignBadges={handleHostAssignBadges}
         />
       )}
 
@@ -1516,6 +1577,10 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         onOpenAdmissionModal={() => setIsAdmissionOpen(true)}
         onCloseRoomForAll={self.isHost ? handleCloseRoomForAll : undefined}
         onGiveCoins={handleHostGiveCoins}
+        onOpenGrantBadges={(p) => {
+          setTargetBadgeParticipant(p);
+          setIsGrantBadgesOpen(true);
+        }}
       />
 
       {/* Koki Coins & Perks Store Modal */}

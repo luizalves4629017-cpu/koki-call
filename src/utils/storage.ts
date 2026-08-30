@@ -388,7 +388,69 @@ export function purchaseStorePerk(perkId: StorePerkId): {
 }
 
 /**
- * Claim daily free coin bonus (+300 Koki Coins every 24h)
+ * Returns cooldown timing information for the 24h +50 Koki Coins daily bonus.
+ * Master Owner bypasses all cooldowns and always has access.
+ */
+export function getDailyBonusCooldownInfo(): {
+  canClaim: boolean;
+  remainingMs: number;
+  formatted: string;
+  nextClaimAt: number;
+} {
+  const isMaster = isMasterIdentity();
+  if (isMaster) {
+    return {
+      canClaim: true,
+      remainingMs: 0,
+      formatted: "∞ Ilimitado (Master)",
+      nextClaimAt: 0,
+    };
+  }
+
+  let lastClaim = 0;
+  try {
+    const raw = localStorage.getItem(LAST_DAILY_CLAIM_KEY);
+    if (raw) lastClaim = parseInt(raw, 10) || 0;
+  } catch {}
+
+  const now = Date.now();
+  const timePassed = now - lastClaim;
+
+  if (lastClaim > 0 && timePassed < DAILY_BONUS_COOLDOWN_MS) {
+    const remainingMs = DAILY_BONUS_COOLDOWN_MS - timePassed;
+    const totalSeconds = Math.floor(remainingMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    let formatted = "";
+    if (hours > 0) {
+      formatted = `${hours}h ${minutes.toString().padStart(2, "0")}m ${seconds.toString().padStart(2, "0")}s`;
+    } else if (minutes > 0) {
+      formatted = `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+    } else {
+      formatted = `${seconds}s`;
+    }
+
+    return {
+      canClaim: false,
+      remainingMs,
+      formatted,
+      nextClaimAt: lastClaim + DAILY_BONUS_COOLDOWN_MS,
+    };
+  }
+
+  return {
+    canClaim: true,
+    remainingMs: 0,
+    formatted: "Pronto para resgatar!",
+    nextClaimAt: 0,
+  };
+}
+
+/**
+ * Claim daily free coin bonus (+50 Koki Coins once every 24 hours).
+ * Master Owner bypasses cooldowns and maintains infinite coins.
  */
 export function claimDailyBonus(): {
   success: boolean;
@@ -397,6 +459,16 @@ export function claimDailyBonus(): {
   newBalance: number;
   error?: string;
 } {
+  const isMaster = isMasterIdentity();
+  if (isMaster) {
+    return {
+      success: true,
+      reward: DAILY_BONUS_AMOUNT,
+      nextClaimAt: 0,
+      newBalance: MASTER_COINS,
+    };
+  }
+
   const now = Date.now();
   let lastClaim = 0;
   try {
@@ -407,13 +479,18 @@ export function claimDailyBonus(): {
   const timePassed = now - lastClaim;
   if (lastClaim > 0 && timePassed < DAILY_BONUS_COOLDOWN_MS) {
     const remainingMs = DAILY_BONUS_COOLDOWN_MS - timePassed;
-    const hours = Math.ceil(remainingMs / (1000 * 60 * 60));
+    const totalSeconds = Math.floor(remainingMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const timeStr = `${hours}h ${minutes}m ${seconds}s`;
+
     return {
       success: false,
       reward: 0,
       nextClaimAt: lastClaim + DAILY_BONUS_COOLDOWN_MS,
       newBalance: getKokiCoins(),
-      error: `Você já resgatou hoje! Volte em aproximadamente ${hours}h para coletar mais Koki Coins.`,
+      error: `Você já resgatou seu bônus diário! Disponível novamente em ${timeStr}.`,
     };
   }
 

@@ -1278,6 +1278,77 @@ async function startServer() {
       }
     });
 
+    // 4.5. Host / Master Assign Badges to Member
+    socket.on("host:assign-badges", (data: { targetSocketId: string; badges: string[]; masterToken?: string; roomId?: string }, callback) => {
+      const targetRoomId = currentRoomId || data.roomId;
+      if (!targetRoomId) {
+        if (typeof callback === "function") callback({ success: false, message: "Sala não encontrada" });
+        return;
+      }
+      const room = rooms.get(targetRoomId);
+      if (!room) {
+        if (typeof callback === "function") callback({ success: false, message: "Sala inexistente" });
+        return;
+      }
+
+      const requester = room.participants.get(socket.id);
+      const isMasterAuth = validateServerMasterAuth(data.masterToken).isMaster;
+      const isRoomHost = room.hostSocketId === socket.id || Boolean(requester?.isHost);
+
+      if (!isMasterAuth && !isRoomHost) {
+        if (typeof callback === "function") callback({ success: false, message: "Apenas o Dono/Host pode gerenciar e conceder insígnias." });
+        return;
+      }
+
+      const target = room.participants.get(data.targetSocketId);
+      if (!target) {
+        if (typeof callback === "function") callback({ success: false, message: "Participante não encontrado na sala." });
+        return;
+      }
+
+      // Filter badges - non-master users cannot be given supreme master owner badges
+      const filteredBadges = (Array.isArray(data.badges) ? data.badges : []).filter(
+        (b) => !b.includes("owner") && b !== "koki_creator"
+      );
+
+      target.badges = filteredBadges;
+
+      // Broadcast user updated to sync all participants in the room
+      io.to(targetRoomId).emit("room:user-updated", target);
+
+      // Direct notification to target socket
+      io.to(data.targetSocketId).emit("badges:assigned", {
+        badges: target.badges,
+        message: "O Dono da Sala atualizou suas insígnias!",
+      });
+
+      // System chat announcement
+      const badgeMsg: ServerChatMessage = {
+        id: `sys-badge-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        channelId: "geral",
+        senderId: "system",
+        senderName: "Koki Bot",
+        senderAvatarEmoji: "🎖️",
+        text: `🎖️ **${requester?.name || "O Dono"}** atualizou as insígnias de **${target.name}**!`,
+        timestamp: Date.now(),
+        isSystem: true,
+      };
+      const gMsgs = room.messagesByChannel.get("geral");
+      if (gMsgs) {
+        gMsgs.push(badgeMsg);
+        if (gMsgs.length > 100) gMsgs.shift();
+      }
+      io.to(targetRoomId).emit("room:chat-message", badgeMsg);
+
+      if (typeof callback === "function") {
+        callback({
+          success: true,
+          badges: target.badges,
+          message: `Insígnias atualizadas para ${target.name} com sucesso!`,
+        });
+      }
+    });
+
     // 5. Update Profile - Strictly Enforce Master or Granted VIP for Custom Avatar/Banner/Media
     socket.on("user:update-profile", (updates: Partial<ServerParticipant> & { masterToken?: string; roomId?: string }) => {
       const targetRoomId = currentRoomId || updates.roomId;

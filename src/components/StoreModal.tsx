@@ -30,6 +30,7 @@ import {
   getPerkRemainingTime,
   purchaseStorePerk,
   claimDailyBonus,
+  getDailyBonusCooldownInfo,
   saveUserProfile,
   getSavedUserProfile,
   isMasterIdentity,
@@ -59,6 +60,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dailyClaimMsg, setDailyClaimMsg] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
+  const [cooldownInfo, setCooldownInfo] = useState(() => getDailyBonusCooldownInfo());
 
   // Custom title editing for perk 'custom_title'
   const savedProfile = getSavedUserProfile();
@@ -67,13 +69,14 @@ export const StoreModal: React.FC<StoreModalProps> = ({
 
   const isMasterUser = Boolean(isMaster || isMasterIdentity(self?.name, self?.tag));
 
-  // Sync coins and perks on interval or updates
+  // Sync coins, perks and cooldown info on interval
   useEffect(() => {
     if (!isOpen) return;
 
     const syncState = () => {
       setCoins(getKokiCoins());
       setPurchasedPerks(getPurchasedPerks());
+      setCooldownInfo(getDailyBonusCooldownInfo());
     };
 
     syncState();
@@ -84,6 +87,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
 
     const handleCoinsEvent = (e: any) => {
       if (e?.detail?.coins !== undefined) setCoins(e.detail.coins);
+      setCooldownInfo(getDailyBonusCooldownInfo());
     };
     const handlePerksEvent = (e: any) => {
       if (e?.detail?.perks) setPurchasedPerks(e.detail.perks);
@@ -135,19 +139,13 @@ export const StoreModal: React.FC<StoreModalProps> = ({
     const res = claimDailyBonus();
     if (res.success) {
       setCoins(res.newBalance);
+      setCooldownInfo(getDailyBonusCooldownInfo());
       setDailyClaimMsg(`+${res.reward} Koki Coins resgatados com sucesso! 🎉`);
       setTimeout(() => setDailyClaimMsg(null), 4000);
     } else {
-      setErrorMessage(res.error || "Aguarde o tempo de recarga da recompensa.");
+      setErrorMessage(res.error || "Aguarde o tempo de recarga de 24h para resgatar.");
       setTimeout(() => setErrorMessage(null), 4000);
     }
-  };
-
-  const handleAddFreeCoins = (amount = 50) => {
-    const updated = addKokiCoins(amount);
-    setCoins(updated);
-    setDailyClaimMsg(`+${amount} Koki Coins adicionados com sucesso! 🪙`);
-    setTimeout(() => setDailyClaimMsg(null), 3000);
   };
 
   const handleSaveCustomTitle = (e: React.FormEvent) => {
@@ -221,26 +219,35 @@ export const StoreModal: React.FC<StoreModalProps> = ({
               </div>
             </div>
 
-            {/* Daily Reward / Free Claim Button */}
-            <button
-              onClick={handleClaimDaily}
-              className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition-all shadow-md shadow-emerald-950/50 cursor-pointer shrink-0"
-              title="Resgatar bônus de +50 Koki Coins"
-            >
-              <Gift className="w-3.5 h-3.5 text-emerald-200 animate-bounce" />
-              <span className="hidden sm:inline">+50 Coins</span>
-              <span className="sm:hidden">+50</span>
-            </button>
-
-            {/* Quick Drop / Test Coins Button */}
-            <button
-              onClick={() => handleAddFreeCoins(50)}
-              className="flex items-center gap-1 bg-[#1a2742] hover:bg-[#223354] text-amber-300 border border-amber-500/30 text-xs font-semibold px-2.5 py-2 rounded-xl transition-all cursor-pointer shrink-0"
-              title="Coletar +50 Koki Coins por clique"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span className="text-[11px]">+50</span>
-            </button>
+            {/* Daily Reward (+50 Coins) / 24h Cooldown Button */}
+            {isMasterUser ? (
+              <button
+                onClick={handleClaimDaily}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xs px-3 py-2 rounded-xl transition-all shadow-md shadow-amber-950/50 cursor-pointer shrink-0"
+                title="Master: Saldo ilimitado e sem recarga"
+              >
+                <Crown className="w-3.5 h-3.5 fill-current" />
+                <span>+50 Coins (∞)</span>
+              </button>
+            ) : cooldownInfo.canClaim ? (
+              <button
+                onClick={handleClaimDaily}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition-all shadow-md shadow-emerald-950/50 cursor-pointer shrink-0 animate-pulse"
+                title="Resgatar bônus diário de +50 Koki Coins"
+              >
+                <Gift className="w-3.5 h-3.5 text-emerald-200 animate-bounce" />
+                <span>+50 Coins (Diário)</span>
+              </button>
+            ) : (
+              <button
+                disabled
+                className="flex items-center gap-1.5 bg-[#121a2d] border border-[#202e48] text-slate-400 text-xs font-medium px-3 py-2 rounded-xl cursor-not-allowed shrink-0"
+                title={`Bônus diário em recarga. Disponível em ${cooldownInfo.formatted}`}
+              >
+                <Clock className="w-3.5 h-3.5 text-amber-400/80 animate-spin" />
+                <span className="font-mono text-[11px] text-amber-300 font-bold">{cooldownInfo.formatted}</span>
+              </button>
+            )}
 
             {/* Close Button */}
             <button

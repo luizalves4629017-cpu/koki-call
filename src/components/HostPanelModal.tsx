@@ -19,6 +19,7 @@ import {
   Coins,
   Send,
   Sparkles,
+  Award,
 } from "lucide-react";
 import { Participant, RoomState, KnockRequest } from "../types";
 
@@ -40,6 +41,7 @@ interface HostPanelModalProps {
   onOpenAdmissionModal?: () => void;
   onCloseRoomForAll?: () => void;
   onGiveCoins?: (targetSocketId: string, amount: number) => void;
+  onOpenGrantBadges?: (participant: Participant) => void;
 }
 
 export const HostPanelModal: React.FC<HostPanelModalProps> = ({
@@ -60,6 +62,7 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
   onOpenAdmissionModal,
   onCloseRoomForAll,
   onGiveCoins,
+  onOpenGrantBadges,
 }) => {
   const [claimPin, setClaimPin] = useState("");
   const [copiedLink, setCopiedLink] = useState(false);
@@ -416,6 +419,15 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
 
                       {p.id !== self.id && (
                         <div className="flex items-center gap-1">
+                          {onOpenGrantBadges && (
+                            <button
+                              onClick={() => onOpenGrantBadges(p)}
+                              className="p-1.5 rounded hover:bg-amber-500/20 text-slate-300 hover:text-amber-300 transition-colors"
+                              title="Gerenciar Insígnias do participante"
+                            >
+                              <Award className="w-3.5 h-3.5 text-amber-400" />
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               setSelectedCoinTarget(p.id);

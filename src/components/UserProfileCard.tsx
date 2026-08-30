@@ -34,6 +34,7 @@ interface UserProfileCardProps {
   onKickParticipant?: (participantId: string) => void;
   onOpenOwnerProfileEditor?: () => void;
   onOpenGrantVip?: (participant: Participant) => void;
+  onOpenGrantBadges?: (participant: Participant) => void;
   onGiveCoins?: (targetSocketId: string, amount: number) => void;
   onClose: () => void;
 }
@@ -48,11 +49,12 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
   onKickParticipant,
   onOpenOwnerProfileEditor,
   onOpenGrantVip,
+  onOpenGrantBadges,
   onGiveCoins,
   onClose,
 }) => {
   const minutesConnected = Math.max(1, Math.floor((Date.now() - participant.joinedAt) / 60000));
-  const hasVip = Boolean(participant.vipPermissions) || Boolean(participant.badges?.includes("vip_role"));
+  const hasVip = Boolean(participant.vipPermissions) || Boolean(participant.badges?.includes("vip_role")) || Boolean(participant.badges?.includes("vip_granted"));
   const [vipCountdown, setVipCountdown] = useState<string>("");
   const isMasterUser = participant.tag === "0001" || Boolean(participant.badges?.includes("owner_supreme")) || isMasterIdentity(participant.name);
   const coins = isSelf ? (typeof participant.kokiCoins === "number" ? participant.kokiCoins : getKokiCoins()) : participant.kokiCoins;
@@ -108,7 +110,15 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
       id={`user-profile-card-${participant.id}`}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150 select-none"
     >
-      <div className="w-full max-w-sm bg-[#0d1220] border-2 border-[#FFD700] rounded-2xl shadow-2xl overflow-hidden text-slate-100 relative golden-neon-glow">
+      <div
+        className={`w-full max-w-sm bg-[#0d1220] rounded-2xl shadow-2xl overflow-hidden text-slate-100 relative ${
+          isMasterUser
+            ? "border-2 border-[#FFD700] golden-neon-glow"
+            : hasVip
+            ? "border border-purple-500/40 shadow-purple-950/30"
+            : "border border-[#223354]"
+        }`}
+      >
         {/* Close Button */}
         <button
           id="close-profile-card-btn"
@@ -264,7 +274,7 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
               isHost={participant.isHost}
               size="sm"
               showLabels={true}
-              maxVisible={4}
+              maxVisible={8}
             />
 
             {/* VIP Status countdown if active */}
@@ -441,6 +451,18 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
                 >
                   <Zap className="w-3.5 h-3.5 text-purple-400" />
                   <span>{hasVip ? "Gerenciar / Estender VIP do Membro ⚡" : "Liberar Permissões VIP & Tempo ⚡"}</span>
+                </button>
+              )}
+
+              {/* Master Insignias / Badges Assignment Button */}
+              {onOpenGrantBadges && (
+                <button
+                  id={`grant-badges-btn-${participant.id}`}
+                  onClick={() => onOpenGrantBadges(participant)}
+                  className="w-full bg-gradient-to-r from-amber-600/25 via-yellow-600/25 to-amber-600/25 hover:from-amber-600/35 hover:to-yellow-600/35 text-amber-200 border border-amber-500/40 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer"
+                >
+                  <Award className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Atribuir / Gerenciar Insígnias 🎖️</span>
                 </button>
               )}
 
