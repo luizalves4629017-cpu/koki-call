@@ -528,6 +528,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         };
       });
 
+      // Play soft synthesized chime when a user joins the voice channel
+      playVoiceJoinChime(0.18);
+
       // Initiate WebRTC connection to new user
       createPeerConnection(newParticipant.id, true);
     };
@@ -1406,7 +1409,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     ? room.participants.find((p) => p.id === spotlightId) || (spotlightId === self.id ? self : null)
     : null;
 
-  const isUserMaster = Boolean(isMaster || self.isMaster || self.isHost);
+  const isUserMaster = Boolean(isMaster || self.isMaster);
   const hasVipBadge = Boolean(
     initialHasVipBadge ||
     self.vipPermissions?.hasVipBadge ||
@@ -1438,7 +1441,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       <Header
         room={room}
         self={self}
-        isMaster={Boolean(isMaster || self.isMaster || self.isHost)}
+        isMaster={isUserMaster}
         hasVipBadge={hasVipBadge}
         lowResourceMode={preferences.lowResourceMode}
         pingMs={pingMs}

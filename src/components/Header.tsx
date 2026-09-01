@@ -70,8 +70,8 @@ export const Header: React.FC<HeaderProps> = ({
   const [inviteCopied, setInviteCopied] = useState(false);
   const currentCoins = typeof kokiCoins === "number" ? kokiCoins : getKokiCoins();
 
-  // Strict check: Only show Master Action Bar for Master users or users with designated VIP badge
-  const isUserMaster = Boolean(isMaster || self.isMaster || self.isHost);
+  // Strict check: Only show Master Action Bar for Master owner or users with designated VIP badge
+  const isUserMaster = Boolean(isMaster || self.isMaster);
   const userHasVip = Boolean(
     hasVipBadge ||
     self.vipPermissions?.hasVipBadge ||

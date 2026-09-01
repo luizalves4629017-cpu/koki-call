@@ -351,61 +351,128 @@ export default function App() {
       badges?: string[];
     };
   }) => {
-    if (!socket) {
-      setErrorMsg("Conectando ao servidor de chamadas... Tente novamente em alguns segundos.");
-      return;
-    }
     setErrorMsg(null);
     setApprovalError(null);
 
-    const safeRoomId = (params.roomId || urlRoomId || "main-lounge").trim().toLowerCase();
+    const safeRoomId = (params.roomId || urlRoomId || "main-lounge").trim().toLowerCase().replace(/\s+/g, "-");
     const isGuestRole = urlRole === "guest" || !params.passcode;
     // If joining explicitly as guest, never send host secret token to ensure role isolation
     const existingHostToken = isGuestRole ? undefined : getHostToken(safeRoomId);
+    const isMasterUser = Boolean(isMaster || params.profile.tag === "0001" || isMasterIdentity(params.name, isMaster));
+    const effectiveSocketId = socket?.id || `temp-join-${Date.now()}`;
 
-    socket.emit(
-      "room:join",
-      {
-        roomId: safeRoomId,
-        name: params.name,
-        passcode: params.passcode,
-        role: urlRole === "guest" ? "guest" : "auto",
-        isGuestOnly: urlRole === "guest",
-        masterToken: masterToken || undefined,
-        hostSecretToken: existingHostToken,
-        profile: params.profile,
+    // 1. Immediately create optimistic participant and room state so user instantly enters the call
+    const optimisticSelf: Participant = {
+      id: effectiveSocketId,
+      name: params.name || (isMasterUser ? "Koki u sujo" : `Convidado ${Math.floor(100 + Math.random() * 900)}`),
+      tag: params.profile.tag || (isMasterUser ? "0001" : "1001"),
+      isHost: isMasterUser,
+      isMaster: isMasterUser,
+      hasAudio: true,
+      hasVideo: false,
+      isScreenSharing: false,
+      isDeafened: false,
+      isMutedByHost: false,
+      joinedAt: Date.now(),
+      avatarEmoji: params.profile.avatarEmoji || (isMasterUser ? "👑" : "🎮"),
+      avatarColor: params.profile.avatarColor || "#06b6d4",
+      avatarUrl: params.profile.avatarUrl,
+      bannerColor: params.profile.bannerColor || "#0284c7",
+      bannerUrl: params.profile.bannerUrl,
+      customStatus: params.profile.customStatus || (isMasterUser ? "👑 Dono Master do Koki" : "🟢 Conectado na Call"),
+      bio: params.profile.bio || "Participante na chamada.",
+      badges: params.profile.badges || (isMasterUser ? ["owner_supreme", "koki_creator", "nitro_owner"] : []),
+      kokiCoins: isMasterUser ? 999999 : 50,
+      voiceChannelId: "voice-geral",
+    };
+
+    const optimisticRoom: RoomState = {
+      roomId: safeRoomId,
+      roomName: `Sala ${safeRoomId.toUpperCase()}`,
+      hostSocketId: effectiveSocketId,
+      createdAt: Date.now(),
+      isLocked: false,
+      participants: [optimisticSelf],
+      settings: {
+        allowScreenShare: true,
+        allowVideo: true,
+        allowGuestChat: true,
+        maxParticipants: 16,
+        lowBandwidthDefault: false,
+        requireKnockApproval: false,
       },
-      (res: {
-        success: boolean;
-        needsApproval?: boolean;
-        hostSecretToken?: string;
-        room?: RoomState;
-        self?: Participant;
-        message?: string;
-      }) => {
-        if (res && res.success) {
-          if (res.needsApproval) {
-            setIsWaitingApproval(true);
-            return;
-          }
+      channels: [
+        { id: "geral", name: "geral", description: "Canal de texto principal para todos os membros da sala" },
+        { id: "links-e-clips", name: "links-e-clips", description: "Compartilhe links, clips e memes" },
+        { id: "comandos-bot", name: "comandos-bot", description: "Músicas e comandos do Koki Bot" },
+      ],
+    };
 
-          if (res.room && res.self) {
-            if (res.hostSecretToken) {
-              saveHostToken(res.room.roomId, res.hostSecretToken);
+    // Update URL query string
+    const newUrl = `/?room=${encodeURIComponent(safeRoomId)}`;
+    window.history.pushState({}, "", newUrl);
+
+    // Instant optimistic UI entry
+    setCurrentRoom(optimisticRoom);
+    setSelfParticipant(optimisticSelf);
+    setInCall(true);
+    playVoiceJoinChime();
+
+    // 2. Transmit room:join over socket
+    const sendRoomJoin = (sock: any) => {
+      sock.emit(
+        "room:join",
+        {
+          roomId: safeRoomId,
+          name: params.name,
+          passcode: params.passcode,
+          role: urlRole === "guest" ? "guest" : "auto",
+          isGuestOnly: urlRole === "guest",
+          masterToken: masterToken || undefined,
+          hostSecretToken: existingHostToken,
+          profile: params.profile,
+        },
+        (res: {
+          success: boolean;
+          needsApproval?: boolean;
+          hostSecretToken?: string;
+          room?: RoomState;
+          self?: Participant;
+          message?: string;
+        }) => {
+          if (res && res.success) {
+            if (res.needsApproval) {
+              setInCall(false);
+              setIsWaitingApproval(true);
+              return;
             }
 
-            const newUrl = `/?room=${encodeURIComponent(res.room.roomId)}`;
-            window.history.pushState({}, "", newUrl);
-
-            setCurrentRoom(res.room);
-            setSelfParticipant(res.self);
-            setInCall(true);
+            if (res.room && res.self) {
+              if (res.hostSecretToken) {
+                saveHostToken(res.room.roomId, res.hostSecretToken);
+              }
+              setCurrentRoom(res.room);
+              setSelfParticipant(res.self);
+              setInCall(true);
+            }
+          } else if (res && !res.success) {
+            setInCall(false);
+            setErrorMsg(res?.message || "Não foi possível entrar na sala.");
           }
-        } else {
-          setErrorMsg(res?.message || "Não foi possível entrar na sala.");
         }
+      );
+    };
+
+    if (socket) {
+      if (socket.connected) {
+        sendRoomJoin(socket);
+      } else {
+        socket.once("connect", () => {
+          sendRoomJoin(socket);
+        });
+        socket.connect();
       }
-    );
+    }
   };
 
   // Cancel Knock Approval Request
