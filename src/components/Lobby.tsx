@@ -109,11 +109,11 @@ export const Lobby: React.FC<LobbyProps> = ({
   onCreateRoom,
   onJoinRoom,
 }) => {
-  const isInvitedLink = Boolean(initialRoomId && initialRoomId.trim().length > 0) || initialRole === "guest";
+  const isCustomRoomInvite = Boolean(initialRoomId && initialRoomId.trim().length > 0 && initialRoomId.trim().toLowerCase() !== "main-lounge");
   
   // Set default tab based on whether it's an invite or if machine is Master
   const [tab, setTab] = useState<LobbyTab>(() => {
-    if (isInvitedLink) return "guest";
+    if (isCustomRoomInvite || initialRole === "guest") return "guest";
     if (isMaster) return "master";
     return "guest";
   });
@@ -135,14 +135,12 @@ export const Lobby: React.FC<LobbyProps> = ({
   };
 
   useEffect(() => {
-    if (isInvitedLink) {
-      setTab("guest");
-    } else if (isMaster && tab !== "member_create" && tab !== "guest") {
+    if (isMaster && tab !== "member_create" && tab !== "guest") {
       setTab("master");
     } else if (!isMaster && tab === "master") {
       setTab("guest");
     }
-  }, [isInvitedLink, isMaster]);
+  }, [isMaster]);
 
   // Load saved profile
   const [savedProfile] = useState(() => getSavedUserProfile());
@@ -469,8 +467,8 @@ export const Lobby: React.FC<LobbyProps> = ({
           </h1>
         </div>
         <p className="text-xs text-slate-300 max-w-sm drop-shadow-md mb-2.5">
-          {isInvitedLink
-            ? "Você recebeu um link de convite! Entre como convidado com conexão direta."
+          {isCustomRoomInvite
+            ? "Você recebeu um convite! Conecte-se com áudio e vídeo de alta fidelidade."
             : "Chamadas por voz, vídeo, compartilhamento de tela e canais com baixa latência."}
         </p>
 
@@ -505,14 +503,14 @@ export const Lobby: React.FC<LobbyProps> = ({
               type="button"
               onClick={() => setShowMasterLoginModal(true)}
               className="px-3 py-1 bg-[#101828]/80 hover:bg-[#16233b] border border-amber-500/40 text-amber-400 hover:text-amber-300 rounded-full text-[11px] font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-              title="Acesso exclusivo para o Dono Master do projeto"
+              title="Acesso exclusivo para o Dono Master do projeto (koki24122024master)"
             >
               <Crown className="w-3.5 h-3.5 text-amber-400" />
               <span>Login Dono Master</span>
             </button>
           )}
 
-          {(isInvitedLink || joinRoomId || roomName || customRoomId) && (
+          {(isCustomRoomInvite || joinRoomId || roomName || customRoomId) && (
             <button
               type="button"
               onClick={handleResetHome}
@@ -535,72 +533,72 @@ export const Lobby: React.FC<LobbyProps> = ({
           </div>
         )}
 
-        {/* Dynamic Navigation Tabs */}
-        {!isInvitedLink ? (
-          <div
-            className={`p-1.5 bg-[#080d19] border-b border-[#1b253b] grid ${
-              isMaster ? "grid-cols-3" : "grid-cols-2"
-            } gap-1`}
+        {/* Dynamic Navigation Tabs - ALWAYS VISIBLE */}
+        <div
+          className={`p-1.5 bg-[#080d19] border-b border-[#1b253b] grid ${
+            isMaster ? "grid-cols-3" : "grid-cols-2"
+          } gap-1`}
+        >
+          {/* Master Creation Tab - STRICTLY VISIBLE ONLY FOR VERIFIED MASTER */}
+          {isMaster && (
+            <button
+              type="button"
+              onClick={() => setTab("master")}
+              className={`py-2 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                tab === "master"
+                  ? "bg-[#141e30] text-amber-300 border border-amber-500/40 shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+              title="Criar Sala com Privilégios do Dono Master"
+            >
+              <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="truncate">Sala Master</span>
+            </button>
+          )}
+
+          {/* Member Create Room Tab - VISIBLE FOR EVERYONE */}
+          <button
+            type="button"
+            onClick={() => setTab("member_create")}
+            className={`py-2 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              tab === "member_create"
+                ? "bg-[#141e30] text-cyan-300 border border-cyan-500/30 shadow-sm"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+            title="Criar uma sala de voz própria para seus amigos"
           >
-            {/* Master Creation Tab - STRICTLY VISIBLE ONLY FOR VERIFIED MASTER */}
-            {isMaster && (
-              <button
-                type="button"
-                onClick={() => setTab("master")}
-                className={`py-2 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  tab === "master"
-                    ? "bg-[#141e30] text-amber-300 border border-amber-500/40 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-                title="Criar Sala com Privilégios do Dono Master"
-              >
-                <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span className="truncate">Sala Master</span>
-              </button>
-            )}
+            <PlusCircle className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span className="truncate">{isMaster ? "Sala Comum" : "Criar Sala"}</span>
+          </button>
 
-            {/* Member Create Room Tab - VISIBLE FOR EVERYONE */}
-            <button
-              type="button"
-              onClick={() => setTab("member_create")}
-              className={`py-2 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                tab === "member_create"
-                  ? "bg-[#141e30] text-cyan-300 border border-cyan-500/30 shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-              title="Criar uma sala de voz própria para seus amigos"
-            >
-              <PlusCircle className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-              <span className="truncate">{isMaster ? "Sala Comum" : "Criar Sala"}</span>
-            </button>
+          {/* Join Room Tab - VISIBLE FOR EVERYONE */}
+          <button
+            type="button"
+            onClick={() => setTab("guest")}
+            className={`py-2 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              tab === "guest"
+                ? "bg-[#141e30] text-cyan-300 border border-cyan-500/30 shadow-sm"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+            title="Entrar em uma sala existente pelo código ou link"
+          >
+            <LogIn className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span className="truncate">Entrar em Sala</span>
+          </button>
+        </div>
 
-            {/* Join Room Tab - VISIBLE FOR EVERYONE */}
-            <button
-              type="button"
-              onClick={() => setTab("guest")}
-              className={`py-2 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                tab === "guest"
-                  ? "bg-[#141e30] text-cyan-300 border border-cyan-500/30 shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-              title="Entrar em uma sala existente pelo código ou link"
-            >
-              <LogIn className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-              <span className="truncate">Entrar em Sala</span>
-            </button>
-          </div>
-        ) : (
-          /* Invited banner */
-          <div className="p-3 bg-gradient-to-r from-cyan-950/60 to-blue-950/40 border-b border-cyan-500/20 flex items-center justify-between">
+        {/* Invite notice if arriving from specific invite link */}
+        {isCustomRoomInvite && (
+          <div className="p-2.5 bg-gradient-to-r from-cyan-950/60 to-blue-950/40 border-b border-cyan-500/20 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-cyan-400" />
+              <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
               <div>
                 <span className="text-xs font-bold text-white block">Convite de Sala Detectado</span>
                 <span className="text-[10px] text-cyan-300 font-mono">Sala: {initialRoomId}</span>
               </div>
             </div>
             <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-cyan-900/60 border border-cyan-700/50 text-cyan-200 rounded-full">
-              Convidado
+              Convite Ativo
             </span>
           </div>
         )}
@@ -610,7 +608,7 @@ export const Lobby: React.FC<LobbyProps> = ({
           {/* ========================================================================= */}
           {/* TAB 1: MASTER HOST PROFILE & ROOM CREATION / JOIN (ONLY IF IS_MASTER) */}
           {/* ========================================================================= */}
-          {tab === "master" && isMaster && !isInvitedLink && (
+          {tab === "master" && isMaster && (
             <>
               {/* Sub-action Switcher inside Master Panel */}
               <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#090e1a] border border-amber-500/30 rounded-xl">
@@ -909,7 +907,7 @@ export const Lobby: React.FC<LobbyProps> = ({
           {/* ========================================================================= */}
           {/* TAB 2: MEMBER / COMMUNITY ROOM CREATION (FOR EVERYONE) */}
           {/* ========================================================================= */}
-          {tab === "member_create" && !isInvitedLink && (
+          {tab === "member_create" && (
             <>
               <div className="bg-[#090e1a] border border-cyan-500/30 rounded-xl p-3.5 space-y-3">
                 <div className="flex items-center justify-between">
@@ -1129,36 +1127,34 @@ export const Lobby: React.FC<LobbyProps> = ({
 
               {/* Guest Join Form */}
               <form onSubmit={handleJoinSubmit} className="space-y-3.5">
-                {!isInvitedLink && (
-                  <div>
-                    <label className="text-xs font-semibold text-slate-300 block mb-1">
-                      Código ou Link da Sala <span className="text-rose-400">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ex: koki-abc123 ou link completo"
-                      value={joinRoomId}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val.includes("?room=") || val.includes("&room=")) {
-                          try {
-                            const url = new URL(val.startsWith("http") ? val : `http://${val}`);
-                            const extracted = url.searchParams.get("room");
-                            if (extracted) {
-                              setJoinRoomId(extracted);
-                              return;
-                            }
-                          } catch {
-                            // ignore and set raw
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">
+                    Código ou Link da Sala <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: main-lounge ou link do convite"
+                    value={joinRoomId || initialRoomId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.includes("?room=") || val.includes("&room=")) {
+                        try {
+                          const url = new URL(val.startsWith("http") ? val : `http://${val}`);
+                          const extracted = url.searchParams.get("room");
+                          if (extracted) {
+                            setJoinRoomId(extracted);
+                            return;
                           }
+                        } catch {
+                          // ignore and set raw
                         }
-                        setJoinRoomId(val);
-                      }}
-                      className="w-full bg-[#121a2d] border border-[#253550] text-slate-100 rounded-xl px-3.5 py-2 text-xs font-mono focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
-                )}
+                      }
+                      setJoinRoomId(val);
+                    }}
+                    className="w-full bg-[#121a2d] border border-[#253550] text-slate-100 rounded-xl px-3.5 py-2 text-xs font-mono focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
 
                 <div>
                   <label className="text-xs font-semibold text-slate-300 block mb-1">
@@ -1183,18 +1179,16 @@ export const Lobby: React.FC<LobbyProps> = ({
                 </button>
 
                 {/* Quick alternative button to create room */}
-                {!isInvitedLink && (
-                  <div className="text-center pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setTab("member_create")}
-                      className="text-xs text-slate-400 hover:text-cyan-300 transition-colors flex items-center justify-center gap-1.5 mx-auto cursor-pointer"
-                    >
-                      <PlusCircle className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>Quer criar sua própria sala? Clique aqui</span>
-                    </button>
-                  </div>
-                )}
+                <div className="text-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setTab(isMaster ? "master" : "member_create")}
+                    className="text-xs text-slate-400 hover:text-cyan-300 transition-colors flex items-center justify-center gap-1.5 mx-auto cursor-pointer"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Quer criar sua própria sala? Clique aqui</span>
+                  </button>
+                </div>
               </form>
             </>
           )}

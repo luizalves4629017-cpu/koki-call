@@ -7,10 +7,12 @@ import { saveHostToken, getHostToken, isMasterIdentity } from "./utils/storage";
 import { getStoredMasterInfo, isMasterKeyValid, getMasterTokenSync, clearMasterAuthLocally } from "./utils/masterAuth";
 import { playVoiceJoinChime } from "./utils/audioChimes";
 
-// Resolve default backend Socket.IO connection URL explicitly to Render backend
+// Resolve default backend Socket.IO connection URL explicitly
 const BACKEND_SOCKET_URL =
   ((import.meta as any).env && (import.meta as any).env.VITE_BACKEND_URL) ||
-  "https://koki-call.onrender.com";
+  (typeof window !== "undefined" && window.location && window.location.origin && !window.location.origin.includes("file://")
+    ? window.location.origin
+    : "https://koki-call.onrender.com");
 
 const getInitialRoomId = (): string => {
   if (typeof window !== "undefined") {

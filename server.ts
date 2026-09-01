@@ -1074,6 +1074,65 @@ async function startServer() {
       });
     });
 
+    socket.on("signal", (payload: { to?: string; targetId?: string; signal?: any; offer?: any; answer?: any; candidate?: any; streamType?: string; isScreen?: boolean }) => {
+      const destId = payload?.targetId || payload?.to;
+      if (!destId) return;
+      if (payload.offer) {
+        io.to(destId).emit("signal:offer", {
+          senderId: socket.id,
+          offer: payload.offer,
+          streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
+          isScreen: Boolean(payload.isScreen),
+        });
+      } else if (payload.answer) {
+        io.to(destId).emit("signal:answer", {
+          senderId: socket.id,
+          answer: payload.answer,
+          streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
+          isScreen: Boolean(payload.isScreen),
+        });
+      } else if (payload.candidate) {
+        io.to(destId).emit("signal:ice-candidate", {
+          senderId: socket.id,
+          candidate: payload.candidate,
+          streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
+          isScreen: Boolean(payload.isScreen),
+        });
+      }
+      io.to(destId).emit("signal", {
+        senderId: socket.id,
+        from: socket.id,
+        ...payload,
+      });
+    });
+
+    socket.on("offer", (payload: { targetId: string; offer: RTCSessionDescriptionInit; streamType?: string; isScreen?: boolean }) => {
+      io.to(payload.targetId).emit("signal:offer", {
+        senderId: socket.id,
+        offer: payload.offer,
+        streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
+        isScreen: Boolean(payload.isScreen),
+      });
+    });
+
+    socket.on("answer", (payload: { targetId: string; answer: RTCSessionDescriptionInit; streamType?: string; isScreen?: boolean }) => {
+      io.to(payload.targetId).emit("signal:answer", {
+        senderId: socket.id,
+        answer: payload.answer,
+        streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
+        isScreen: Boolean(payload.isScreen),
+      });
+    });
+
+    socket.on("ice-candidate", (payload: { targetId: string; candidate: RTCIceCandidateInit; streamType?: string; isScreen?: boolean }) => {
+      io.to(payload.targetId).emit("signal:ice-candidate", {
+        senderId: socket.id,
+        candidate: payload.candidate,
+        streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
+        isScreen: Boolean(payload.isScreen),
+      });
+    });
+
     // 4.5. Host / Master VIP Grants & Revocations
     socket.on("host:grant-vip", (data: {
       targetSocketId: string;
