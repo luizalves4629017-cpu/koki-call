@@ -303,17 +303,34 @@ function validateServerMasterAuth(providedToken?: string, clientIp?: string): { 
 
 function normalizeRoomId(rawRoomId?: string | null): string {
   if (!rawRoomId || typeof rawRoomId !== "string") {
-    return "";
+    return "main-lounge";
   }
   let clean = rawRoomId.trim();
+  if (!clean) {
+    return "main-lounge";
+  }
+
+  // Extract ?room= value if entire query string or URL was passed
   if (clean.includes("?room=") || clean.includes("&room=")) {
     try {
-      const parsed = new URL(clean.startsWith("http") ? clean : `http://localhost/${clean}`);
-      clean = parsed.searchParams.get("room") || clean;
+      const dummyBase = "http://localhost";
+      const fullUrl = clean.startsWith("http://") || clean.startsWith("https://")
+        ? clean
+        : clean.startsWith("/")
+        ? `${dummyBase}${clean}`
+        : `${dummyBase}/${clean.startsWith("?") ? clean : `?${clean}`}`;
+      const parsed = new URL(fullUrl);
+      const extracted = parsed.searchParams.get("room");
+      if (extracted && extracted.trim()) {
+        clean = extracted.trim();
+      }
     } catch {}
   }
-  clean = clean.split("&")[0].split("?")[0].split("#")[0].replace(/\s+/g, "-").toLowerCase();
-  return clean;
+
+  // Strip query parameters (&role=..., ?role=..., etc.), hashes, and unwanted characters
+  clean = clean.split("?")[0].split("&")[0].split("#")[0].trim().replace(/\s+/g, "-").toLowerCase();
+
+  return clean || "main-lounge";
 }
 
 function sanitizeAndInspectText(input: string): { cleanText: string; isSecurityWarning: boolean } {
@@ -553,7 +570,7 @@ async function startServer() {
         }
 
         const { roomId, roomName, hostName, hostPasscode, masterToken, profile, settings } = payload;
-        const cleanRoomId = normalizeRoomId(roomId) || `koki-${Math.random().toString(36).substring(2, 8)}`;
+        const cleanRoomId = normalizeRoomId(roomId) || "main-lounge";
 
         // Verify Master status on creation
         const auth = validateServerMasterAuth(masterToken);
@@ -706,7 +723,7 @@ async function startServer() {
         }
 
         const { roomId, name, role, isGuestOnly, masterToken, hostSecretToken, passcode, profile } = payload;
-        const cleanRoomId = normalizeRoomId(roomId) || `koki-${Math.random().toString(36).substring(2, 8)}`;
+        const cleanRoomId = normalizeRoomId(roomId) || "main-lounge";
 
         let room = rooms.get(cleanRoomId);
 

@@ -67,6 +67,7 @@ export const Header: React.FC<HeaderProps> = ({
   onLeaveRoom,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
   const currentCoins = typeof kokiCoins === "number" ? kokiCoins : getKokiCoins();
 
   // Strict check: Only show Master Action Bar for Master users or users with designated VIP badge
@@ -88,10 +89,17 @@ export const Header: React.FC<HeaderProps> = ({
   const showMasterActionBar = isUserMaster || userHasVip;
 
   const handleCopyLink = async () => {
-    const inviteUrl = getEffectiveInviteUrl(room.roomId, "guest");
+    const inviteUrl = getEffectiveInviteUrl(room.roomId);
     await copyToClipboardSafe(inviteUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyInvite = async () => {
+    const inviteUrl = getEffectiveInviteUrl(room.roomId);
+    await copyToClipboardSafe(inviteUrl);
+    setInviteCopied(true);
+    setTimeout(() => setInviteCopied(false), 2000);
   };
 
   return (
@@ -273,11 +281,17 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         <button
-          onClick={onOpenInvite}
-          className="flex items-center gap-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold px-3.5 py-1.5 rounded-xl transition-all shadow-md shadow-cyan-950 cursor-pointer"
+          id="btn-header-invite"
+          onClick={handleCopyInvite}
+          className={`flex items-center gap-1.5 text-xs font-bold px-3.5 py-1.5 rounded-xl transition-all shadow-md cursor-pointer ${
+            inviteCopied
+              ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950"
+              : "bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-950"
+          }`}
+          title={`Copiar URL da sala (?room=${room.roomId})`}
         >
-          <Share2 className="w-3.5 h-3.5" />
-          <span>Convidar</span>
+          {inviteCopied ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
+          <span>{inviteCopied ? "Link Copiado!" : "Convidar"}</span>
         </button>
 
         {onLeaveRoom && (

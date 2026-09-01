@@ -329,7 +329,7 @@ export const Lobby: React.FC<LobbyProps> = ({
 
     const finalRoomId = customRoomId.trim()
       ? customRoomId.trim().toLowerCase().replace(/\s+/g, "-")
-      : `koki-${Math.random().toString(36).substring(2, 8)}`;
+      : (initialRoomId || "main-lounge").trim().toLowerCase();
 
     onCreateRoom({
       roomName: roomName.trim() || (tab === "master" ? `Sala Master de ${nickname.trim()}` : `Sala de ${nickname.trim()}`),
@@ -353,7 +353,7 @@ export const Lobby: React.FC<LobbyProps> = ({
 
   const handleJoinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const effectiveRoomId = (joinRoomId || initialRoomId).trim().toLowerCase();
+    const effectiveRoomId = (joinRoomId || initialRoomId || "main-lounge").trim().toLowerCase();
     if (!effectiveRoomId) return;
 
     const finalName = nickname.trim() || `Convidado ${Math.floor(100 + Math.random() * 900)}`;

@@ -42,7 +42,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({
   if (!isOpen) return null;
 
   const isLocal = isLocalhost();
-  const inviteUrl = getEffectiveInviteUrl(room.roomId, "guest");
+  const inviteUrl = getEffectiveInviteUrl(room.roomId);
   const fullInviteMessage = generateInviteMessage(room.roomId, room.roomName);
 
   const handleCopyLink = async () => {

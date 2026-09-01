@@ -12,12 +12,23 @@ const BACKEND_SOCKET_URL =
   ((import.meta as any).env && (import.meta as any).env.VITE_BACKEND_URL) ||
   "https://koki-call.onrender.com";
 
+const getInitialRoomId = (): string => {
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    const roomParam = params.get("room");
+    if (roomParam && roomParam.trim().length > 0) {
+      return roomParam.trim();
+    }
+  }
+  return "main-lounge";
+};
+
 export default function App() {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [inCall, setInCall] = useState<boolean>(false);
   const [currentRoom, setCurrentRoom] = useState<RoomState | null>(null);
   const [selfParticipant, setSelfParticipant] = useState<Participant | null>(null);
-  const [urlRoomId, setUrlRoomId] = useState<string>("");
+  const [urlRoomId, setUrlRoomId] = useState<string>(getInitialRoomId);
   const [urlRole, setUrlRole] = useState<string>("");
   const [isWaitingApproval, setIsWaitingApproval] = useState<boolean>(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
@@ -140,14 +151,13 @@ export default function App() {
 
     setSocket(socketInstance);
 
-    // Read room ID and role from query string (e.g. ?room=xyz&role=guest)
+    // Read room ID and role from query string (e.g. ?room=xyz)
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get("room");
     const roleParam = params.get("role");
 
-    if (roomParam) {
-      setUrlRoomId(roomParam);
-    }
+    const effectiveRoom = (roomParam && roomParam.trim().length > 0) ? roomParam.trim() : "main-lounge";
+    setUrlRoomId(effectiveRoom);
     if (roleParam) {
       setUrlRole(roleParam);
     }
@@ -218,7 +228,7 @@ export default function App() {
 
     const safeRoomId = params.roomId.trim()
       ? params.roomId.trim().toLowerCase().replace(/\s+/g, "-")
-      : `koki-${Math.random().toString(36).substring(2, 8)}`;
+      : (urlRoomId && urlRoomId.trim() ? urlRoomId.trim().toLowerCase() : "main-lounge");
 
     const isMasterUser = Boolean(isMaster || params.profile.tag === "0001" || isMasterIdentity(params.hostName, isMaster));
     const effectiveSocketId = socket?.id || `temp-host-${Date.now()}`;
@@ -346,7 +356,7 @@ export default function App() {
     setErrorMsg(null);
     setApprovalError(null);
 
-    const safeRoomId = (params.roomId || urlRoomId || "").trim().toLowerCase();
+    const safeRoomId = (params.roomId || urlRoomId || "main-lounge").trim().toLowerCase();
     const isGuestRole = urlRole === "guest" || !params.passcode;
     // If joining explicitly as guest, never send host secret token to ensure role isolation
     const existingHostToken = isGuestRole ? undefined : getHostToken(safeRoomId);
@@ -382,9 +392,7 @@ export default function App() {
               saveHostToken(res.room.roomId, res.hostSecretToken);
             }
 
-            const newUrl = urlRole === "guest"
-              ? `/?room=${res.room.roomId}&role=guest`
-              : `/?room=${res.room.roomId}`;
+            const newUrl = `/?room=${encodeURIComponent(res.room.roomId)}`;
             window.history.pushState({}, "", newUrl);
 
             setCurrentRoom(res.room);
@@ -416,12 +424,12 @@ export default function App() {
     setCurrentRoom(null);
     setSelfParticipant(null);
     setIsWaitingApproval(false);
-    setUrlRoomId("");
+    setUrlRoomId("main-lounge");
     setUrlRole("");
     setErrorMsg(null);
     setApprovalError(null);
     // Reset query param
-    window.history.pushState({}, "", "/");
+    window.history.pushState({}, "", "/?room=main-lounge");
   };
 
   // Calculate whether participant has an assigned VIP badge or VIP permissions

@@ -41,13 +41,14 @@ export function setCustomPublicBaseUrl(url: string): void {
   }
 }
 
-export function getEffectiveInviteUrl(roomId: string, role: string = "guest"): string {
+export function getEffectiveInviteUrl(roomId: string, role?: string): string {
   const base = getCustomPublicBaseUrl();
-  return `${base}/?room=${encodeURIComponent(roomId)}&role=${role}`;
+  const cleanId = (roomId || "main-lounge").trim();
+  return `${base}/?room=${encodeURIComponent(cleanId)}`;
 }
 
 export function generateInviteMessage(roomId: string, roomName?: string): string {
-  const url = getEffectiveInviteUrl(roomId, "guest");
+  const url = getEffectiveInviteUrl(roomId);
   const title = roomName ? `para a sala "${roomName}"` : "para a chamada";
-  return `🎧 Convite ${title} no Koki Call!\n\n🔗 Link direto de Convidado:\n${url}\n\n🔑 Código da sala: ${roomId}\n\n✨ (Abre direto no navegador do celular ou PC - sem precisar de cadastro ou downloads!)`;
+  return `🎧 Convite ${title} no Koki Call!\n\n🔗 Link direto da sala:\n${url}\n\n🔑 Código da sala: ${roomId}\n\n✨ (Abre direto no navegador do celular ou PC - sem precisar de cadastro ou downloads!)`;
 }
