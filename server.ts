@@ -301,6 +301,21 @@ function validateServerMasterAuth(providedToken?: string, clientIp?: string): { 
   return { isMaster: false, authMethod: "none" };
 }
 
+function normalizeRoomId(rawRoomId?: string | null): string {
+  if (!rawRoomId || typeof rawRoomId !== "string") {
+    return "";
+  }
+  let clean = rawRoomId.trim();
+  if (clean.includes("?room=") || clean.includes("&room=")) {
+    try {
+      const parsed = new URL(clean.startsWith("http") ? clean : `http://localhost/${clean}`);
+      clean = parsed.searchParams.get("room") || clean;
+    } catch {}
+  }
+  clean = clean.split("&")[0].split("?")[0].split("#")[0].replace(/\s+/g, "-").toLowerCase();
+  return clean;
+}
+
 function sanitizeAndInspectText(input: string): { cleanText: string; isSecurityWarning: boolean } {
   if (!input) return { cleanText: "", isSecurityWarning: false };
 
@@ -447,6 +462,40 @@ async function startServer() {
       participants: Array.from(room.participants.values()),
     });
 
+    const broadcastRoomState = (room: ServerRoom) => {
+      const participantsList = Array.from(room.participants.values());
+      const payload = formatRoomPayload(room);
+
+      // 1. Full room state sync
+      io.to(room.roomId).emit("room:sync", payload);
+
+      // 2. Both snake_case and kebab-case for users list
+      io.to(room.roomId).emit("room:users_list", {
+        roomId: room.roomId,
+        participants: participantsList,
+        total: participantsList.length,
+      });
+      io.to(room.roomId).emit("room:users-list", {
+        roomId: room.roomId,
+        participants: participantsList,
+        total: participantsList.length,
+      });
+
+      // 3. Voice participants list and map
+      const voiceParticipantsMap: Record<string, ServerParticipant[]> = {};
+      participantsList.forEach((p) => {
+        const vChan = p.voiceChannelId || "voice-geral";
+        if (!voiceParticipantsMap[vChan]) voiceParticipantsMap[vChan] = [];
+        voiceParticipantsMap[vChan].push(p);
+      });
+
+      io.to(room.roomId).emit("voice:participants", {
+        roomId: room.roomId,
+        voiceMap: voiceParticipantsMap,
+        participants: participantsList,
+      });
+    };
+
     // 0. Master Auth Check (No Password Modal Handshake)
     socket.on("auth:check-master", (payload: { masterToken?: string }, callback) => {
       const auth = validateServerMasterAuth(payload?.masterToken);
@@ -504,9 +553,7 @@ async function startServer() {
         }
 
         const { roomId, roomName, hostName, hostPasscode, masterToken, profile, settings } = payload;
-        const cleanRoomId = (roomId && roomId.trim().length > 0)
-          ? roomId.trim().toLowerCase().replace(/\s+/g, "-")
-          : `koki-${Math.random().toString(36).substring(2, 8)}`;
+        const cleanRoomId = normalizeRoomId(roomId) || `koki-${Math.random().toString(36).substring(2, 8)}`;
 
         // Verify Master status on creation
         const auth = validateServerMasterAuth(masterToken);
@@ -610,6 +657,11 @@ async function startServer() {
         currentRoomId = targetRoomId;
         socket.join(targetRoomId);
 
+        // Broadcast active room and user state
+        io.to(targetRoomId).emit("room:user-joined", hostParticipant);
+        io.to(targetRoomId).emit("room:user_joined", hostParticipant);
+        broadcastRoomState(targetRoom);
+
         if (typeof callback === "function") {
           callback({
             success: true,
@@ -654,9 +706,7 @@ async function startServer() {
         }
 
         const { roomId, name, role, isGuestOnly, masterToken, hostSecretToken, passcode, profile } = payload;
-        const cleanRoomId = (roomId && roomId.trim().length > 0)
-          ? roomId.trim().toLowerCase()
-          : `koki-${Math.random().toString(36).substring(2, 8)}`;
+        const cleanRoomId = normalizeRoomId(roomId) || `koki-${Math.random().toString(36).substring(2, 8)}`;
 
         let room = rooms.get(cleanRoomId);
 
@@ -802,7 +852,10 @@ async function startServer() {
         currentRoomId = cleanRoomId;
         socket.join(cleanRoomId);
 
-        socket.to(cleanRoomId).emit("room:user-joined", participant);
+        // Broadcast new participant and room state to everyone
+        io.to(cleanRoomId).emit("room:user-joined", participant);
+        io.to(cleanRoomId).emit("room:user_joined", participant);
+        broadcastRoomState(room);
 
         const joinMsg: ServerChatMessage = {
           id: `sys-join-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -906,7 +959,9 @@ async function startServer() {
         });
       }
 
-      socket.to(room.roomId).emit("room:user-joined", participant);
+      io.to(room.roomId).emit("room:user-joined", participant);
+      io.to(room.roomId).emit("room:user_joined", participant);
+      broadcastRoomState(room);
 
       const joinMsg: ServerChatMessage = {
         id: `sys-join-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -967,8 +1022,11 @@ async function startServer() {
           });
         }
 
-        socket.to(room.roomId).emit("room:user-joined", participant);
+        io.to(room.roomId).emit("room:user-joined", participant);
+        io.to(room.roomId).emit("room:user_joined", participant);
       });
+
+      broadcastRoomState(room);
     });
 
     // 4. WebRTC Mesh Signaling with streamType and screen sharing support
@@ -1478,12 +1536,14 @@ async function startServer() {
 
         Object.assign(participant, safeUpdates);
         io.to(targetRoomId).emit("room:user-updated", participant);
+        io.to(targetRoomId).emit("room:user_updated", participant);
+        broadcastRoomState(room);
       }
     });
 
     // 6. State updates (Audio/Video/Screen)
     socket.on("room:state-update", (updates: Partial<ServerParticipant> & { roomId?: string }) => {
-      const targetRoomId = currentRoomId || updates.roomId;
+      const targetRoomId = normalizeRoomId(updates.roomId) || currentRoomId;
       if (!targetRoomId) return;
       const room = rooms.get(targetRoomId);
       if (!room) return;
@@ -1497,12 +1557,14 @@ async function startServer() {
 
         Object.assign(participant, safeUpdates);
         io.to(targetRoomId).emit("room:user-updated", participant);
+        io.to(targetRoomId).emit("room:user_updated", participant);
+        broadcastRoomState(room);
       }
     });
 
     // 6.1. Voice Channel Selection & VIP Access Control
-    socket.on("voice:select-channel", (data: { channelId: string; masterToken?: string; roomId?: string }, callback) => {
-      const targetRoomId = currentRoomId || data?.roomId;
+    const handleVoiceSelectChannel = (data: { channelId?: string; voiceChannelId?: string; masterToken?: string; roomId?: string }, callback?: any) => {
+      const targetRoomId = normalizeRoomId(data?.roomId) || currentRoomId;
       if (!targetRoomId) {
         if (typeof callback === "function") callback({ success: false, message: "Sala não encontrada" });
         return;
@@ -1519,7 +1581,7 @@ async function startServer() {
         return;
       }
 
-      const targetChannelId = data.channelId || "voice-geral";
+      const targetChannelId = data.channelId || data.voiceChannelId || "voice-geral";
 
       // If user tries to join VIP channel
       if (targetChannelId === "voice-vip") {
@@ -1534,11 +1596,16 @@ async function startServer() {
 
       participant.voiceChannelId = targetChannelId;
       io.to(targetRoomId).emit("room:user-updated", participant);
+      io.to(targetRoomId).emit("room:user_updated", participant);
+      broadcastRoomState(room);
 
       if (typeof callback === "function") {
         callback({ success: true, channelId: targetChannelId });
       }
-    });
+    };
+
+    socket.on("voice:select-channel", handleVoiceSelectChannel);
+    socket.on("voice:join", handleVoiceSelectChannel);
 
     // 6.2. Master Drag / Move Members between Voice Channels
     socket.on("host:move-voice-channel", (data: {
@@ -1547,7 +1614,7 @@ async function startServer() {
       masterToken?: string;
       roomId?: string;
     }, callback) => {
-      const targetRoomId = currentRoomId || data?.roomId;
+      const targetRoomId = normalizeRoomId(data?.roomId) || currentRoomId;
       if (!targetRoomId) {
         if (typeof callback === "function") callback({ success: false, message: "Sala não encontrada" });
         return;
@@ -1577,6 +1644,8 @@ async function startServer() {
 
       // Update room state
       io.to(targetRoomId).emit("room:user-updated", target);
+      io.to(targetRoomId).emit("room:user_updated", target);
+      broadcastRoomState(room);
 
       // Directly notify target client
       const targetSocket = io.sockets.sockets.get(data.targetSocketId);
@@ -1839,6 +1908,8 @@ async function startServer() {
           target.hasAudio = false;
           io.to(action.targetUserId).emit("host:forced-mute");
           io.to(currentRoomId).emit("room:user-updated", target);
+          io.to(currentRoomId).emit("room:user_updated", target);
+          broadcastRoomState(room);
         }
       } else if (action.type === "mute-all") {
         room.participants.forEach((p) => {
@@ -1847,8 +1918,10 @@ async function startServer() {
             p.hasAudio = false;
             io.to(p.id).emit("host:forced-mute");
             io.to(currentRoomId).emit("room:user-updated", p);
+            io.to(currentRoomId).emit("room:user_updated", p);
           }
         });
+        broadcastRoomState(room);
       } else if (action.type === "kick-user" && action.targetUserId) {
         const targetSocket = io.sockets.sockets.get(action.targetUserId);
         if (targetSocket) {
@@ -1857,6 +1930,8 @@ async function startServer() {
         }
         room.participants.delete(action.targetUserId);
         io.to(currentRoomId).emit("room:user-left", { id: action.targetUserId, name: "Participante" });
+        io.to(currentRoomId).emit("room:user_left", { id: action.targetUserId, name: "Participante" });
+        broadcastRoomState(room);
       } else if (action.type === "toggle-lock") {
         room.isLocked = !room.isLocked;
         io.to(currentRoomId).emit("room:lock-changed", { isLocked: room.isLocked });
@@ -1887,6 +1962,8 @@ async function startServer() {
 
       if (participant) {
         io.to(currentRoomId).emit("room:user-left", { id: socket.id, name: participant.name });
+        io.to(currentRoomId).emit("room:user_left", { id: socket.id, name: participant.name });
+        broadcastRoomState(room);
       }
 
       const roomIdToClean = currentRoomId;

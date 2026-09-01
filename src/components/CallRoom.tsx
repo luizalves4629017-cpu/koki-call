@@ -796,9 +796,61 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       }
     };
 
+    const handleSyncUsersList = (data: any) => {
+      let list: Participant[] = [];
+      if (Array.isArray(data)) {
+        list = data;
+      } else if (data && Array.isArray(data.participants)) {
+        list = data.participants;
+      } else if (data && data.room && Array.isArray(data.room.participants)) {
+        list = data.room.participants;
+      }
+      if (!list || list.length === 0) return;
+
+      setRoom((prev) => {
+        const prevMap = new Map<string, Participant>(prev.participants.map((p) => [p.id, p]));
+        const merged: Participant[] = list.map((incoming: Participant) => {
+          const existing = prevMap.get(incoming.id);
+          return existing ? Object.assign({}, existing, incoming) : incoming;
+        });
+        return {
+          ...prev,
+          participants: merged,
+        };
+      });
+
+      list.forEach((p: Participant) => {
+        if (p.id !== self.id && !peerConnectionsRef.current.has(p.id)) {
+          createPeerConnection(p.id, true);
+        }
+      });
+    };
+
+    const handleRoomSync = (syncedRoom: RoomState) => {
+      if (syncedRoom && syncedRoom.roomId) {
+        setRoom((prev) => ({
+          ...prev,
+          ...syncedRoom,
+          participants: syncedRoom.participants || prev.participants,
+        }));
+        (syncedRoom.participants || []).forEach((p) => {
+          if (p.id !== self.id && !peerConnectionsRef.current.has(p.id)) {
+            createPeerConnection(p.id, true);
+          }
+        });
+      }
+    };
+
     socket.on("room:user-joined", handleUserJoined);
+    socket.on("room:user_joined", handleUserJoined);
     socket.on("room:user-left", handleUserLeft);
+    socket.on("room:user_left", handleUserLeft);
     socket.on("room:user-updated", handleUserUpdated);
+    socket.on("room:user_updated", handleUserUpdated);
+    socket.on("room:users-list", handleSyncUsersList);
+    socket.on("room:users_list", handleSyncUsersList);
+    socket.on("voice:participants", handleSyncUsersList);
+    socket.on("room:sync", handleRoomSync);
     socket.on("signal:offer", handleOffer);
     socket.on("signal:answer", handleAnswer);
     socket.on("signal:ice-candidate", handleIceCandidate);
@@ -835,8 +887,15 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
     return () => {
       socket.off("room:user-joined", handleUserJoined);
+      socket.off("room:user_joined", handleUserJoined);
       socket.off("room:user-left", handleUserLeft);
+      socket.off("room:user_left", handleUserLeft);
       socket.off("room:user-updated", handleUserUpdated);
+      socket.off("room:user_updated", handleUserUpdated);
+      socket.off("room:users-list", handleSyncUsersList);
+      socket.off("room:users_list", handleSyncUsersList);
+      socket.off("voice:participants", handleSyncUsersList);
+      socket.off("room:sync", handleRoomSync);
       socket.off("signal:offer", handleOffer);
       socket.off("signal:answer", handleAnswer);
       socket.off("signal:ice-candidate", handleIceCandidate);
