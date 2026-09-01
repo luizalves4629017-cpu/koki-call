@@ -27,11 +27,13 @@ interface VideoTileProps {
   isSpotlight?: boolean;
   userVolume?: number;
   masterVoiceVolume?: number;
+  currentVoiceChannelId?: string;
   onToggleSpotlight?: () => void;
   onHostMute?: (userId: string) => void;
   onHostKick?: (userId: string) => void;
   onSelectProfile?: (participant: Participant) => void;
   onVolumeChange?: (userId: string, volume: number) => void;
+  onMoveToVoiceChannel?: (userId: string, targetChannelId: string) => void;
 }
 
 export const VideoTile: React.FC<VideoTileProps> = ({
@@ -45,11 +47,13 @@ export const VideoTile: React.FC<VideoTileProps> = ({
   isSpotlight = false,
   userVolume = 100,
   masterVoiceVolume = 100,
+  currentVoiceChannelId = "voice-geral",
   onToggleSpotlight,
   onHostMute,
   onHostKick,
   onSelectProfile,
   onVolumeChange,
+  onMoveToVoiceChannel,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const screenRef = useRef<HTMLVideoElement | null>(null);
@@ -59,7 +63,13 @@ export const VideoTile: React.FC<VideoTileProps> = ({
   const [showMenu, setShowMenu] = useState<boolean>(false);
   const [showVolumeSlider, setShowVolumeSlider] = useState<boolean>(false);
 
-  const isSpeaking = (audioLevel > 15 || (participant.audioLevel && participant.audioLevel > 15)) && participant.hasAudio && !participant.isMutedByHost;
+  // VIP & Voice Channel Audio/Video Isolation
+  const isSameVoiceChannel = (participant.voiceChannelId || "voice-geral") === (currentVoiceChannelId || "voice-geral");
+
+  const isSpeaking = isSameVoiceChannel &&
+    (audioLevel > 15 || (participant.audioLevel && participant.audioLevel > 15)) &&
+    participant.hasAudio &&
+    !participant.isMutedByHost;
 
   // Handle Video Track
   useEffect(() => {
@@ -81,7 +91,7 @@ export const VideoTile: React.FC<VideoTileProps> = ({
 
   const screenAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Handle Remote Audio Element with Master & Individual Volume
+  // Handle Remote Audio Element with Master & Individual Volume + Strict Channel Isolation
   useEffect(() => {
     if (!isSelf && audioRef.current && stream) {
       const audioTracks = stream.getAudioTracks();
@@ -89,14 +99,22 @@ export const VideoTile: React.FC<VideoTileProps> = ({
         if (audioRef.current.srcObject !== stream) {
           audioRef.current.srcObject = stream;
         }
-        const effectiveGain = (localVolume / 100) * (masterVoiceVolume / 100) * (participant.isDeafened ? 0 : 1);
-        audioRef.current.volume = Math.max(0, Math.min(1, effectiveGain));
-        audioRef.current.play().catch(() => {});
+        if (!isSameVoiceChannel) {
+          // Strictly mute and silence audio when in different voice channels
+          audioRef.current.muted = true;
+          audioRef.current.volume = 0;
+          audioRef.current.pause();
+        } else {
+          audioRef.current.muted = false;
+          const effectiveGain = (localVolume / 100) * (masterVoiceVolume / 100) * (participant.isDeafened ? 0 : 1);
+          audioRef.current.volume = Math.max(0, Math.min(1, effectiveGain));
+          audioRef.current.play().catch(() => {});
+        }
       }
     }
-  }, [stream, isSelf, localVolume, masterVoiceVolume, participant.isDeafened]);
+  }, [stream, isSelf, localVolume, masterVoiceVolume, participant.isDeafened, isSameVoiceChannel]);
 
-  // Handle Screen Audio if screen has audio
+  // Handle Screen Audio if screen has audio + Strict Channel Isolation
   useEffect(() => {
     if (!isSelf && screenAudioRef.current && screenStream) {
       const screenAudioTracks = screenStream.getAudioTracks();
@@ -104,12 +122,19 @@ export const VideoTile: React.FC<VideoTileProps> = ({
         if (screenAudioRef.current.srcObject !== screenStream) {
           screenAudioRef.current.srcObject = screenStream;
         }
-        const effectiveGain = (localVolume / 100) * (masterVoiceVolume / 100) * (participant.isDeafened ? 0 : 1);
-        screenAudioRef.current.volume = Math.max(0, Math.min(1, effectiveGain));
-        screenAudioRef.current.play().catch(() => {});
+        if (!isSameVoiceChannel) {
+          screenAudioRef.current.muted = true;
+          screenAudioRef.current.volume = 0;
+          screenAudioRef.current.pause();
+        } else {
+          screenAudioRef.current.muted = false;
+          const effectiveGain = (localVolume / 100) * (masterVoiceVolume / 100) * (participant.isDeafened ? 0 : 1);
+          screenAudioRef.current.volume = Math.max(0, Math.min(1, effectiveGain));
+          screenAudioRef.current.play().catch(() => {});
+        }
       }
     }
-  }, [screenStream, isSelf, localVolume, masterVoiceVolume, participant.isDeafened]);
+  }, [screenStream, isSelf, localVolume, masterVoiceVolume, participant.isDeafened, isSameVoiceChannel]);
 
   const hasActiveVideo = participant.hasVideo && !lowResourceMode && stream;
   const isDisplayingScreen = participant.isScreenSharing && screenStream;
@@ -285,7 +310,22 @@ export const VideoTile: React.FC<VideoTileProps> = ({
             </button>
 
             {showMenu && (
-              <div className="absolute right-0 mt-1 py-1 bg-[#090e1a] border border-[#1e293b] rounded-lg shadow-xl z-30 w-36 text-xs flex flex-col">
+              <div className="absolute right-0 mt-1 py-1 bg-[#090e1a] border border-[#1e293b] rounded-lg shadow-xl z-30 w-44 text-xs flex flex-col">
+                {onMoveToVoiceChannel && (
+                  <button
+                    onClick={() => {
+                      const nextChan = participant.voiceChannelId === "voice-vip" ? "voice-geral" : "voice-vip";
+                      onMoveToVoiceChannel(participant.id, nextChan);
+                      setShowMenu(false);
+                    }}
+                    className="px-3 py-1.5 text-left text-amber-300 hover:text-amber-200 hover:bg-amber-950/40 flex items-center gap-2 cursor-pointer font-semibold border-b border-slate-800"
+                  >
+                    <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="truncate">
+                      {participant.voiceChannelId === "voice-vip" ? "Mover para Geral" : "Mover para Call VIP"}
+                    </span>
+                  </button>
+                )}
                 {onHostMute && (
                   <button
                     onClick={() => {

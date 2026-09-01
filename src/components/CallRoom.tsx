@@ -10,6 +10,7 @@ import {
 } from "../types";
 import { RTC_CONFIG, DEFAULT_MEDIA_CONSTRAINTS, LOW_RESOURCE_CONSTRAINTS } from "../utils/webrtcConfig";
 import { AudioVolumeTracker } from "../utils/audioAnalyser";
+import { playVoiceJoinChime } from "../utils/audioChimes";
 import { Header } from "./Header";
 import { VideoTile } from "./VideoTile";
 import { ControlBar } from "./ControlBar";
@@ -50,6 +51,7 @@ interface CallRoomProps {
   initialRoom: RoomState;
   initialSelf: Participant;
   isMaster?: boolean;
+  hasVipBadge?: boolean;
   masterToken?: string | null;
   onLeaveRoom: () => void;
 }
@@ -59,6 +61,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   initialRoom,
   initialSelf,
   isMaster = false,
+  hasVipBadge: initialHasVipBadge = false,
   masterToken = null,
   onLeaveRoom,
 }) => {
@@ -91,8 +94,65 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   };
 
   const handleSelectVoiceChannel = (channelId: string) => {
+    if (channelId === activeVoiceChannelId) return;
+
+    // Check if channel is VIP and user has permission
+    if (
+      channelId === "voice-vip" &&
+      !isMaster &&
+      !self.isMaster &&
+      !self.isHost &&
+      !self.vipPermissions?.hasVipBadge
+    ) {
+      return;
+    }
+
     setActiveVoiceChannelId(channelId);
+    setSelf((prev) => ({ ...prev, voiceChannelId: channelId }));
+
+    // Synthesized Web Audio API pleasant join chime
+    playVoiceJoinChime();
+
+    socket.emit(
+      "voice:select-channel",
+      {
+        channelId,
+        masterToken,
+        roomId: room.roomId,
+      },
+      (res: { success: boolean; message?: string }) => {
+        if (res && !res.success && res.message) {
+          console.warn("Voice channel selection error:", res.message);
+        }
+      }
+    );
   };
+
+  // Move user to voice channel (Master feature)
+  const handleMoveToVoiceChannel = (targetSocketId: string, targetChannelId: string) => {
+    socket.emit(
+      "host:move-voice-channel",
+      {
+        targetSocketId,
+        targetChannelId,
+        masterToken,
+        roomId: room.roomId,
+      },
+      (res: { success: boolean; message?: string }) => {
+        if (res && !res.success && res.message) {
+          alert(res.message);
+        }
+      }
+    );
+  };
+
+  // Play voice connection chime once initial voice connection is active
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      playVoiceJoinChime();
+    }, 400);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Selected Profile Card Modal (Discord Style)
   const [selectedProfileParticipant, setSelectedProfileParticipant] = useState<Participant | null>(null);
@@ -728,6 +788,14 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       }
     };
 
+    const handleForcedChannelChange = (data: { channelId: string; channelName?: string; movedBy?: string }) => {
+      if (data && data.channelId) {
+        setActiveVoiceChannelId(data.channelId);
+        setSelf((prev) => ({ ...prev, voiceChannelId: data.channelId }));
+        playVoiceJoinChime();
+      }
+    };
+
     socket.on("room:user-joined", handleUserJoined);
     socket.on("room:user-left", handleUserLeft);
     socket.on("room:user-updated", handleUserUpdated);
@@ -748,6 +816,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     socket.on("coins:received", handleCoinsReceived);
     socket.on("coins:updated", handleCoinsUpdated);
     socket.on("badges:assigned", handleBadgesAssigned);
+    socket.on("voice:forced-channel-change", handleForcedChannelChange);
 
     if (self.isHost || isMaster) {
       socket.emit("host:get-pending-knocks", (knocks: KnockRequest[]) => {
@@ -785,6 +854,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       socket.off("coins:received", handleCoinsReceived);
       socket.off("coins:updated", handleCoinsUpdated);
       socket.off("badges:assigned", handleBadgesAssigned);
+      socket.off("voice:forced-channel-change", handleForcedChannelChange);
     };
   }, [socket, self.id, self.isHost, isMaster, isChatOpen, createPeerConnection, onLeaveRoom, selectedProfileParticipant?.id, spotlightId, room.participants]);
 
@@ -1277,10 +1347,26 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     ? room.participants.find((p) => p.id === spotlightId) || (spotlightId === self.id ? self : null)
     : null;
 
+  const isUserMaster = Boolean(isMaster || self.isMaster || self.isHost);
+  const hasVipBadge = Boolean(
+    initialHasVipBadge ||
+    self.vipPermissions?.hasVipBadge ||
+    self.badges?.some(
+      (b) =>
+        b.toLowerCase().includes("vip") ||
+        b === "vip_role" ||
+        b === "vip_granted" ||
+        b === "vip"
+    ) ||
+    (self.purchasedPerks &&
+      self.purchasedPerks["vip_role"] &&
+      self.purchasedPerks["vip_role"] > Date.now())
+  );
+
   return (
     <div className="h-screen w-screen flex flex-col bg-[#070b14] overflow-hidden relative">
-      {/* Floating Admission Banner for Owner when users are knocking */}
-      {self.isHost && (
+      {/* Floating Admission Banner for Master / VIP when users are knocking */}
+      {(isUserMaster || hasVipBadge) && (
         <FloatingAdmissionBanner
           pendingKnocks={pendingKnocks}
           onApprove={handleApproveKnock}
@@ -1293,6 +1379,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       <Header
         room={room}
         self={self}
+        isMaster={Boolean(isMaster || self.isMaster || self.isHost)}
+        hasVipBadge={hasVipBadge}
         lowResourceMode={preferences.lowResourceMode}
         pingMs={pingMs}
         pendingKnocksCount={pendingKnocks.length}
@@ -1351,6 +1439,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
                   lowResourceMode={preferences.lowResourceMode}
                   isSpotlight={true}
                   userVolume={participantVolumes[activeSpotlight.id] ?? 100}
+                  masterVoiceVolume={masterVoiceVolume}
+                  currentVoiceChannelId={activeVoiceChannelId}
+                  onMoveToVoiceChannel={isUserMaster ? handleMoveToVoiceChannel : undefined}
                   onToggleSpotlight={() => setSpotlightId(null)}
                   onHostMute={handleHostMuteUser}
                   onHostKick={handleHostKickUser}
@@ -1390,6 +1481,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
                         audioLevel={p.audioLevel}
                         lowResourceMode={preferences.lowResourceMode}
                         userVolume={participantVolumes[p.id] ?? 100}
+                        masterVoiceVolume={masterVoiceVolume}
+                        currentVoiceChannelId={activeVoiceChannelId}
+                        onMoveToVoiceChannel={isUserMaster ? handleMoveToVoiceChannel : undefined}
                         onToggleSpotlight={() => setSpotlightId(p.id)}
                         onHostMute={handleHostMuteUser}
                         onHostKick={handleHostKickUser}
@@ -1440,6 +1534,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
                     audioLevel={p.audioLevel}
                     lowResourceMode={preferences.lowResourceMode}
                     userVolume={participantVolumes[p.id] ?? 100}
+                    masterVoiceVolume={masterVoiceVolume}
+                    currentVoiceChannelId={activeVoiceChannelId}
+                    onMoveToVoiceChannel={isUserMaster ? handleMoveToVoiceChannel : undefined}
                     onToggleSpotlight={() => setSpotlightId(p.id)}
                     onHostMute={handleHostMuteUser}
                     onHostKick={handleHostKickUser}
@@ -1516,9 +1613,10 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         <UserProfileCard
           participant={selectedProfileParticipant}
           isSelf={selectedProfileParticipant.id === self.id}
-          isHostViewer={self.isHost || Boolean(isMaster)}
+          isHostViewer={Boolean(isMaster)}
           userVolume={participantVolumes[selectedProfileParticipant.id] ?? 100}
           onVolumeChange={(newVol) => handleVolumeChange(selectedProfileParticipant.id, newVol)}
+          onMoveToVoiceChannel={isUserMaster ? handleMoveToVoiceChannel : undefined}
           onMuteParticipant={handleHostMuteUser}
           onKickParticipant={handleHostKickUser}
           onOpenOwnerProfileEditor={() => setIsOwnerProfileOpen(true)}

@@ -19,19 +19,14 @@ export const BadgeList: React.FC<BadgeListProps> = ({
 }) => {
   const [hoveredBadge, setHoveredBadge] = useState<UserBadge | null>(null);
 
-  // If host and no badges provided, ensure host has default owner badges
-  const effectiveBadgeIds =
-    badgeIds.length > 0
-      ? badgeIds
-      : isHost
-      ? ["owner_supreme", "koki_creator", "nitro_owner"]
-      : [];
+  // Render the participant's explicit badges only
+  const effectiveBadgeIds = Array.isArray(badgeIds) ? badgeIds : [];
 
   const badges = effectiveBadgeIds
     .map((id) => getBadgeById(id))
     .filter((b): b is UserBadge => Boolean(b));
 
-  if (badges.length === 0 && !isHost) return null;
+  if (badges.length === 0) return null;
 
   const visibleBadges = badges.slice(0, maxVisible);
   const remainingCount = badges.length - maxVisible;

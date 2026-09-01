@@ -102,6 +102,12 @@ export const MemberList: React.FC<MemberListProps> = ({
               <span className="text-[9px] font-bold text-cyan-400 bg-cyan-950/60 px-1 rounded border border-cyan-800/40 shrink-0">Host</span>
             ) : null}
 
+            {participant.voiceChannelId === "voice-vip" && (
+              <span className="text-[8px] font-bold text-amber-300 bg-amber-950/80 px-1 py-0.5 rounded border border-amber-500/40 shrink-0 flex items-center gap-0.5">
+                <Crown className="w-2 h-2 text-amber-400" /> VIP
+              </span>
+            )}
+
             {isSelf && (
               <span className="text-[9px] font-bold text-cyan-400 uppercase tracking-wider bg-cyan-950/60 px-1 rounded border border-cyan-800/40">
                 Você

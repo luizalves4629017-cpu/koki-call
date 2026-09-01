@@ -5,6 +5,7 @@ import { Lobby } from "./components/Lobby";
 import { CallRoom } from "./components/CallRoom";
 import { saveHostToken, getHostToken, isMasterIdentity } from "./utils/storage";
 import { getStoredMasterInfo, isMasterKeyValid, getMasterTokenSync, clearMasterAuthLocally } from "./utils/masterAuth";
+import { playVoiceJoinChime } from "./utils/audioChimes";
 
 // Resolve default backend Socket.IO connection URL explicitly to Render backend
 const BACKEND_SOCKET_URL =
@@ -158,6 +159,8 @@ export default function App() {
       setCurrentRoom(data.room);
       setSelfParticipant(data.self);
       setInCall(true);
+      // Play soft synthesized chime upon connecting to voice channel
+      playVoiceJoinChime();
     };
 
     const handleKnockRejected = (data: { message?: string }) => {
@@ -165,15 +168,31 @@ export default function App() {
       setApprovalError(data.message || "Sua solicitação de entrada foi recusada pelo Dono da sala.");
     };
 
+    // Listen for voice channel events
+    const handleVoiceChannelEvent = () => {
+      playVoiceJoinChime();
+    };
+
     socketInstance.on("room:knock-approved", handleKnockApproved);
     socketInstance.on("room:knock-rejected", handleKnockRejected);
+    socketInstance.on("voice:joined", handleVoiceChannelEvent);
+    socketInstance.on("voice:channel-changed", handleVoiceChannelEvent);
 
     return () => {
       socketInstance.off("room:knock-approved", handleKnockApproved);
       socketInstance.off("room:knock-rejected", handleKnockRejected);
+      socketInstance.off("voice:joined", handleVoiceChannelEvent);
+      socketInstance.off("voice:channel-changed", handleVoiceChannelEvent);
       socketInstance.disconnect();
     };
   }, []);
+
+  // Synthesized Web Audio API soft chime sound played upon connecting to any voice channel
+  useEffect(() => {
+    if (inCall) {
+      playVoiceJoinChime();
+    }
+  }, [inCall]);
 
   // Handle Host Room Creation (Immediate non-blocking transition into Call Room)
   const handleCreateRoom = (params: {
@@ -405,6 +424,21 @@ export default function App() {
     window.history.pushState({}, "", "/");
   };
 
+  // Calculate whether participant has an assigned VIP badge or VIP permissions
+  const hasVipBadge = Boolean(
+    selfParticipant?.vipPermissions?.hasVipBadge ||
+    selfParticipant?.badges?.some(
+      (b: string) =>
+        b.toLowerCase().includes("vip") ||
+        b === "vip_role" ||
+        b === "vip_granted" ||
+        b === "vip"
+    ) ||
+    (selfParticipant?.purchasedPerks &&
+      selfParticipant.purchasedPerks["vip_role"] &&
+      selfParticipant.purchasedPerks["vip_role"] > Date.now())
+  );
+
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 font-sans antialiased select-none">
       {/* Global Error Banner */}
@@ -426,6 +460,7 @@ export default function App() {
           initialRoom={currentRoom}
           initialSelf={selfParticipant}
           isMaster={isMaster}
+          hasVipBadge={hasVipBadge}
           masterToken={masterToken}
           onLeaveRoom={handleLeaveRoom}
         />

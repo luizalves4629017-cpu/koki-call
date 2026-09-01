@@ -166,9 +166,13 @@ export const Lobby: React.FC<LobbyProps> = ({
 
   const [badges, setBadges] = useState<string[]>(() => {
     if (isSelfMaster) {
-      return savedProfile.badges || ["owner_supreme", "koki_creator", "nitro_owner"];
+      return savedProfile.badges && savedProfile.badges.length > 0
+        ? savedProfile.badges
+        : ["owner_supreme", "koki_creator", "nitro_owner"];
     }
-    return (savedProfile.badges || ["pioneer_member"]).filter((b) => !b.includes("owner") && b !== "koki_creator");
+    return (savedProfile.badges || []).filter(
+      (b) => !b.includes("owner") && b !== "koki_creator" && b !== "nitro_owner" && b !== "pioneer_member" && b !== "host_room"
+    );
   });
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 

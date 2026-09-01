@@ -28,6 +28,8 @@ import { getKokiCoins, formatCoinDisplay } from "../utils/storage";
 interface HeaderProps {
   room: RoomState;
   self: Participant;
+  isMaster?: boolean;
+  hasVipBadge?: boolean;
   lowResourceMode: boolean;
   pingMs: number;
   pendingKnocksCount?: number;
@@ -47,6 +49,8 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   room,
   self,
+  isMaster = false,
+  hasVipBadge = false,
   lowResourceMode,
   pingMs,
   pendingKnocksCount = 0,
@@ -64,6 +68,24 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const currentCoins = typeof kokiCoins === "number" ? kokiCoins : getKokiCoins();
+
+  // Strict check: Only show Master Action Bar for Master users or users with designated VIP badge
+  const isUserMaster = Boolean(isMaster || self.isMaster || self.isHost);
+  const userHasVip = Boolean(
+    hasVipBadge ||
+    self.vipPermissions?.hasVipBadge ||
+    self.badges?.some(
+      (b) =>
+        b.toLowerCase().includes("vip") ||
+        b === "vip_role" ||
+        b === "vip_granted" ||
+        b === "vip"
+    ) ||
+    (self.purchasedPerks &&
+      self.purchasedPerks["vip_role"] &&
+      self.purchasedPerks["vip_role"] > Date.now())
+  );
+  const showMasterActionBar = isUserMaster || userHasVip;
 
   const handleCopyLink = async () => {
     const inviteUrl = getEffectiveInviteUrl(room.roomId, "guest");
@@ -197,50 +219,57 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {/* Owner Exclusive: Portaria / Permitir Entrada Button */}
-        {self.isHost && onOpenAdmissionModal && (
-          <button
-            onClick={onOpenAdmissionModal}
-            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer font-bold relative ${
-              pendingKnocksCount > 0
-                ? "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 ring-2 ring-amber-400/50 shadow-amber-950/60 animate-pulse"
-                : "bg-[#141e33] hover:bg-[#1a2947] text-amber-300 border border-amber-500/40"
-            }`}
-            title="Portaria da Chamada: Permitir ou recusar entrada de pessoas"
-          >
-            {pendingKnocksCount > 0 ? (
-              <BellRing className="w-3.5 h-3.5 animate-bounce" />
-            ) : (
-              <UserCheck className="w-3.5 h-3.5 text-amber-400" />
+        {/* Master & VIP Exclusive Action Bar: Permitir Entrada, Vídeo MP4 & GIF, Painel Master */}
+        {showMasterActionBar && (
+          <>
+            {/* Permitir Entrada / Portaria */}
+            {onOpenAdmissionModal && (
+              <button
+                onClick={onOpenAdmissionModal}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer font-bold relative ${
+                  pendingKnocksCount > 0
+                    ? "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 ring-2 ring-amber-400/50 shadow-amber-950/60 animate-pulse"
+                    : "bg-[#141e33] hover:bg-[#1a2947] text-amber-300 border border-amber-500/40"
+                }`}
+                title="Portaria da Chamada: Permitir ou recusar entrada de pessoas"
+              >
+                {pendingKnocksCount > 0 ? (
+                  <BellRing className="w-3.5 h-3.5 animate-bounce" />
+                ) : (
+                  <UserCheck className="w-3.5 h-3.5 text-amber-400" />
+                )}
+                <span className="hidden sm:inline">Permitir Entrada</span>
+                {pendingKnocksCount > 0 && (
+                  <span className="bg-slate-950 text-amber-300 text-[10px] font-black px-1.5 py-0.2 rounded-full border border-amber-400">
+                    {pendingKnocksCount}
+                  </span>
+                )}
+              </button>
             )}
-            <span className="hidden sm:inline">Permitir Entrada</span>
-            {pendingKnocksCount > 0 && (
-              <span className="bg-slate-950 text-amber-300 text-[10px] font-black px-1.5 py-0.2 rounded-full border border-amber-400">
-                {pendingKnocksCount}
-              </span>
+
+            {/* Vídeo MP4 & GIF */}
+            {onOpenOwnerProfile && (
+              <button
+                onClick={onOpenOwnerProfile}
+                className="flex items-center gap-1.5 bg-[#121b2d] hover:bg-[#1a2742] text-amber-300 border border-amber-500/40 text-xs px-3 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer"
+                title="Editar Foto, Vídeos MP4, GIFs Animados e Perfil do Dono"
+              >
+                <Camera className="w-3.5 h-3.5 text-amber-400" />
+                <span className="font-medium hidden md:inline">Vídeo MP4 & GIF</span>
+              </button>
             )}
-          </button>
-        )}
 
-        {self.isHost && onOpenOwnerProfile && (
-          <button
-            onClick={onOpenOwnerProfile}
-            className="flex items-center gap-1.5 bg-[#121b2d] hover:bg-[#1a2742] text-amber-300 border border-amber-500/40 text-xs px-3 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer"
-            title="Editar Foto, Vídeos MP4, GIFs Animados e Perfil do Dono"
-          >
-            <Camera className="w-3.5 h-3.5 text-amber-400" />
-            <span className="font-medium hidden md:inline">Vídeo MP4 & GIF</span>
-          </button>
-        )}
-
-        {self.isHost && (
-          <button
-            onClick={onOpenHostPanel}
-            className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500/20 to-amber-600/20 hover:from-amber-500/30 hover:to-amber-600/30 text-amber-300 border border-amber-500/40 text-xs px-3 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer"
-          >
-            <Crown className="w-3.5 h-3.5 text-amber-400" />
-            <span className="font-medium hidden sm:inline">Painel Master</span>
-          </button>
+            {/* Painel Master */}
+            {onOpenHostPanel && (
+              <button
+                onClick={onOpenHostPanel}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500/20 to-amber-600/20 hover:from-amber-500/30 hover:to-amber-600/30 text-amber-300 border border-amber-500/40 text-xs px-3 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer"
+              >
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <span className="font-medium hidden sm:inline">Painel Master</span>
+              </button>
+            )}
+          </>
         )}
 
         <button

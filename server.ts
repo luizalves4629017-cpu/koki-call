@@ -15,6 +15,7 @@ interface ServerParticipant {
   name: string;
   tag: string;
   isHost: boolean;
+  isMaster?: boolean;
   hasAudio: boolean;
   hasVideo: boolean;
   isScreenSharing: boolean;
@@ -40,6 +41,7 @@ interface ServerParticipant {
     grantedBy: string;
   };
   joinedAt: number;
+  voiceChannelId?: string;
 }
 
 interface ServerTextChannel {
@@ -545,16 +547,17 @@ async function startServer() {
           });
         }
 
-        const defaultBadges = isMasterHost
-          ? ["owner_supreme", "koki_creator", "nitro_owner"]
-          : ["host_room"];
-
         const resolvedTag = resolveServerParticipantTag(hostName, isMasterHost, profile?.tag);
 
-        let cleanBadges = profile?.badges && profile.badges.length > 0 ? profile.badges : defaultBadges;
-        if (!isMasterHost) {
-          cleanBadges = cleanBadges.filter((b) => !b.includes("owner") && b !== "koki_creator");
-          if (cleanBadges.length === 0) cleanBadges = ["host_room"];
+        let cleanBadges: string[] = [];
+        if (isMasterHost) {
+          cleanBadges = profile?.badges && profile.badges.length > 0
+            ? profile.badges
+            : ["owner_supreme", "koki_creator", "nitro_owner"];
+        } else {
+          cleanBadges = (profile?.badges || []).filter(
+            (b) => !b.includes("owner") && b !== "koki_creator" && b !== "nitro_owner" && b !== "pioneer_member" && b !== "host_room"
+          );
         }
 
         const hostParticipant: ServerParticipant = {
@@ -562,6 +565,7 @@ async function startServer() {
           name: (hostName && hostName.trim().length > 0) ? hostName.trim() : (isMasterHost ? MASTER_NAME : "Anfitrião"),
           tag: resolvedTag,
           isHost: true,
+          isMaster: isMasterHost,
           hasAudio: true,
           hasVideo: false,
           isScreenSharing: false,
@@ -576,6 +580,7 @@ async function startServer() {
           bio: profile?.bio || (isMasterHost ? "Criador e moderador oficial do Koki Call." : "Anfitrião desta sala."),
           badges: cleanBadges,
           joinedAt: Date.now(),
+          voiceChannelId: "voice-geral",
         };
 
         const targetRoom: ServerRoom = {
@@ -755,15 +760,15 @@ async function startServer() {
         const isHost = isAuthenticHost;
         const resolvedTag = resolveServerParticipantTag(name, isMasterUser, profile?.tag);
 
-        let cleanBadges = profile?.badges && profile.badges.length > 0
-          ? profile.badges
-          : isHost
-          ? (isMasterUser ? ["owner_supreme", "koki_creator", "nitro_owner"] : ["host_room"])
-          : ["pioneer_member"];
-
-        if (!isMasterUser) {
-          cleanBadges = cleanBadges.filter((b) => !b.includes("owner") && b !== "koki_creator");
-          if (cleanBadges.length === 0) cleanBadges = isHost ? ["host_room"] : ["pioneer_member"];
+        let cleanBadges: string[] = [];
+        if (isMasterUser) {
+          cleanBadges = profile?.badges && profile.badges.length > 0
+            ? profile.badges
+            : ["owner_supreme", "koki_creator", "nitro_owner"];
+        } else {
+          cleanBadges = (profile?.badges || []).filter(
+            (b) => !b.includes("owner") && b !== "koki_creator" && b !== "nitro_owner" && b !== "pioneer_member" && b !== "host_room"
+          );
         }
 
         const participant: ServerParticipant = {
@@ -771,6 +776,7 @@ async function startServer() {
           name: (name && name.trim().length > 0) ? name.trim() : (isHost ? (isMasterUser ? MASTER_NAME : "Anfitrião") : `Convidado ${Math.floor(100 + Math.random() * 900)}`),
           tag: resolvedTag,
           isHost,
+          isMaster: isMasterUser,
           hasAudio: true,
           hasVideo: false,
           isScreenSharing: false,
@@ -785,6 +791,7 @@ async function startServer() {
           bio: profile?.bio || (isHost ? "Criador e moderador oficial do Koki Call." : "Participante Convidado."),
           badges: cleanBadges,
           joinedAt: Date.now(),
+          voiceChannelId: "voice-geral",
         };
 
         if (isHost && (!room.hostSocketId || !room.participants.has(room.hostSocketId))) {
@@ -886,6 +893,7 @@ async function startServer() {
         customStatus: "🟢 Conectado na Call",
         bio: "Participante autorizado pelo Dono.",
         joinedAt: Date.now(),
+        voiceChannelId: "voice-geral",
       };
 
       room.participants.set(knock.socketId, participant);
@@ -946,6 +954,7 @@ async function startServer() {
           customStatus: "🟢 Conectado na Call",
           bio: "Participante autorizado pelo Dono.",
           joinedAt: Date.now(),
+          voiceChannelId: "voice-geral",
         };
 
         room.participants.set(knock.socketId, participant);
@@ -1455,9 +1464,11 @@ async function startServer() {
           if (safeUpdates.tag && isReservedTag(safeUpdates.tag)) {
             delete safeUpdates.tag;
           }
-          // Filter out owner badges for non-masters
+          // Filter out owner and default badges for non-masters
           if (Array.isArray(safeUpdates.badges)) {
-            safeUpdates.badges = safeUpdates.badges.filter((b) => !b.includes("owner") && b !== "koki_creator");
+            safeUpdates.badges = safeUpdates.badges.filter(
+              (b) => !b.includes("owner") && b !== "koki_creator" && b !== "nitro_owner" && b !== "pioneer_member" && b !== "host_room"
+            );
           }
         }
 
@@ -1486,6 +1497,123 @@ async function startServer() {
 
         Object.assign(participant, safeUpdates);
         io.to(targetRoomId).emit("room:user-updated", participant);
+      }
+    });
+
+    // 6.1. Voice Channel Selection & VIP Access Control
+    socket.on("voice:select-channel", (data: { channelId: string; masterToken?: string; roomId?: string }, callback) => {
+      const targetRoomId = currentRoomId || data?.roomId;
+      if (!targetRoomId) {
+        if (typeof callback === "function") callback({ success: false, message: "Sala não encontrada" });
+        return;
+      }
+      const room = rooms.get(targetRoomId);
+      if (!room) {
+        if (typeof callback === "function") callback({ success: false, message: "Sala inativa" });
+        return;
+      }
+
+      const participant = room.participants.get(socket.id);
+      if (!participant) {
+        if (typeof callback === "function") callback({ success: false, message: "Participante não encontrado" });
+        return;
+      }
+
+      const targetChannelId = data.channelId || "voice-geral";
+
+      // If user tries to join VIP channel
+      if (targetChannelId === "voice-vip") {
+        const isMaster = Boolean(participant.isMaster || validateServerMasterAuth(data.masterToken).isMaster);
+        if (!isMaster) {
+          if (typeof callback === "function") {
+            callback({ success: false, message: "Canal restrito ao Dono Master" });
+          }
+          return;
+        }
+      }
+
+      participant.voiceChannelId = targetChannelId;
+      io.to(targetRoomId).emit("room:user-updated", participant);
+
+      if (typeof callback === "function") {
+        callback({ success: true, channelId: targetChannelId });
+      }
+    });
+
+    // 6.2. Master Drag / Move Members between Voice Channels
+    socket.on("host:move-voice-channel", (data: {
+      targetSocketId: string;
+      targetChannelId: string;
+      masterToken?: string;
+      roomId?: string;
+    }, callback) => {
+      const targetRoomId = currentRoomId || data?.roomId;
+      if (!targetRoomId) {
+        if (typeof callback === "function") callback({ success: false, message: "Sala não encontrada" });
+        return;
+      }
+      const room = rooms.get(targetRoomId);
+      if (!room) {
+        if (typeof callback === "function") callback({ success: false, message: "Sala inativa" });
+        return;
+      }
+
+      const requester = room.participants.get(socket.id);
+      const isMasterAuth = Boolean(requester?.isMaster || validateServerMasterAuth(data.masterToken).isMaster);
+
+      if (!isMasterAuth) {
+        if (typeof callback === "function") callback({ success: false, message: "Apenas o Dono Master pode mover membros entre canais." });
+        return;
+      }
+
+      const target = room.participants.get(data.targetSocketId);
+      if (!target) {
+        if (typeof callback === "function") callback({ success: false, message: "Membro não encontrado na sala." });
+        return;
+      }
+
+      const cleanTargetChannelId = data.targetChannelId === "voice-vip" ? "voice-vip" : "voice-geral";
+      target.voiceChannelId = cleanTargetChannelId;
+
+      // Update room state
+      io.to(targetRoomId).emit("room:user-updated", target);
+
+      // Directly notify target client
+      const targetSocket = io.sockets.sockets.get(data.targetSocketId);
+      if (targetSocket) {
+        targetSocket.emit("voice:forced-channel-change", {
+          channelId: cleanTargetChannelId,
+          channelName: cleanTargetChannelId === "voice-vip" ? "Call VIP" : "Geral",
+          movedBy: requester?.name || "Dono Master",
+        });
+      }
+
+      // System notification in chat
+      const channelName = cleanTargetChannelId === "voice-vip" ? "👑 Call VIP" : "🔊 Geral";
+      const moveMsg: ServerChatMessage = {
+        id: `sys-move-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        channelId: "geral",
+        senderId: "system",
+        senderName: "Koki Bot",
+        senderAvatarEmoji: "👑",
+        text: `👑 **${requester?.name || "Dono Master"}** moveu **${target.name}** para **${channelName}**!`,
+        timestamp: Date.now(),
+        isSystem: true,
+      };
+
+      const gMsgs = room.messagesByChannel.get("geral");
+      if (gMsgs) {
+        gMsgs.push(moveMsg);
+        if (gMsgs.length > 100) gMsgs.shift();
+      }
+      io.to(targetRoomId).emit("room:chat-message", moveMsg);
+
+      if (typeof callback === "function") {
+        callback({
+          success: true,
+          targetChannelId: cleanTargetChannelId,
+          message: `Membro movido para ${channelName} com sucesso!`,
+        });
       }
     });
 

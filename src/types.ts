@@ -13,6 +13,7 @@ export interface Participant {
   name: string;
   tag?: string; // e.g. "4921"
   isHost: boolean;
+  isMaster?: boolean;
   hasAudio: boolean;
   hasVideo: boolean;
   isScreenSharing: boolean;
@@ -35,6 +36,7 @@ export interface Participant {
   stream?: MediaStream;
   screenStream?: MediaStream;
   userVolume?: number; // local volume adjustment for this participant (0 to 200)
+  voiceChannelId?: string; // "voice-geral" or "voice-vip"
 }
 
 export interface KnockRequest {

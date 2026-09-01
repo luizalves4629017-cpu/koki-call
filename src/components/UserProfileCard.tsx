@@ -36,6 +36,7 @@ interface UserProfileCardProps {
   onOpenGrantVip?: (participant: Participant) => void;
   onOpenGrantBadges?: (participant: Participant) => void;
   onGiveCoins?: (targetSocketId: string, amount: number) => void;
+  onMoveToVoiceChannel?: (targetSocketId: string, targetChannelId: string) => void;
   onClose: () => void;
 }
 
@@ -51,12 +52,17 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
   onOpenGrantVip,
   onOpenGrantBadges,
   onGiveCoins,
+  onMoveToVoiceChannel,
   onClose,
 }) => {
   const minutesConnected = Math.max(1, Math.floor((Date.now() - participant.joinedAt) / 60000));
   const hasVip = Boolean(participant.vipPermissions) || Boolean(participant.badges?.includes("vip_role")) || Boolean(participant.badges?.includes("vip_granted"));
   const [vipCountdown, setVipCountdown] = useState<string>("");
-  const isMasterUser = participant.tag === "0001" || Boolean(participant.badges?.includes("owner_supreme")) || isMasterIdentity(participant.name);
+  const isMasterUser = Boolean(
+    participant.isMaster ||
+    (isSelf && isMasterIdentity()) ||
+    (participant.tag === "0001" && isMasterIdentity(participant.name))
+  );
   const coins = isSelf ? (typeof participant.kokiCoins === "number" ? participant.kokiCoins : getKokiCoins()) : participant.kokiCoins;
 
   const [coinMode, setCoinMode] = useState<"add" | "deduct">("add");
@@ -109,7 +115,7 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
     return () => clearInterval(interval);
   }, [participant.vipPermissions, hasVip]);
 
-  const canHaveMediaBanner = participant.isHost || hasVip || Boolean(participant.bannerUrl);
+  const canHaveMediaBanner = isMasterUser || hasVip || Boolean(participant.bannerUrl);
 
   return (
     <div
@@ -139,12 +145,12 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
           <div
             className="h-28 w-full relative bg-cover bg-center overflow-hidden"
             style={{
-              backgroundColor: participant.bannerColor || (participant.isHost ? "#1e293b" : "#3b0764"),
+              backgroundColor: participant.bannerColor || (isMasterUser ? "#1e293b" : "#3b0764"),
               backgroundImage:
                 participant.bannerUrl && !isVideoMedia(participant.bannerUrl)
                   ? `url(${participant.bannerUrl})`
                   : !participant.bannerUrl
-                  ? participant.isHost
+                  ? isMasterUser
                     ? "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)"
                     : "linear-gradient(135deg, #3b0764 0%, #1e1b4b 100%)"
                   : undefined,
@@ -163,15 +169,20 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
             )}
 
             <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5">
-              {participant.isHost ? (
+              {isMasterUser ? (
                 <div className="bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider text-amber-300 uppercase flex items-center gap-1.5 border border-amber-500/40 shadow-md">
                   <Crown className="w-3 h-3 text-amber-400 fill-amber-400/40" />
                   <span>Dono Master</span>
                 </div>
-              ) : (
+              ) : hasVip ? (
                 <div className="bg-purple-950/80 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider text-purple-200 uppercase flex items-center gap-1.5 border border-purple-500/40 shadow-md">
                   <Gem className="w-3 h-3 text-purple-400 fill-purple-400/40" />
                   <span>Membro VIP</span>
+                </div>
+              ) : (
+                <div className="bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] font-medium tracking-wider text-cyan-300 uppercase flex items-center gap-1.5 border border-cyan-500/30 shadow-md">
+                  <User className="w-3 h-3 text-cyan-400" />
+                  <span>Convidado</span>
                 </div>
               )}
             </div>
@@ -191,14 +202,14 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
           <div className={`relative ${canHaveMediaBanner ? "-mt-12" : "-mt-8"} mb-2.5 inline-block`}>
             <div
               className={`rounded-full flex items-center justify-center font-bold shadow-2xl ring-4 ring-[#0d1220] overflow-hidden ${
-                participant.isHost
+                isMasterUser
                   ? "w-20 h-20 text-3xl ring-amber-500/50"
                   : hasVip
                   ? "w-20 h-20 text-2xl ring-purple-500/50"
                   : "w-16 h-16 text-xl bg-[#131c2e] text-slate-200 border border-[#202e48]"
               }`}
               style={{
-                backgroundColor: participant.avatarColor || (participant.isHost ? "#f59e0b" : "#162032"),
+                backgroundColor: participant.avatarColor || (isMasterUser ? "#f59e0b" : "#162032"),
               }}
             >
               {participant.avatarUrl ? (
@@ -243,7 +254,7 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
             <h2 className="text-lg font-black text-white tracking-tight truncate">
               {participant.name}
             </h2>
-            {participant.tag === "0001" || participant.badges?.includes("owner_supreme") ? (
+            {isMasterUser || participant.tag === "0001" ? (
               <span className="text-[11px] font-bold font-mono text-amber-300 bg-amber-950/80 border border-amber-500/50 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
                 <Crown className="w-3 h-3 text-amber-400 fill-current" />
                 <span>#0001</span>
@@ -277,7 +288,7 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
             {/* Equipped Badges */}
             <BadgeList
               badgeIds={participant.badges}
-              isHost={participant.isHost}
+              isHost={isMasterUser}
               size="sm"
               showLabels={true}
               maxVisible={8}
@@ -299,8 +310,8 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
             )}
           </div>
 
-          {/* Profile Edit Button for Self (Owner or VIP) */}
-          {isSelf && (participant.isHost || hasVip) && onOpenOwnerProfileEditor && (
+          {/* Profile Edit Button: ONLY for authenticated Master */}
+          {isSelf && isMasterUser && onOpenOwnerProfileEditor && (
             <div className="mt-3">
               <button
                 id="open-profile-editor-btn"
@@ -308,18 +319,10 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
                   onClose();
                   onOpenOwnerProfileEditor();
                 }}
-                className={`w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm ${
-                  participant.isHost
-                    ? "bg-gradient-to-r from-amber-500/20 to-amber-600/20 hover:from-amber-500/30 hover:to-amber-600/30 text-amber-300 border border-amber-500/40"
-                    : "bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 text-purple-300 border border-purple-500/40"
-                }`}
+                className="w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm bg-gradient-to-r from-amber-500/20 to-amber-600/20 hover:from-amber-500/30 hover:to-amber-600/30 text-amber-300 border border-amber-500/40"
               >
                 <Camera className="w-3.5 h-3.5" />
-                <span>
-                  {participant.isHost
-                    ? "Editar Perfil do Dono (Foto, Vídeo MP4 & Insígnias)"
-                    : "Personalizar Perfil VIP (GIF / MP4 / Insígnias)"}
-                </span>
+                <span>Editar Perfil do Dono (Foto, Vídeo MP4 & Insígnias)</span>
               </button>
             </div>
           )}
@@ -347,10 +350,20 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
             </p>
           </div>
 
-          {/* Connected Time */}
-          <div className="flex items-center gap-2 text-xs text-slate-400 mb-3 bg-[#121a2d]/60 px-3 py-1.5 rounded-xl border border-[#202e48]">
-            <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span>Na chamada há <strong>{minutesConnected} min</strong></span>
+          {/* Connected Time & Voice Channel */}
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="flex items-center gap-1.5 text-xs text-slate-400 bg-[#121a2d]/60 px-2.5 py-1.5 rounded-xl border border-[#202e48]">
+              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="truncate">Há <strong>{minutesConnected} min</strong></span>
+            </div>
+            <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border font-semibold truncate ${
+              participant.voiceChannelId === "voice-vip"
+                ? "bg-amber-950/40 text-amber-300 border-amber-500/40"
+                : "bg-emerald-950/40 text-emerald-300 border-emerald-500/40"
+            }`}>
+              <Volume2 className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{participant.voiceChannelId === "voice-vip" ? "Call VIP 👑" : "Geral 🔊"}</span>
+            </div>
           </div>
 
           {/* Individual User Volume Control (for remote users) */}
@@ -490,6 +503,29 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
                   </button>
                 </form>
               </div>
+
+              {/* Move / Drag Member to VIP or Geral Channel (Exclusive Master Control) */}
+              {onMoveToVoiceChannel && (
+                <button
+                  id={`move-channel-btn-${participant.id}`}
+                  onClick={() => {
+                    const nextChannel = participant.voiceChannelId === "voice-vip" ? "voice-geral" : "voice-vip";
+                    onMoveToVoiceChannel(participant.id, nextChannel);
+                  }}
+                  className={`w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer border ${
+                    participant.voiceChannelId === "voice-vip"
+                      ? "bg-gradient-to-r from-cyan-600/25 via-blue-600/25 to-cyan-600/25 hover:from-cyan-600/35 hover:to-blue-600/35 text-cyan-200 border-cyan-500/40"
+                      : "bg-gradient-to-r from-amber-500/30 via-yellow-500/30 to-amber-500/30 hover:from-amber-500/40 hover:to-yellow-500/40 text-amber-200 border-amber-500/50 shadow-amber-950/40"
+                  }`}
+                >
+                  <Crown className="w-3.5 h-3.5 text-amber-400" />
+                  <span>
+                    {participant.voiceChannelId === "voice-vip"
+                      ? "🔊 Mover para Canal Geral"
+                      : "👑 Mover para Call VIP (Arrastar)"}
+                  </span>
+                </button>
+              )}
 
               {/* Special VIP Grant / Manage Button for the Owner */}
               {onOpenGrantVip && (

@@ -88,7 +88,11 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
   const [bio, setBio] = useState(self.bio || (isSelfMaster ? "Criador e moderador oficial desta sala." : "Participante do Koki Call"));
   const [customTitle, setCustomTitle] = useState(self.customTitle || "");
   const [badges, setBadges] = useState<string[]>(
-    self.badges || (isSelfMaster ? ["owner_supreme", "koki_creator", "nitro_owner"] : ["pioneer_member"])
+    self.badges && self.badges.length > 0
+      ? self.badges
+      : isSelfMaster
+      ? ["owner_supreme", "koki_creator", "nitro_owner"]
+      : []
   );
   const [isProcessingImg, setIsProcessingImg] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -703,7 +707,7 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
             <BadgeSelector
               selectedBadgeIds={badges}
               onChange={setBadges}
-              isHost={isHost}
+              isHost={isSelfMaster}
               hasVip={hasVip}
               maxSelectable={6}
             />

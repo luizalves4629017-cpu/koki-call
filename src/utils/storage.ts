@@ -521,16 +521,17 @@ export function getSavedUserProfile(): SavedUserProfile {
       const name = parsed.name || (isMaster ? MASTER_DEFAULT_USERNAME : "");
       let tag = resolveUserTag(name, isMaster, parsed.tag);
 
-      // Clean badges for non-master
-      let badges = Array.isArray(parsed.badges) && parsed.badges.length > 0
-        ? parsed.badges
-        : isMaster
-        ? ["owner_supreme", "koki_creator", "nitro_owner"]
-        : ["pioneer_member"];
-
-      if (!isMaster) {
-        badges = badges.filter((b: string) => !b.includes("owner") && b !== "koki_creator");
-        if (badges.length === 0) badges = ["pioneer_member"];
+      // Clean badges for non-master accounts (guests start with badges: [])
+      let badges: string[] = [];
+      if (isMaster) {
+        badges = Array.isArray(parsed.badges) && parsed.badges.length > 0
+          ? parsed.badges
+          : ["owner_supreme", "koki_creator", "nitro_owner"];
+      } else {
+        // Non-master users must NEVER have owner badges or default pioneer badge
+        badges = Array.isArray(parsed.badges)
+          ? parsed.badges.filter((b: string) => !b.includes("owner") && b !== "koki_creator" && b !== "nitro_owner" && b !== "pioneer_member" && b !== "host_room")
+          : [];
         if (tag === "0001" || isReservedMasterTag(tag)) {
           tag = generateStandardUserTag();
         }
@@ -569,7 +570,7 @@ export function getSavedUserProfile(): SavedUserProfile {
     customTitle: undefined,
     kokiCoins: coins,
     purchasedPerks: perks,
-    badges: isMaster ? ["owner_supreme", "koki_creator", "nitro_owner"] : ["pioneer_member"],
+    badges: isMaster ? ["owner_supreme", "koki_creator", "nitro_owner"] : [],
     rememberLogin: true,
   };
 }
@@ -581,10 +582,11 @@ export function saveUserProfile(profile: Partial<SavedUserProfile>): void {
     const resolvedName = profile.name ?? current.name;
     const resolvedTag = resolveUserTag(resolvedName, isMaster, profile.tag ?? current.tag);
 
-    let cleanBadges = profile.badges ?? current.badges;
+    let cleanBadges = profile.badges !== undefined ? profile.badges : current.badges;
     if (!isMaster && Array.isArray(cleanBadges)) {
-      cleanBadges = cleanBadges.filter((b) => !b.includes("owner") && b !== "koki_creator");
-      if (cleanBadges.length === 0) cleanBadges = ["pioneer_member"];
+      cleanBadges = cleanBadges.filter((b) => !b.includes("owner") && b !== "koki_creator" && b !== "nitro_owner" && b !== "pioneer_member" && b !== "host_room");
+    } else if (isMaster && (!cleanBadges || cleanBadges.length === 0)) {
+      cleanBadges = ["owner_supreme", "koki_creator", "nitro_owner"];
     }
 
     const updated: SavedUserProfile = {
@@ -592,7 +594,7 @@ export function saveUserProfile(profile: Partial<SavedUserProfile>): void {
       ...profile,
       name: resolvedName,
       tag: resolvedTag,
-      badges: cleanBadges,
+      badges: cleanBadges || [],
     };
 
     if (isMaster) {
