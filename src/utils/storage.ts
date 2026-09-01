@@ -131,13 +131,15 @@ export function generateStandardUserTag(): string {
  * Checks if the user qualifies as Master based strictly on authenticated master key/token or master auth flag
  */
 export function isMasterIdentity(name?: string | null, isMasterAuth?: boolean): boolean {
-  if (isMasterAuth) return true;
+  if (typeof isMasterAuth === "boolean") {
+    return isMasterAuth;
+  }
 
   if (typeof window !== "undefined" && window.localStorage) {
     try {
       const savedKey = localStorage.getItem("koki_master_key_saved");
       const savedToken = localStorage.getItem("koki_master_token");
-      if (savedKey && (savedKey.trim().toLowerCase() === "koki24122024master" || savedKey.trim().toLowerCase().includes("master"))) {
+      if (savedKey && savedKey.trim().toLowerCase() === "koki24122024master") {
         return true;
       }
       if (savedToken && typeof savedToken === "string" && savedToken.length >= 10) {

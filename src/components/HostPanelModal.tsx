@@ -68,11 +68,12 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [confirmCloseRoom, setConfirmCloseRoom] = useState(false);
 
-  // Koki Coins direct transfer states
+  // Koki Coins direct transfer & moderation states
   const otherParticipants = room.participants.filter((p) => p.id !== self.id);
   const [selectedCoinTarget, setSelectedCoinTarget] = useState<string>(
     otherParticipants.length > 0 ? otherParticipants[0].id : (room.participants[0]?.id || "")
   );
+  const [coinMode, setCoinMode] = useState<"add" | "deduct">("add");
   const [coinAmount, setCoinAmount] = useState<string>("100");
   const [isSendingCoins, setIsSendingCoins] = useState<boolean>(false);
   const [coinFeedback, setCoinFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -94,22 +95,23 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
     }
   };
 
-  const handleSendCoins = (e?: React.FormEvent) => {
+  const handleManageCoins = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setCoinFeedback(null);
 
     const targetId = selectedCoinTarget || (otherParticipants[0]?.id) || (room.participants[0]?.id);
     if (!targetId) {
-      setCoinFeedback({ type: "error", message: "Selecione um participante para receber as moedas." });
+      setCoinFeedback({ type: "error", message: "Selecione um participante para a ação." });
       return;
     }
 
-    const amount = parseInt(coinAmount, 10);
-    if (isNaN(amount) || amount <= 0) {
+    const rawNum = parseInt(coinAmount, 10);
+    if (isNaN(rawNum) || rawNum <= 0) {
       setCoinFeedback({ type: "error", message: "Informe uma quantidade válida de moedas (mínimo 1)." });
       return;
     }
 
+    const amount = coinMode === "deduct" ? -rawNum : rawNum;
     const targetParticipant = room.participants.find((p) => p.id === targetId);
     const targetName = targetParticipant?.name || "participante";
 
@@ -127,6 +129,7 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
         {
           targetSocketId: targetId,
           amount,
+          action: coinMode,
           roomId: room.roomId,
         },
         (res: { success: boolean; message?: string; newBalance?: number }) => {
@@ -134,13 +137,15 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
           if (res && res.success) {
             setCoinFeedback({
               type: "success",
-              message: res.message || `+${amount.toLocaleString()} Koki Coins enviadas para ${targetName}!`,
+              message: res.message || (coinMode === "deduct"
+                ? `-${rawNum.toLocaleString()} Koki Coins removidas de ${targetName}!`
+                : `+${rawNum.toLocaleString()} Koki Coins enviadas para ${targetName}!`),
             });
             setTimeout(() => setCoinFeedback(null), 4000);
           } else {
             setCoinFeedback({
               type: "error",
-              message: res?.message || "Erro ao enviar moedas para o participante.",
+              message: res?.message || `Erro ao ${coinMode === "deduct" ? "remover" : "enviar"} moedas.`,
             });
           }
         }
@@ -149,7 +154,9 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
       setIsSendingCoins(false);
       setCoinFeedback({
         type: "success",
-        message: `+${amount.toLocaleString()} Koki Coins enviadas para ${targetName}!`,
+        message: coinMode === "deduct"
+          ? `-${rawNum.toLocaleString()} Koki Coins removidas de ${targetName}!`
+          : `+${rawNum.toLocaleString()} Koki Coins enviadas para ${targetName}!`,
       });
       setTimeout(() => setCoinFeedback(null), 4000);
     }
@@ -463,32 +470,78 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
                 </div>
               </div>
 
-              {/* Send Koki Coins Directly to Participant Section */}
-              <div className="bg-gradient-to-br from-[#131b2e] to-[#0c1322] border border-amber-500/30 rounded-xl p-4 space-y-3 shadow-lg">
+              {/* Send or Deduct Koki Coins (Master Moderation) */}
+              <div className={`border rounded-xl p-4 space-y-3 shadow-lg transition-all ${
+                coinMode === "deduct"
+                  ? "bg-gradient-to-br from-[#201017] to-[#0c0810] border-rose-500/40"
+                  : "bg-gradient-to-br from-[#131b2e] to-[#0c1322] border-amber-500/30"
+              }`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/40">
-                      <Coins className="w-4 h-4 fill-amber-400/40" />
+                    <div className={`p-1.5 rounded-lg border ${
+                      coinMode === "deduct"
+                        ? "bg-rose-500/20 text-rose-400 border-rose-500/40"
+                        : "bg-amber-500/20 text-amber-400 border-amber-500/40"
+                    }`}>
+                      <Coins className="w-4 h-4 fill-current" />
                     </div>
                     <div>
                       <span className="font-bold text-white text-xs block">
-                        Enviar Koki Coins para Participante
+                        Moderação de Koki Coins (Conceder ou Tirar)
                       </span>
                       <span className="text-[10px] text-slate-400">
-                        Transfira moedas instantaneamente para qualquer membro da call
+                        {coinMode === "deduct"
+                          ? "Remova moedas do participante selecionado instantaneamente"
+                          : "Transfira moedas instantaneamente para qualquer membro da call"}
                       </span>
                     </div>
                   </div>
-                  <span className="text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                    coinMode === "deduct"
+                      ? "bg-rose-500/10 text-rose-300 border-rose-500/30"
+                      : "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                  }`}>
                     Host Master
                   </span>
                 </div>
 
-                <form onSubmit={handleSendCoins} className="space-y-3 pt-1">
+                {/* Mode Selector Toggle: Adicionar vs Tirar Moedas */}
+                <div className="grid grid-cols-2 gap-1.5 bg-[#080d18] p-1 rounded-xl border border-[#1b263b]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCoinMode("add");
+                      setCoinFeedback(null);
+                    }}
+                    className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      coinMode === "add"
+                        ? "bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-md shadow-amber-950/40"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    <span>+ Conceder Moedas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCoinMode("deduct");
+                      setCoinFeedback(null);
+                    }}
+                    className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      coinMode === "deduct"
+                        ? "bg-gradient-to-r from-rose-600 to-rose-700 text-white shadow-md shadow-rose-950/40"
+                        : "text-slate-400 hover:text-rose-300"
+                    }`}
+                  >
+                    <span>- Tirar Moedas</span>
+                  </button>
+                </div>
+
+                <form onSubmit={handleManageCoins} className="space-y-3 pt-1">
                   {/* Select Target Participant */}
                   <div>
                     <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                      Destinatário:
+                      Participante Alvo:
                     </label>
                     <select
                       value={selectedCoinTarget}
@@ -503,7 +556,7 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
                       ) : (
                         room.participants.map((p) => (
                           <option key={p.id} value={p.id}>
-                            {p.name} {p.id === self.id ? "(Você)" : ""} {p.isHost ? "👑" : ""} #{p.tag || "1024"}
+                            {p.name} {p.id === self.id ? "(Você)" : ""} {p.isHost ? "👑" : ""} #{p.tag || "1024"} {p.kokiCoins !== undefined ? `(${p.kokiCoins} coins)` : ""}
                           </option>
                         ))
                       )}
@@ -513,32 +566,47 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
                   {/* Coin Amount Input & Quick Preset Buttons */}
                   <div>
                     <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                      Quantidade de Moedas:
+                      {coinMode === "deduct" ? "Quantidade a Remover:" : "Quantidade a Conceder:"}
                     </label>
                     <div className="flex gap-2">
                       <div className="relative flex-1">
-                        <Coins className="w-4 h-4 text-amber-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <Coins className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${
+                          coinMode === "deduct" ? "text-rose-400" : "text-amber-400"
+                        }`} />
                         <input
                           type="number"
                           min="1"
-                          max="100000"
+                          max="1000000"
                           value={coinAmount}
                           onChange={(e) => setCoinAmount(e.target.value)}
                           placeholder="Ex: 500"
-                          className="w-full bg-[#080d1a] border border-[#22334f] text-amber-300 font-mono font-bold text-xs rounded-xl pl-9 pr-3 py-2 focus:outline-none focus:border-amber-400 transition-colors"
+                          className={`w-full bg-[#080d1a] border text-xs rounded-xl pl-9 pr-3 py-2 focus:outline-none font-mono font-bold transition-colors ${
+                            coinMode === "deduct"
+                              ? "border-rose-500/40 text-rose-200 focus:border-rose-400"
+                              : "border-[#22334f] text-amber-300 focus:border-amber-400"
+                          }`}
                         />
                       </div>
                       <button
                         type="submit"
                         disabled={isSendingCoins || !selectedCoinTarget || !coinAmount}
-                        className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shrink-0 transition-all shadow-md active:scale-95 cursor-pointer"
+                        className={`font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shrink-0 transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50 ${
+                          coinMode === "deduct"
+                            ? "bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white"
+                            : "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950"
+                        }`}
                       >
                         {isSendingCoins ? (
-                          <span>Enviando...</span>
+                          <span>Processando...</span>
+                        ) : coinMode === "deduct" ? (
+                          <>
+                            <UserX className="w-3.5 h-3.5" />
+                            <span>Tirar Moedas</span>
+                          </>
                         ) : (
                           <>
                             <Send className="w-3.5 h-3.5" />
-                            <span>Enviar Moedas</span>
+                            <span>Conceder Moedas</span>
                           </>
                         )}
                       </button>
@@ -554,11 +622,13 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
                           onClick={() => setCoinAmount(preset)}
                           className={`text-[10px] px-2 py-0.5 rounded-lg border transition-all cursor-pointer font-mono font-medium ${
                             coinAmount === preset
-                              ? "bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm"
-                              : "bg-[#090e1a] text-slate-300 border-[#22334f] hover:border-amber-500/50 hover:text-amber-300"
+                              ? coinMode === "deduct"
+                                ? "bg-rose-600 text-white border-rose-400 font-bold shadow-sm"
+                                : "bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm"
+                              : "bg-[#090e1a] text-slate-300 border-[#22334f] hover:border-slate-500 hover:text-white"
                           }`}
                         >
-                          +{preset}
+                          {coinMode === "deduct" ? `-${preset}` : `+${preset}`}
                         </button>
                       ))}
                     </div>

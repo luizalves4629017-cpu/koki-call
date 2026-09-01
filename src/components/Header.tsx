@@ -17,6 +17,8 @@ import {
   LogOut,
   Coins,
   Sparkles,
+  Hash,
+  PanelLeft,
 } from "lucide-react";
 import { Participant, RoomState } from "../types";
 import { getEffectiveInviteUrl } from "../utils/inviteUrl";
@@ -36,6 +38,8 @@ interface HeaderProps {
   onOpenAdmissionModal?: () => void;
   onOpenSecurityAudit?: () => void;
   onOpenOwnerProfile?: () => void;
+  isChannelsOpen?: boolean;
+  onToggleChannels?: () => void;
   onToggleLowResource: () => void;
   onLeaveRoom?: () => void;
 }
@@ -47,6 +51,8 @@ export const Header: React.FC<HeaderProps> = ({
   pingMs,
   pendingKnocksCount = 0,
   kokiCoins,
+  isChannelsOpen,
+  onToggleChannels,
   onOpenStore,
   onOpenInvite,
   onOpenHostPanel,
@@ -79,6 +85,22 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Home className="w-4 h-4 text-cyan-400 group-hover:text-rose-300 transition-colors" />
             <span className="font-semibold hidden md:inline">Menu Inicial</span>
+          </button>
+        )}
+
+        {/* Toggle Discord Channels Sidebar */}
+        {onToggleChannels && (
+          <button
+            onClick={onToggleChannels}
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer border ${
+              isChannelsOpen
+                ? "bg-indigo-950/70 border-indigo-500/50 text-indigo-300 shadow-indigo-950/50"
+                : "bg-[#121a2d] hover:bg-[#1a253d] border-[#202f4a] text-slate-300 hover:text-white"
+            }`}
+            title="Alternar Canais do Discord"
+          >
+            <PanelLeft className="w-4 h-4 text-indigo-400" />
+            <span className="font-semibold hidden xl:inline">Canais</span>
           </button>
         )}
 

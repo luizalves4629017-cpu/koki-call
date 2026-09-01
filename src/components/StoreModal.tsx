@@ -67,7 +67,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   const [customTitleInput, setCustomTitleInput] = useState<string>(savedProfile.customTitle || self?.customTitle || "");
   const [savedTitleFeedback, setSavedTitleFeedback] = useState<boolean>(false);
 
-  const isMasterUser = Boolean(isMaster || isMasterIdentity(self?.name, self?.tag));
+  const isMasterUser = Boolean(isMaster);
 
   // Sync coins, perks and cooldown info on interval
   useEffect(() => {

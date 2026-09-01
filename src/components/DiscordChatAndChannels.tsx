@@ -11,6 +11,7 @@ import {
   Info,
   Crown,
   ShieldAlert,
+  Megaphone,
 } from "lucide-react";
 import { ChatMessage, Participant, TextChannel } from "../types";
 
@@ -74,15 +75,26 @@ export const DiscordChatAndChannels: React.FC<DiscordChatAndChannelsProps> = ({
     onSendMessage("/coin", activeChannel.id);
   };
 
+  const isAnnouncements = activeChannel.id === "anuncios" || activeChannel.name.toLowerCase().includes("anúncio") || activeChannel.name.toLowerCase().includes("anuncio");
+
   return (
     <aside className="w-96 bg-[#090e1a] border-l border-[#1b253b] flex flex-col h-full z-10 select-none">
       {/* Top Header: Channel Selector & Close Button */}
       <div className="h-14 px-3 border-b border-[#1b253b] flex items-center justify-between bg-[#080d18]">
         <div className="flex items-center gap-2 overflow-hidden">
-          <Hash className="w-5 h-5 text-slate-400 shrink-0" />
+          {isAnnouncements ? (
+            <Megaphone className="w-5 h-5 text-amber-400 shrink-0" />
+          ) : (
+            <Hash className="w-5 h-5 text-slate-400 shrink-0" />
+          )}
           <div className="truncate">
-            <h3 className="font-bold text-white text-xs truncate">
-              {activeChannel.name}
+            <h3 className="font-bold text-white text-xs truncate flex items-center gap-1.5">
+              <span>#{activeChannel.name}</span>
+              {isAnnouncements && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Oficial
+                </span>
+              )}
             </h3>
             <p className="text-[10px] text-slate-400 truncate">
               {activeChannel.description}
@@ -102,17 +114,24 @@ export const DiscordChatAndChannels: React.FC<DiscordChatAndChannelsProps> = ({
       <div className="flex items-center gap-1.5 p-2 bg-[#060a12] border-b border-[#1b253b] overflow-x-auto scrollbar-none">
         {channels.map((ch) => {
           const isActive = ch.id === activeChannel.id;
+          const isChAnnouncements = ch.id === "anuncios" || ch.name.toLowerCase().includes("anúncio") || ch.name.toLowerCase().includes("anuncio");
           return (
             <button
               key={ch.id}
               onClick={() => onSelectChannel(ch.id)}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
                 isActive
-                  ? "bg-cyan-950/80 text-cyan-300 border border-cyan-700/60 shadow-sm"
+                  ? isChAnnouncements
+                    ? "bg-amber-950/80 text-amber-300 border border-amber-700/60 shadow-sm"
+                    : "bg-cyan-950/80 text-cyan-300 border border-cyan-700/60 shadow-sm"
                   : "text-slate-400 hover:text-slate-200 hover:bg-[#121a2d]"
               }`}
             >
-              <Hash className={`w-3.5 h-3.5 ${isActive ? "text-cyan-400" : "text-slate-500"}`} />
+              {isChAnnouncements ? (
+                <Megaphone className={`w-3.5 h-3.5 ${isActive ? "text-amber-400" : "text-slate-500"}`} />
+              ) : (
+                <Hash className={`w-3.5 h-3.5 ${isActive ? "text-cyan-400" : "text-slate-500"}`} />
+              )}
               <span>{ch.name}</span>
             </button>
           );
@@ -122,9 +141,17 @@ export const DiscordChatAndChannels: React.FC<DiscordChatAndChannelsProps> = ({
       {/* Message List */}
       <div className="flex-1 p-3 overflow-y-auto space-y-3.5 bg-[#080d19]">
         {/* Welcome Channel Banner */}
-        <div className="p-3 bg-[#0d1424] border border-[#1b253b] rounded-xl text-center space-y-1">
-          <div className="w-10 h-10 rounded-full bg-cyan-950/70 border border-cyan-800/40 flex items-center justify-center mx-auto text-cyan-300">
-            <Hash className="w-5 h-5" />
+        <div className={`p-3 border rounded-xl text-center space-y-1 ${
+          isAnnouncements
+            ? "bg-[#181206] border-amber-500/30"
+            : "bg-[#0d1424] border-[#1b253b]"
+        }`}>
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center mx-auto ${
+            isAnnouncements
+              ? "bg-amber-950/70 border border-amber-800/50 text-amber-300"
+              : "bg-cyan-950/70 border border-cyan-800/40 text-cyan-300"
+          }`}>
+            {isAnnouncements ? <Megaphone className="w-5 h-5" /> : <Hash className="w-5 h-5" />}
           </div>
           <h4 className="font-bold text-white text-xs">
             Bem-vindo ao canal #{activeChannel.name}!

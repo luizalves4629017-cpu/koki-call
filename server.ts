@@ -99,9 +99,9 @@ interface ServerRoom {
 
 const DEFAULT_CHANNELS: ServerTextChannel[] = [
   { id: "geral", name: "geral", description: "Canal principal de texto da call" },
+  { id: "anuncios", name: "anuncios", description: "Canal oficial de anúncios e avisos da call" },
   { id: "links-midia", name: "links-e-mídia", description: "Links, clips de jogos e imagens seguras" },
   { id: "comandos", name: "comandos-bots", description: "Rolar dados, moedas e interações" },
-  { id: "memes-jogos", name: "memes-e-jogos", description: "Resenha, táticas e jogadas" },
 ];
 
 const AVATAR_COLORS = [
@@ -1202,8 +1202,8 @@ async function startServer() {
       }
     });
 
-    // 4.3 Send Koki Coins to Participant (Host / Master action)
-    socket.on("host:give-coins", (data: { targetSocketId: string; amount: number; masterToken?: string; roomId?: string }, callback) => {
+    // 4.3 Send or Deduct Koki Coins (Host / Master action)
+    socket.on("host:give-coins", (data: { targetSocketId: string; amount: number; action?: "add" | "deduct"; masterToken?: string; roomId?: string }, callback) => {
       const targetRoomId = currentRoomId || data.roomId;
       if (!targetRoomId) {
         if (typeof callback === "function") callback({ success: false, message: "Sala não encontrada." });
@@ -1220,7 +1220,7 @@ async function startServer() {
       const isRoomHost = room.hostSocketId === socket.id || Boolean(requester?.isHost);
 
       if (!isMasterAuth && !isRoomHost) {
-        if (typeof callback === "function") callback({ success: false, message: "Apenas o Dono/Anfitrião pode enviar moedas." });
+        if (typeof callback === "function") callback({ success: false, message: "Apenas o Dono/Anfitrião pode gerenciar moedas." });
         return;
       }
 
@@ -1230,57 +1230,118 @@ async function startServer() {
         return;
       }
 
-      const amount = Math.floor(Number(data.amount));
-      if (!amount || isNaN(amount) || amount <= 0) {
+      const rawAmount = Number(data.amount);
+      if (isNaN(rawAmount) || rawAmount === 0) {
         if (typeof callback === "function") callback({ success: false, message: "Quantidade de moedas inválida." });
         return;
       }
 
-      // Add coins to participant
-      target.kokiCoins = (target.kokiCoins || 0) + amount;
+      const isDeduct = data.action === "deduct" || rawAmount < 0;
+      const absAmount = Math.abs(Math.floor(rawAmount));
 
-      // Broadcast user updated to sync room participants
-      io.to(targetRoomId).emit("room:user-updated", target);
+      if (isDeduct) {
+        // Deduct coins from participant (floor at 0)
+        const prevCoins = target.kokiCoins || 0;
+        target.kokiCoins = Math.max(0, prevCoins - absAmount);
 
-      // Direct notification to target socket
-      io.to(data.targetSocketId).emit("coins:received", {
-        amount,
-        senderName: requester?.name || "Dono da Sala",
-        newBalance: target.kokiCoins,
-        message: `Você recebeu ${amount.toLocaleString()} Koki Coins do Dono!`,
-      });
-      io.to(data.targetSocketId).emit("coins:updated", {
-        participantId: data.targetSocketId,
-        kokiCoins: target.kokiCoins,
-        newBalance: target.kokiCoins,
-        amount,
-      });
+        // Broadcast user updated to sync room participants
+        io.to(targetRoomId).emit("room:user-updated", target);
 
-      // System chat announcement
-      const coinMsg: ServerChatMessage = {
-        id: `sys-coins-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        channelId: "geral",
-        senderId: "system",
-        senderName: "Koki Bot",
-        senderAvatarEmoji: "🪙",
-        text: `💰 **${requester?.name || "O Dono"}** enviou **+${amount.toLocaleString()} Koki Coins** para **${target.name}**!`,
-        timestamp: Date.now(),
-        isSystem: true,
-      };
-      const gMsgs = room.messagesByChannel.get("geral");
-      if (gMsgs) {
-        gMsgs.push(coinMsg);
-        if (gMsgs.length > 100) gMsgs.shift();
-      }
-      io.to(targetRoomId).emit("room:chat-message", coinMsg);
-
-      if (typeof callback === "function") {
-        callback({
-          success: true,
+        // Direct notification to target socket
+        io.to(data.targetSocketId).emit("coins:deducted", {
+          amount: absAmount,
+          senderName: requester?.name || "Dono da Sala",
           newBalance: target.kokiCoins,
-          message: `${amount.toLocaleString()} Koki Coins enviadas para ${target.name} com sucesso!`,
+          message: `O Dono removeu ${absAmount.toLocaleString()} Koki Coins da sua conta.`,
         });
+        io.to(data.targetSocketId).emit("coins:updated", {
+          participantId: data.targetSocketId,
+          kokiCoins: target.kokiCoins,
+          newBalance: target.kokiCoins,
+          amount: -absAmount,
+        });
+
+        // System chat announcement
+        const coinMsg: ServerChatMessage = {
+          id: `sys-coins-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          channelId: "geral",
+          senderId: "system",
+          senderName: "Koki Bot",
+          senderAvatarEmoji: "💸",
+          text: `💸 **${requester?.name || "O Dono"}** removeu **-${absAmount.toLocaleString()} Koki Coins** de **${target.name}**! (Saldo atual: ${target.kokiCoins.toLocaleString()})`,
+          timestamp: Date.now(),
+          isSystem: true,
+        };
+        const gMsgs = room.messagesByChannel.get("geral");
+        if (gMsgs) {
+          gMsgs.push(coinMsg);
+          if (gMsgs.length > 100) gMsgs.shift();
+        }
+        io.to(targetRoomId).emit("room:chat-message", coinMsg);
+
+        if (typeof callback === "function") {
+          callback({
+            success: true,
+            action: "deduct",
+            deducted: absAmount,
+            newBalance: target.kokiCoins,
+            message: `-${absAmount.toLocaleString()} Koki Coins removidas de ${target.name} com sucesso!`,
+          });
+        }
+      } else {
+        // Add coins to participant
+        target.kokiCoins = (target.kokiCoins || 0) + absAmount;
+
+        // Broadcast user updated to sync room participants
+        io.to(targetRoomId).emit("room:user-updated", target);
+
+        // Direct notification to target socket
+        io.to(data.targetSocketId).emit("coins:received", {
+          amount: absAmount,
+          senderName: requester?.name || "Dono da Sala",
+          newBalance: target.kokiCoins,
+          message: `Você recebeu ${absAmount.toLocaleString()} Koki Coins do Dono!`,
+        });
+        io.to(data.targetSocketId).emit("coins:updated", {
+          participantId: data.targetSocketId,
+          kokiCoins: target.kokiCoins,
+          newBalance: target.kokiCoins,
+          amount: absAmount,
+        });
+
+        // System chat announcement
+        const coinMsg: ServerChatMessage = {
+          id: `sys-coins-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          channelId: "geral",
+          senderId: "system",
+          senderName: "Koki Bot",
+          senderAvatarEmoji: "💰",
+          text: `💰 **${requester?.name || "O Dono"}** concedeu **+${absAmount.toLocaleString()} Koki Coins** para **${target.name}**!`,
+          timestamp: Date.now(),
+          isSystem: true,
+        };
+        const gMsgs = room.messagesByChannel.get("geral");
+        if (gMsgs) {
+          gMsgs.push(coinMsg);
+          if (gMsgs.length > 100) gMsgs.shift();
+        }
+        io.to(targetRoomId).emit("room:chat-message", coinMsg);
+
+        if (typeof callback === "function") {
+          callback({
+            success: true,
+            action: "add",
+            added: absAmount,
+            newBalance: target.kokiCoins,
+            message: `+${absAmount.toLocaleString()} Koki Coins enviadas para ${target.name} com sucesso!`,
+          });
+        }
       }
+    });
+
+    // 4.3.1 Dedicated alias for deducting coins
+    socket.on("host:deduct-coins", (data: { targetSocketId: string; amount: number; masterToken?: string; roomId?: string }, callback) => {
+      socket.emit("host:give-coins", { ...data, action: "deduct" }, callback);
     });
 
     // 4.5. Host / Master Assign Badges to Member

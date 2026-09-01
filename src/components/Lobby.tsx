@@ -220,13 +220,20 @@ export const Lobby: React.FC<LobbyProps> = ({
       avatarUrl,
       bannerColor,
       bannerUrl,
-      customStatus: customStatus.trim(),
-      bio: bio.trim(),
+      customStatus: customStatus ? customStatus.trim() : undefined,
+      bio: bio ? bio.trim() : undefined,
       tag: resolvedTag,
       badges,
       rememberLogin: true,
     });
   };
+
+  // Real-time automatic localStorage persistence for session profile stability
+  useEffect(() => {
+    if (nickname && nickname.trim().length > 0) {
+      persistCurrentProfile(nickname);
+    }
+  }, [nickname, avatarEmoji, avatarColor, avatarUrl, bannerColor, bannerUrl, customStatus, bio, badges]);
 
   useEffect(() => {
     let localStream: MediaStream | null = null;

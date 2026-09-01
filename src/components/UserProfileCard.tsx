@@ -59,16 +59,22 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
   const isMasterUser = participant.tag === "0001" || Boolean(participant.badges?.includes("owner_supreme")) || isMasterIdentity(participant.name);
   const coins = isSelf ? (typeof participant.kokiCoins === "number" ? participant.kokiCoins : getKokiCoins()) : participant.kokiCoins;
 
+  const [coinMode, setCoinMode] = useState<"add" | "deduct">("add");
   const [coinAmount, setCoinAmount] = useState<number | string>(50);
   const [coinSuccessMsg, setCoinSuccessMsg] = useState<string | null>(null);
 
   const handleGrantCoins = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const amount = typeof coinAmount === "number" ? coinAmount : parseInt(coinAmount, 10);
-    if (!amount || isNaN(amount) || amount <= 0) return;
+    const raw = typeof coinAmount === "number" ? coinAmount : parseInt(coinAmount, 10);
+    if (!raw || isNaN(raw) || raw <= 0) return;
+    const amount = coinMode === "deduct" ? -raw : raw;
     if (onGiveCoins) {
       onGiveCoins(participant.id, amount);
-      setCoinSuccessMsg(`+${amount} Koki Coins enviados para ${participant.name}! 🪙`);
+      if (coinMode === "deduct") {
+        setCoinSuccessMsg(`-${raw} Koki Coins removidos de ${participant.name}! 💸`);
+      } else {
+        setCoinSuccessMsg(`+${raw} Koki Coins enviados para ${participant.name}! 🪙`);
+      }
       setTimeout(() => setCoinSuccessMsg(null), 3500);
     }
   };
@@ -382,20 +388,51 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
                 </span>
               </div>
 
-              {/* Grant / Send Koki Coins to Participant */}
-              <div className="bg-[#0b111e] border border-amber-500/40 rounded-xl p-3 space-y-2">
+              {/* Grant / Send / Deduct Koki Coins to Participant */}
+              <div className={`border rounded-xl p-3 space-y-2 transition-all ${
+                coinMode === "deduct"
+                  ? "bg-[#180a10] border-rose-500/40"
+                  : "bg-[#0b111e] border-amber-500/40"
+              }`}>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-amber-300 flex items-center gap-1.5">
-                    <Coins className="w-3.5 h-3.5 text-amber-400 fill-amber-400/30" />
-                    Conceder Koki Coins
+                  <span className={`font-bold flex items-center gap-1.5 ${
+                    coinMode === "deduct" ? "text-rose-300" : "text-amber-300"
+                  }`}>
+                    <Coins className="w-3.5 h-3.5 fill-current" />
+                    {coinMode === "deduct" ? "Tirar / Remover Moedas" : "Conceder Koki Coins"}
                   </span>
-                  <span className="text-[10px] text-amber-200/80 font-medium">
-                    Saldo infinito
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setCoinMode("add")}
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer transition-all ${
+                        coinMode === "add"
+                          ? "bg-amber-500 text-slate-950 shadow-sm"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      + Dar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCoinMode("deduct")}
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer transition-all ${
+                        coinMode === "deduct"
+                          ? "bg-rose-600 text-white shadow-sm"
+                          : "text-slate-400 hover:text-rose-300"
+                      }`}
+                    >
+                      - Tirar
+                    </button>
+                  </div>
                 </div>
 
                 {coinSuccessMsg && (
-                  <div className="text-[11px] font-bold text-emerald-400 bg-emerald-950/70 border border-emerald-500/40 px-2 py-1 rounded-lg">
+                  <div className={`text-[11px] font-bold px-2 py-1 rounded-lg border ${
+                    coinMode === "deduct"
+                      ? "text-rose-300 bg-rose-950/70 border-rose-500/40"
+                      : "text-emerald-400 bg-emerald-950/70 border-emerald-500/40"
+                  }`}>
                     {coinSuccessMsg}
                   </div>
                 )}
@@ -409,19 +446,23 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
                       onClick={() => setCoinAmount(preset)}
                       className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border transition-all cursor-pointer ${
                         coinAmount === preset
-                          ? "bg-amber-500 text-slate-950 border-amber-400 shadow-sm shadow-amber-500/30 font-black"
-                          : "bg-[#141e33] text-amber-300 border-amber-500/30 hover:bg-amber-950/40"
+                          ? coinMode === "deduct"
+                            ? "bg-rose-600 text-white border-rose-400 shadow-sm font-black"
+                            : "bg-amber-500 text-slate-950 border-amber-400 shadow-sm shadow-amber-500/30 font-black"
+                          : "bg-[#141e33] text-slate-300 border-slate-700 hover:bg-slate-800"
                       }`}
                     >
-                      +{preset}
+                      {coinMode === "deduct" ? `-${preset}` : `+${preset}`}
                     </button>
                   ))}
                 </div>
 
-                {/* Amount Input & Send Button */}
+                {/* Amount Input & Send/Deduct Button */}
                 <form onSubmit={handleGrantCoins} className="flex items-center gap-2">
                   <div className="relative flex-1">
-                    <Coins className="w-3.5 h-3.5 text-amber-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <Coins className={`w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 ${
+                      coinMode === "deduct" ? "text-rose-400" : "text-amber-400"
+                    }`} />
                     <input
                       type="number"
                       min="1"
@@ -429,14 +470,22 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
                       value={coinAmount}
                       onChange={(e) => setCoinAmount(e.target.value)}
                       placeholder="Qtd (ex: 50)"
-                      className="w-full bg-[#080d18] border border-amber-500/40 text-amber-200 text-xs pl-8 pr-2 py-1.5 rounded-lg focus:outline-none focus:border-amber-400 font-mono font-bold"
+                      className={`w-full bg-[#080d18] text-xs pl-8 pr-2 py-1.5 rounded-lg focus:outline-none font-mono font-bold border ${
+                        coinMode === "deduct"
+                          ? "border-rose-500/40 text-rose-200 focus:border-rose-400"
+                          : "border-amber-500/40 text-amber-200 focus:border-amber-400"
+                      }`}
                     />
                   </div>
                   <button
                     type="submit"
-                    className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs px-3 py-1.5 rounded-lg transition-all shadow-md shadow-amber-950/60 cursor-pointer flex items-center gap-1 shrink-0"
+                    className={`font-black text-xs px-3 py-1.5 rounded-lg transition-all shadow-md cursor-pointer flex items-center gap-1 shrink-0 ${
+                      coinMode === "deduct"
+                        ? "bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white shadow-rose-950/60"
+                        : "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-amber-950/60"
+                    }`}
                   >
-                    <span>Enviar</span>
+                    <span>{coinMode === "deduct" ? "Tirar" : "Enviar"}</span>
                     <Coins className="w-3 h-3 fill-current" />
                   </button>
                 </form>

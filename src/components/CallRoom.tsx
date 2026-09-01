@@ -14,6 +14,7 @@ import { Header } from "./Header";
 import { VideoTile } from "./VideoTile";
 import { ControlBar } from "./ControlBar";
 import { DiscordChatAndChannels } from "./DiscordChatAndChannels";
+import { ChannelSidebar, VoiceChannel } from "./ChannelSidebar";
 import { MemberList } from "./MemberList";
 import { UserProfileCard } from "./UserProfileCard";
 import { SettingsModal } from "./SettingsModal";
@@ -65,9 +66,33 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const [self, setSelf] = useState<Participant>(initialSelf);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeChannelId, setActiveChannelId] = useState<string>("geral");
+  const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string>("voice-geral");
+  const [isChannelsSidebarOpen, setIsChannelsSidebarOpen] = useState<boolean>(true);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
   const [isMemberListOpen, setIsMemberListOpen] = useState<boolean>(true);
+
+  // 2 Text Channels (#geral, #anuncios) and 2 Voice Channels (Geral, Call VIP)
+  const defaultTextChannels: TextChannel[] = [
+    { id: "geral", name: "geral", description: "Canal principal de texto da call" },
+    { id: "anuncios", name: "anúncios", description: "Anúncios oficiais e avisos da comunidade" },
+  ];
+
+  const defaultVoiceChannels: VoiceChannel[] = [
+    { id: "voice-geral", name: "Geral", isVip: false },
+    { id: "voice-vip", name: "Call VIP", isVip: true },
+  ];
+
+  // Seamless channel navigation without tearing down Socket.io/WebRTC
+  const handleSelectTextChannel = (channelId: string) => {
+    setActiveChannelId(channelId);
+    setIsChatOpen(true);
+    setUnreadChatCount(0);
+  };
+
+  const handleSelectVoiceChannel = (channelId: string) => {
+    setActiveVoiceChannelId(channelId);
+  };
 
   // Selected Profile Card Modal (Discord Style)
   const [selectedProfileParticipant, setSelectedProfileParticipant] = useState<Participant | null>(null);
@@ -1272,6 +1297,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         pingMs={pingMs}
         pendingKnocksCount={pendingKnocks.length}
         kokiCoins={self.kokiCoins}
+        isChannelsOpen={isChannelsSidebarOpen}
+        onToggleChannels={() => setIsChannelsSidebarOpen(!isChannelsSidebarOpen)}
         onOpenStore={() => setIsStoreOpen(true)}
         onOpenInvite={() => setIsInviteOpen(true)}
         onOpenHostPanel={() => setIsHostPanelOpen(true)}
@@ -1281,8 +1308,34 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         onLeaveRoom={onLeaveRoom}
       />
 
-      {/* Main Content Area: Video Grid & Discord Sidebars */}
+      {/* Main Content Area: Channel Navigation Sidebar, Video Grid & Discord Drawers */}
       <div className="flex-1 flex overflow-hidden relative">
+        {/* Discord Minimal Channel Navigation Sidebar */}
+        <ChannelSidebar
+          roomName={room.roomName}
+          roomId={room.roomId}
+          textChannels={room.channels && room.channels.length > 0 ? room.channels : defaultTextChannels}
+          voiceChannels={defaultVoiceChannels}
+          activeTextChannelId={activeChannelId}
+          activeVoiceChannelId={activeVoiceChannelId}
+          onSelectTextChannel={handleSelectTextChannel}
+          onSelectVoiceChannel={handleSelectVoiceChannel}
+          self={self}
+          participants={room.participants}
+          isAudioMuted={isAudioMuted}
+          isDeafened={isDeafened}
+          pingMs={pingMs}
+          onToggleMic={handleToggleAudio}
+          onToggleDeafen={handleToggleDeafen}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenSelfProfile={() => setSelectedProfileParticipant(self)}
+          onOpenStore={() => setIsStoreOpen(true)}
+          onOpenInvite={() => setIsInviteOpen(true)}
+          isOpen={isChannelsSidebarOpen}
+          onClose={() => setIsChannelsSidebarOpen(false)}
+          isMaster={Boolean(isMaster)}
+        />
+
         <main className="flex-1 p-3 overflow-y-auto flex flex-col justify-center items-center">
           {activeSpotlight ? (
             /* Spotlight Mode (Screen share or pinned user) */
@@ -1401,12 +1454,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         {/* Discord Channels & Text Chat Drawer */}
         <DiscordChatAndChannels
           isOpen={isChatOpen}
-          channels={room.channels || [
-            { id: "geral", name: "geral", description: "Canal principal de texto" },
-            { id: "links-midia", name: "links-e-mídia", description: "Links e clips de jogos" },
-            { id: "comandos", name: "comandos-bots", description: "Dados e comandos interativos" },
-            { id: "memes-jogos", name: "memes-e-jogos", description: "Resenha gamer" },
-          ]}
+          channels={room.channels && room.channels.length > 0 ? room.channels : defaultTextChannels}
           activeChannelId={activeChannelId}
           onSelectChannel={(chId) => setActiveChannelId(chId)}
           messages={messages}
