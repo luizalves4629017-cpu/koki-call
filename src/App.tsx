@@ -3,8 +3,13 @@ import { io, Socket } from "socket.io-client";
 import { RoomState, Participant } from "./types";
 import { Lobby } from "./components/Lobby";
 import { CallRoom } from "./components/CallRoom";
-import { saveHostToken, getHostToken } from "./utils/storage";
+import { saveHostToken, getHostToken, isMasterIdentity } from "./utils/storage";
 import { getStoredMasterInfo, isMasterKeyValid, getMasterTokenSync, clearMasterAuthLocally } from "./utils/masterAuth";
+
+// Resolve default backend Socket.IO connection URL explicitly to Render backend
+const BACKEND_SOCKET_URL =
+  ((import.meta as any).env && (import.meta as any).env.VITE_BACKEND_URL) ||
+  "https://koki-call.onrender.com";
 
 export default function App() {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -118,11 +123,18 @@ export default function App() {
     clearMasterAuthLocally();
   };
 
-  // Initialize Socket.IO connection and query params
+  // Initialize Socket.IO connection and query params with Render URL & automatic reconnection
   useEffect(() => {
-    const socketInstance = io({
+    // If backend is on the same host (e.g. preview proxy / express), socket.io connects smoothly
+    // Fallback explicitly to https://koki-call.onrender.com or custom VITE_BACKEND_URL
+    const socketInstance = io(BACKEND_SOCKET_URL, {
       transports: ["websocket", "polling"],
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
     });
 
     setSocket(socketInstance);
@@ -163,7 +175,7 @@ export default function App() {
     };
   }, []);
 
-  // Handle Host Room Creation
+  // Handle Host Room Creation (Immediate non-blocking transition into Call Room)
   const handleCreateRoom = (params: {
     roomName: string;
     roomId: string;
@@ -182,10 +194,6 @@ export default function App() {
       badges?: string[];
     };
   }) => {
-    if (!socket) {
-      setErrorMsg("Conectando ao servidor de chamadas... Tente novamente em alguns segundos.");
-      return;
-    }
     setErrorMsg(null);
     setApprovalError(null);
 
@@ -193,41 +201,106 @@ export default function App() {
       ? params.roomId.trim().toLowerCase().replace(/\s+/g, "-")
       : `koki-${Math.random().toString(36).substring(2, 8)}`;
 
-    socket.emit(
-      "room:create",
-      {
-        roomId: safeRoomId,
-        roomName: params.roomName,
-        hostName: params.hostName,
-        hostPasscode: params.hostPasscode,
-        masterToken: masterToken || undefined,
-        profile: params.profile,
-        settings: {
-          lowBandwidthDefault: params.lowBandwidthDefault,
-          allowScreenShare: true,
-          allowVideo: true,
-          allowGuestChat: true,
-          maxParticipants: 16,
-          requireKnockApproval: false,
-        },
-      },
-      (res: { success: boolean; hostSecretToken?: string; room?: RoomState; self?: Participant; message?: string }) => {
-        if (res && res.success && res.room && res.self) {
-          // Save creator host secret token so creator is persistently recognized as host
-          if (res.hostSecretToken) {
-            saveHostToken(res.room.roomId, res.hostSecretToken);
-          }
+    const isMasterUser = Boolean(isMaster || params.profile.tag === "0001" || isMasterIdentity(params.hostName, isMaster));
+    const effectiveSocketId = socket?.id || `temp-host-${Date.now()}`;
 
-          // Keep host in room URL
-          window.history.pushState({}, "", `/?room=${res.room.roomId}`);
-          setCurrentRoom(res.room);
-          setSelfParticipant(res.self);
-          setInCall(true);
-        } else {
-          setErrorMsg(res?.message || "Erro ao criar sala. Tente novamente.");
+    // 1. Immediately create optimistic participant and room state so UI transitions instantly
+    const optimisticSelf: Participant = {
+      id: effectiveSocketId,
+      name: params.hostName,
+      tag: params.profile.tag || (isMasterUser ? "0001" : "1001"),
+      isHost: true,
+      hasAudio: true,
+      hasVideo: false,
+      isScreenSharing: false,
+      isDeafened: false,
+      isMutedByHost: false,
+      joinedAt: Date.now(),
+      avatarEmoji: params.profile.avatarEmoji,
+      avatarColor: params.profile.avatarColor,
+      avatarUrl: params.profile.avatarUrl,
+      bannerColor: params.profile.bannerColor,
+      bannerUrl: params.profile.bannerUrl,
+      customStatus: params.profile.customStatus,
+      bio: params.profile.bio,
+      badges: params.profile.badges || (isMasterUser ? ["owner_supreme", "creator_shield"] : []),
+      kokiCoins: isMasterUser ? 999999 : 50,
+    };
+
+    const optimisticRoom: RoomState = {
+      roomId: safeRoomId,
+      roomName: params.roomName,
+      createdAt: Date.now(),
+      hostSocketId: effectiveSocketId,
+      isLocked: false,
+      channels: [
+        { id: "geral", name: "geral", description: "Canal de texto principal para todos os membros da sala" },
+        { id: "links-midia", name: "links-e-mídia", description: "Compartilhamento de links, vídeos e imagens" },
+        { id: "comandos-koki", name: "comandos-koki", description: "Comandos da sala, bots e interações" },
+      ],
+      participants: [optimisticSelf],
+      settings: {
+        lowBandwidthDefault: params.lowBandwidthDefault,
+        allowScreenShare: true,
+        allowVideo: true,
+        allowGuestChat: true,
+        maxParticipants: 16,
+        requireKnockApproval: false,
+      },
+    };
+
+    // 2. Immediately switch to call view and set URL (Zero blocking or freezing)
+    window.history.pushState({}, "", `/?room=${safeRoomId}`);
+    setCurrentRoom(optimisticRoom);
+    setSelfParticipant(optimisticSelf);
+    setInCall(true);
+
+    // 3. Emit room:create over socket (in background or once connected)
+    const sendRoomCreate = (targetSock: Socket) => {
+      targetSock.emit(
+        "room:create",
+        {
+          roomId: safeRoomId,
+          roomName: params.roomName,
+          hostName: params.hostName,
+          hostPasscode: params.hostPasscode,
+          masterToken: masterToken || undefined,
+          profile: params.profile,
+          settings: {
+            lowBandwidthDefault: params.lowBandwidthDefault,
+            allowScreenShare: true,
+            allowVideo: true,
+            allowGuestChat: true,
+            maxParticipants: 16,
+            requireKnockApproval: false,
+          },
+        },
+        (res: { success: boolean; hostSecretToken?: string; room?: RoomState; self?: Participant; message?: string }) => {
+          if (res && res.success) {
+            if (res.hostSecretToken && res.room) {
+              saveHostToken(res.room.roomId, res.hostSecretToken);
+            }
+            if (res.room) {
+              setCurrentRoom(res.room);
+            }
+            if (res.self) {
+              setSelfParticipant(res.self);
+            }
+          }
         }
+      );
+    };
+
+    if (socket) {
+      if (socket.connected) {
+        sendRoomCreate(socket);
+      } else {
+        socket.once("connect", () => {
+          sendRoomCreate(socket);
+        });
+        socket.connect();
       }
-    );
+    }
   };
 
   // Handle Guest Room Join (or Authenticated Returning Host)

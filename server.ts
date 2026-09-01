@@ -321,7 +321,7 @@ function sanitizeAndInspectText(input: string): { cleanText: string; isSecurityW
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   const server = http.createServer(app);
 
   // Security Headers Middleware
@@ -334,6 +334,11 @@ async function startServer() {
   });
 
   app.use(express.json({ limit: "2mb" }));
+
+  // Render & Load Balancer Root Health Check (HTTP 200 OK)
+  app.get("/health", (req, res) => {
+    res.status(200).send("OK");
+  });
 
   // In-memory room store
   const rooms = new Map<string, ServerRoom>();
