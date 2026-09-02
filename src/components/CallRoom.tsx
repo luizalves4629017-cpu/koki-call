@@ -844,6 +844,25 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       }
     };
 
+    const handleSocketReconnect = () => {
+      // Upon socket reconnect, refresh room state and peer connections
+      if (room.roomId) {
+        socket.emit("room:get-state", { roomId: room.roomId }, (res: any) => {
+          if (res && res.success && res.room) {
+            handleRoomSync(res.room);
+          }
+        });
+      }
+      peerConnectionsRef.current.forEach((pc, peerId) => {
+        if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+          pc.close();
+          peerConnectionsRef.current.delete(peerId);
+          createPeerConnection(peerId, true);
+        }
+      });
+    };
+
+    socket.on("connect", handleSocketReconnect);
     socket.on("room:user-joined", handleUserJoined);
     socket.on("room:user_joined", handleUserJoined);
     socket.on("room:user-left", handleUserLeft);
@@ -852,11 +871,13 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     socket.on("room:user_updated", handleUserUpdated);
     socket.on("room:users-list", handleSyncUsersList);
     socket.on("room:users_list", handleSyncUsersList);
+    socket.on("room:participants", handleSyncUsersList);
     socket.on("voice:participants", handleSyncUsersList);
     socket.on("room:sync", handleRoomSync);
     socket.on("signal:offer", handleOffer);
     socket.on("signal:answer", handleAnswer);
     socket.on("signal:ice-candidate", handleIceCandidate);
+    socket.on("signal:ice_candidate", handleIceCandidate);
     socket.on("room:chat-message", handleChatMessage);
     socket.on("host:forced-mute", handleForcedMute);
     socket.on("host:kicked", handleKicked);
@@ -897,11 +918,13 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       socket.off("room:user_updated", handleUserUpdated);
       socket.off("room:users-list", handleSyncUsersList);
       socket.off("room:users_list", handleSyncUsersList);
+      socket.off("room:participants", handleSyncUsersList);
       socket.off("voice:participants", handleSyncUsersList);
       socket.off("room:sync", handleRoomSync);
       socket.off("signal:offer", handleOffer);
       socket.off("signal:answer", handleAnswer);
       socket.off("signal:ice-candidate", handleIceCandidate);
+      socket.off("signal:ice_candidate", handleIceCandidate);
       socket.off("room:chat-message", handleChatMessage);
       socket.off("host:forced-mute", handleForcedMute);
       socket.off("host:kicked", handleKicked);
@@ -917,6 +940,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       socket.off("coins:updated", handleCoinsUpdated);
       socket.off("badges:assigned", handleBadgesAssigned);
       socket.off("voice:forced-channel-change", handleForcedChannelChange);
+      socket.off("connect", handleSocketReconnect);
     };
   }, [socket, self.id, self.isHost, isMaster, isChatOpen, createPeerConnection, onLeaveRoom, selectedProfileParticipant?.id, spotlightId, room.participants]);
 
@@ -1409,7 +1433,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     ? room.participants.find((p) => p.id === spotlightId) || (spotlightId === self.id ? self : null)
     : null;
 
-  const isUserMaster = Boolean(isMaster || self.isMaster);
+  const isUserMaster = Boolean(isMaster);
   const hasVipBadge = Boolean(
     initialHasVipBadge ||
     self.vipPermissions?.hasVipBadge ||
@@ -1427,8 +1451,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#070b14] overflow-hidden relative">
-      {/* Floating Admission Banner for Master / VIP when users are knocking */}
-      {(isUserMaster || hasVipBadge) && (
+      {/* Floating Admission Banner for Master when users are knocking */}
+      {isUserMaster && (
         <FloatingAdmissionBanner
           pendingKnocks={pendingKnocks}
           onApprove={handleApproveKnock}
@@ -1651,6 +1675,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         allowScreenShare={room.settings.allowScreenShare}
         masterVoiceVolume={masterVoiceVolume}
         pendingKnocksCount={pendingKnocks.length}
+        isMaster={isUserMaster}
         onVolumeChange={setMasterVoiceVolume}
         onToggleAudio={handleToggleAudio}
         onToggleVideo={handleToggleVideo}

@@ -70,23 +70,9 @@ export const Header: React.FC<HeaderProps> = ({
   const [inviteCopied, setInviteCopied] = useState(false);
   const currentCoins = typeof kokiCoins === "number" ? kokiCoins : getKokiCoins();
 
-  // Strict check: Only show Master Action Bar for Master owner or users with designated VIP badge
-  const isUserMaster = Boolean(isMaster || self.isMaster);
-  const userHasVip = Boolean(
-    hasVipBadge ||
-    self.vipPermissions?.hasVipBadge ||
-    self.badges?.some(
-      (b) =>
-        b.toLowerCase().includes("vip") ||
-        b === "vip_role" ||
-        b === "vip_granted" ||
-        b === "vip"
-    ) ||
-    (self.purchasedPerks &&
-      self.purchasedPerks["vip_role"] &&
-      self.purchasedPerks["vip_role"] > Date.now())
-  );
-  const showMasterActionBar = isUserMaster || userHasVip;
+  // Strict check: Only show top Master control buttons for Master owner (hidden for guests)
+  const isUserMaster = Boolean(isMaster);
+  const showMasterActionBar = isUserMaster;
 
   const handleCopyLink = async () => {
     const inviteUrl = getEffectiveInviteUrl(room.roomId);

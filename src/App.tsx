@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { RoomState, Participant } from "./types";
 import { Lobby } from "./components/Lobby";
@@ -14,16 +14,45 @@ const BACKEND_SOCKET_URL =
     ? window.location.origin
     : "https://koki-call.onrender.com");
 
+const cleanRoomParam = (rawRoom?: string | null): string => {
+  if (!rawRoom || typeof rawRoom !== "string") return "main-lounge";
+  let clean = rawRoom.trim();
+  if (clean.includes("?room=") || clean.includes("&room=")) {
+    const match = clean.match(/[?&]room=([^&?#\s]+)/i);
+    if (match && match[1]) {
+      clean = decodeURIComponent(match[1]).trim();
+    }
+  }
+  clean = clean.replace(/^[/?#&]+/, "");
+  if (clean.toLowerCase().startsWith("room=")) {
+    clean = clean.slice(5);
+  }
+  clean = clean.split("?")[0].split("&")[0].split("#")[0].trim();
+  clean = clean.replace(/^[\/\s]+|[\/\s]+$/g, "").trim().replace(/\s+/g, "-").toLowerCase();
+  return clean || "main-lounge";
+};
+
 const getInitialRoomId = (): string => {
   if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get("room");
     if (roomParam && roomParam.trim().length > 0) {
-      return roomParam.trim();
+      return cleanRoomParam(roomParam);
     }
   }
   return "main-lounge";
 };
+
+interface LastJoinSession {
+  roomId: string;
+  name: string;
+  passcode?: string;
+  role?: string;
+  isGuestOnly?: boolean;
+  masterToken?: string;
+  hostSecretToken?: string;
+  profile: any;
+}
 
 export default function App() {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -35,6 +64,14 @@ export default function App() {
   const [isWaitingApproval, setIsWaitingApproval] = useState<boolean>(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Active call session tracking for automatic reconnection when backend restarts
+  const lastJoinSessionRef = useRef<LastJoinSession | null>(null);
+  const inCallRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    inCallRef.current = inCall;
+  }, [inCall]);
 
   // Master Machine & Hardware Authorization State
   const initialMaster = getStoredMasterInfo();
@@ -158,7 +195,7 @@ export default function App() {
     const roomParam = params.get("room");
     const roleParam = params.get("role");
 
-    const effectiveRoom = (roomParam && roomParam.trim().length > 0) ? roomParam.trim() : "main-lounge";
+    const effectiveRoom = cleanRoomParam(roomParam);
     setUrlRoomId(effectiveRoom);
     if (roleParam) {
       setUrlRole(roleParam);
@@ -185,12 +222,54 @@ export default function App() {
       playVoiceJoinChime();
     };
 
+    // Listen for connection lifecycle and automatic room re-entry
+    const handleConnect = () => {
+      console.log("[Koki Call] Socket connected to backend:", socketInstance.id);
+      // If user was actively in a call before connection dropped / server restart, automatically re-join
+      if (inCallRef.current && lastJoinSessionRef.current) {
+        const session = lastJoinSessionRef.current;
+        console.log("[Koki Call] Reconnecting to room after backend restart:", session.roomId);
+        socketInstance.emit("room:join", session, (res: {
+          success: boolean;
+          needsApproval?: boolean;
+          hostSecretToken?: string;
+          room?: RoomState;
+          self?: Participant;
+          message?: string;
+        }) => {
+          if (res && res.success && res.room && res.self) {
+            if (res.hostSecretToken) {
+              saveHostToken(res.room.roomId, res.hostSecretToken);
+              if (lastJoinSessionRef.current) {
+                lastJoinSessionRef.current.hostSecretToken = res.hostSecretToken;
+              }
+            }
+            setCurrentRoom(res.room);
+            setSelfParticipant(res.self);
+            setInCall(true);
+            playVoiceJoinChime();
+          }
+        });
+      }
+    };
+
+    const handleDisconnect = (reason: string) => {
+      console.warn("[Koki Call] Socket disconnected from backend:", reason);
+    };
+
+    socketInstance.on("connect", handleConnect);
+    socketInstance.on("disconnect", handleDisconnect);
+    socketInstance.io.on("reconnect", handleConnect);
+
     socketInstance.on("room:knock-approved", handleKnockApproved);
     socketInstance.on("room:knock-rejected", handleKnockRejected);
     socketInstance.on("voice:joined", handleVoiceChannelEvent);
     socketInstance.on("voice:channel-changed", handleVoiceChannelEvent);
 
     return () => {
+      socketInstance.off("connect", handleConnect);
+      socketInstance.off("disconnect", handleDisconnect);
+      socketInstance.io.off("reconnect", handleConnect);
       socketInstance.off("room:knock-approved", handleKnockApproved);
       socketInstance.off("room:knock-rejected", handleKnockRejected);
       socketInstance.off("voice:joined", handleVoiceChannelEvent);
@@ -286,6 +365,18 @@ export default function App() {
     setSelfParticipant(optimisticSelf);
     setInCall(true);
 
+    // Save session for automatic reconnection if backend restarts
+    lastJoinSessionRef.current = {
+      roomId: safeRoomId,
+      name: params.hostName,
+      passcode: params.hostPasscode,
+      role: "host",
+      isGuestOnly: false,
+      masterToken: masterToken || undefined,
+      hostSecretToken: undefined,
+      profile: params.profile,
+    };
+
     // 3. Emit room:create over socket (in background or once connected)
     const sendRoomCreate = (targetSock: Socket) => {
       targetSock.emit(
@@ -310,6 +401,9 @@ export default function App() {
           if (res && res.success) {
             if (res.hostSecretToken && res.room) {
               saveHostToken(res.room.roomId, res.hostSecretToken);
+              if (lastJoinSessionRef.current) {
+                lastJoinSessionRef.current.hostSecretToken = res.hostSecretToken;
+              }
             }
             if (res.room) {
               setCurrentRoom(res.room);
@@ -354,84 +448,36 @@ export default function App() {
     setErrorMsg(null);
     setApprovalError(null);
 
-    const safeRoomId = (params.roomId || urlRoomId || "main-lounge").trim().toLowerCase().replace(/\s+/g, "-");
-    const isGuestRole = urlRole === "guest" || !params.passcode;
+    const safeRoomId = cleanRoomParam(params.roomId || urlRoomId || "main-lounge");
+    const isMasterUser = Boolean(isMaster && (params.profile.tag === "0001" || isMasterIdentity(params.name, isMaster)));
+    const isGuestRole = !isMasterUser;
     // If joining explicitly as guest, never send host secret token to ensure role isolation
     const existingHostToken = isGuestRole ? undefined : getHostToken(safeRoomId);
-    const isMasterUser = Boolean(isMaster || params.profile.tag === "0001" || isMasterIdentity(params.name, isMaster));
-    const effectiveSocketId = socket?.id || `temp-join-${Date.now()}`;
 
-    // 1. Immediately create optimistic participant and room state so user instantly enters the call
-    const optimisticSelf: Participant = {
-      id: effectiveSocketId,
-      name: params.name || (isMasterUser ? "Koki u sujo" : `Convidado ${Math.floor(100 + Math.random() * 900)}`),
-      tag: params.profile.tag || (isMasterUser ? "0001" : "1001"),
-      isHost: isMasterUser,
-      isMaster: isMasterUser,
-      hasAudio: true,
-      hasVideo: false,
-      isScreenSharing: false,
-      isDeafened: false,
-      isMutedByHost: false,
-      joinedAt: Date.now(),
-      avatarEmoji: params.profile.avatarEmoji || (isMasterUser ? "👑" : "🎮"),
-      avatarColor: params.profile.avatarColor || "#06b6d4",
-      avatarUrl: params.profile.avatarUrl,
-      bannerColor: params.profile.bannerColor || "#0284c7",
-      bannerUrl: params.profile.bannerUrl,
-      customStatus: params.profile.customStatus || (isMasterUser ? "👑 Dono Master do Koki" : "🟢 Conectado na Call"),
-      bio: params.profile.bio || "Participante na chamada.",
-      badges: params.profile.badges || (isMasterUser ? ["owner_supreme", "koki_creator", "nitro_owner"] : []),
-      kokiCoins: isMasterUser ? 999999 : 50,
-      voiceChannelId: "voice-geral",
-    };
-
-    const optimisticRoom: RoomState = {
-      roomId: safeRoomId,
-      roomName: `Sala ${safeRoomId.toUpperCase()}`,
-      hostSocketId: effectiveSocketId,
-      createdAt: Date.now(),
-      isLocked: false,
-      participants: [optimisticSelf],
-      settings: {
-        allowScreenShare: true,
-        allowVideo: true,
-        allowGuestChat: true,
-        maxParticipants: 16,
-        lowBandwidthDefault: false,
-        requireKnockApproval: false,
-      },
-      channels: [
-        { id: "geral", name: "geral", description: "Canal de texto principal para todos os membros da sala" },
-        { id: "links-e-clips", name: "links-e-clips", description: "Compartilhe links, clips e memes" },
-        { id: "comandos-bot", name: "comandos-bot", description: "Músicas e comandos do Koki Bot" },
-      ],
-    };
-
-    // Update URL query string
+    // Update URL query string with clean room ID
     const newUrl = `/?room=${encodeURIComponent(safeRoomId)}`;
     window.history.pushState({}, "", newUrl);
+    setUrlRoomId(safeRoomId);
 
-    // Instant optimistic UI entry
-    setCurrentRoom(optimisticRoom);
-    setSelfParticipant(optimisticSelf);
-    setInCall(true);
-    playVoiceJoinChime();
+    // Guest joining flow connects directly to the audio socket using room:join
+    const performRoomJoin = (activeSocket: Socket) => {
+      const joinPayload = {
+        roomId: safeRoomId,
+        name: params.name,
+        passcode: params.passcode,
+        role: isGuestRole ? "guest" : "auto",
+        isGuestOnly: isGuestRole,
+        masterToken: masterToken || undefined,
+        hostSecretToken: existingHostToken,
+        profile: params.profile,
+      };
 
-    // 2. Transmit room:join over socket
-    const sendRoomJoin = (sock: any) => {
-      sock.emit(
+      // Store in ref for seamless automatic reconnect if backend restarts
+      lastJoinSessionRef.current = joinPayload;
+
+      activeSocket.emit(
         "room:join",
-        {
-          roomId: safeRoomId,
-          name: params.name,
-          passcode: params.passcode,
-          role: urlRole === "guest" ? "guest" : "auto",
-          isGuestOnly: urlRole === "guest",
-          masterToken: masterToken || undefined,
-          hostSecretToken: existingHostToken,
-          profile: params.profile,
-        },
+        joinPayload,
         (res: {
           success: boolean;
           needsApproval?: boolean;
@@ -450,14 +496,19 @@ export default function App() {
             if (res.room && res.self) {
               if (res.hostSecretToken) {
                 saveHostToken(res.room.roomId, res.hostSecretToken);
+                if (lastJoinSessionRef.current) {
+                  lastJoinSessionRef.current.hostSecretToken = res.hostSecretToken;
+                }
               }
               setCurrentRoom(res.room);
               setSelfParticipant(res.self);
               setInCall(true);
+              playVoiceJoinChime();
             }
-          } else if (res && !res.success) {
+          } else {
             setInCall(false);
-            setErrorMsg(res?.message || "Não foi possível entrar na sala.");
+            lastJoinSessionRef.current = null;
+            setErrorMsg(res?.message || "Não foi possível entrar na chamada.");
           }
         }
       );
@@ -465,10 +516,10 @@ export default function App() {
 
     if (socket) {
       if (socket.connected) {
-        sendRoomJoin(socket);
+        performRoomJoin(socket);
       } else {
         socket.once("connect", () => {
-          sendRoomJoin(socket);
+          performRoomJoin(socket);
         });
         socket.connect();
       }
@@ -486,6 +537,7 @@ export default function App() {
 
   // Handle Leaving Call
   const handleLeaveRoom = () => {
+    lastJoinSessionRef.current = null;
     if (socket) {
       socket.emit("room:leave");
     }

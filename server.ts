@@ -6,9 +6,13 @@ import os from "os";
 import crypto from "crypto";
 import { Server as SocketIOServer, Socket } from "socket.io";
 import { createServer as createViteServer } from "vite";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
 
-// Safe directory path resolution for CommonJS (dist/server.cjs on Render/Node v24) and ESM (tsx dev)
-const safeDirname = typeof __dirname !== "undefined" ? __dirname : process.cwd();
+// ES Module polyfill for __filename and __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const safeDirname = __dirname;
 
 interface ServerParticipant {
   id: string;
@@ -159,6 +163,7 @@ function resolveServerParticipantTag(
 const DANGEROUS_EXTENSIONS = /\.(exe|scr|bat|vbs|apk|cmd|pif|msi|ps1|reg|hta|jar)($|\?)/i;
 
 // Master Key Cryptographic Salt & Default Key
+const MASTER_KEY_DEFAULT = "koki24122024master";
 const MASTER_SIGNING_SALT = "koki_master_voice_platform_supreme_2026";
 const DEFAULT_MASTER_RECOVERY_KEYS = [
   "koki24122024master",
@@ -166,16 +171,6 @@ const DEFAULT_MASTER_RECOVERY_KEYS = [
   "kokidonomaster2026",
   "adminmasterkoki"
 ];
-
-// Ensure owner.key exists on server working directory with default key
-try {
-  const localKeyPath = path.join(process.cwd(), "owner.key");
-  if (!fs.existsSync(localKeyPath)) {
-    fs.writeFileSync(localKeyPath, "koki24122024master", { encoding: "utf-8" });
-  }
-} catch (e) {
-  // ignore
-}
 
 function generateMasterTokenFromKey(rawKey: string): string {
   return crypto
@@ -194,28 +189,16 @@ function verifyRawMasterKey(rawKey?: string): boolean {
   const envKey = process.env.KOKI_MASTER_KEY || process.env.MASTER_KEY || process.env.OWNER_SECRET;
   if (envKey && (cleanKey === envKey.trim() || lowerKey === envKey.trim().toLowerCase())) return true;
 
-  // 2. Check against owner.key file
-  const keyPaths = [
-    path.join(__dirname, "../owner.key"),
-    path.join(process.cwd(), "owner.key"),
-    path.join(os.homedir(), ".koki-call", "owner.key"),
-    path.join(os.homedir(), "owner.key"),
-  ];
-  for (const kp of keyPaths) {
-    if (fs.existsSync(kp)) {
-      try {
-        const content = fs.readFileSync(kp, "utf-8").trim();
-        if (content && (cleanKey === content || lowerKey === content.toLowerCase())) return true;
-      } catch {
-        // ignore
-      }
-    }
+  // 2. Standard string comparison with master owner key (koki24122024master)
+  if (cleanKey === MASTER_KEY_DEFAULT || lowerKey === MASTER_KEY_DEFAULT.toLowerCase()) {
+    return true;
   }
 
-  // 3. Check against default authorized keys (case-insensitive)
+  // 3. Check against default authorized keys (case-insensitive string comparison)
   if (
     DEFAULT_MASTER_RECOVERY_KEYS.includes(cleanKey) ||
-    DEFAULT_MASTER_RECOVERY_KEYS.includes(lowerKey)
+    DEFAULT_MASTER_RECOVERY_KEYS.includes(lowerKey) ||
+    DEFAULT_MASTER_RECOVERY_KEYS.some((k) => k.toLowerCase() === lowerKey)
   ) {
     return true;
   }
@@ -241,32 +224,18 @@ function validateServerMasterAuth(providedToken?: string, clientIp?: string): { 
         }
       }
 
-      // Check against local owner.key file if present on server filesystem
-      const keyPaths = [
-        path.join(__dirname, "../owner.key"),
-        path.join(process.cwd(), "owner.key"),
-        path.join(os.homedir(), ".koki-call", "owner.key"),
-        path.join(os.homedir(), "owner.key"),
-      ];
-
-      for (const keyPath of keyPaths) {
-        if (fs.existsSync(keyPath)) {
-          try {
-            const keyContent = fs.readFileSync(keyPath, "utf-8").trim();
-            const expectedFileToken = crypto
-              .createHmac("sha256", MASTER_SIGNING_SALT)
-              .update(`owner_key:${keyContent}`)
-              .digest("hex");
-            if (cleanToken === expectedFileToken) {
-              return { isMaster: true, authMethod: "owner_key" };
-            }
-          } catch {
-            // ignore
-          }
-        }
+      // Check against default master key (koki24122024master)
+      const expectedMasterToken = generateMasterTokenFromKey(MASTER_KEY_DEFAULT);
+      if (
+        cleanToken === expectedMasterToken ||
+        cleanToken === MASTER_KEY_DEFAULT ||
+        cleanToken.toLowerCase() === MASTER_KEY_DEFAULT.toLowerCase() ||
+        cleanToken === `koki_master_token_${MASTER_KEY_DEFAULT.toLowerCase()}`
+      ) {
+        return { isMaster: true, authMethod: "owner_key" };
       }
 
-      // Check against recovery master keys (HMAC token, raw key or client prefix)
+      // Check against recovery master keys (HMAC token, raw key or client prefix) via standard string comparison
       for (const recKey of DEFAULT_MASTER_RECOVERY_KEYS) {
         const expectedRecToken = generateMasterTokenFromKey(recKey);
         if (
@@ -291,9 +260,6 @@ function validateServerMasterAuth(providedToken?: string, clientIp?: string): { 
         return { isMaster: true, authMethod: "machine_id" };
       }
     }
-
-    // Notice: Any remote friend or client connecting without a valid masterToken
-    // will strictly receive isMaster: false.
   } catch (err) {
     console.error("Erro na validação do Dono Master no servidor:", err);
   }
@@ -313,22 +279,22 @@ function normalizeRoomId(rawRoomId?: string | null): string {
   // Extract ?room= value if entire query string or URL was passed
   if (clean.includes("?room=") || clean.includes("&room=")) {
     try {
-      const dummyBase = "http://localhost";
-      const fullUrl = clean.startsWith("http://") || clean.startsWith("https://")
-        ? clean
-        : clean.startsWith("/")
-        ? `${dummyBase}${clean}`
-        : `${dummyBase}/${clean.startsWith("?") ? clean : `?${clean}`}`;
-      const parsed = new URL(fullUrl);
-      const extracted = parsed.searchParams.get("room");
-      if (extracted && extracted.trim()) {
-        clean = extracted.trim();
+      const match = clean.match(/[?&]room=([^&?#\s]+)/i);
+      if (match && match[1]) {
+        clean = decodeURIComponent(match[1]).trim();
       }
     } catch {}
   }
 
+  // Strip leading question marks, slashes, or room= prefix
+  clean = clean.replace(/^[/?#&]+/, "");
+  if (clean.toLowerCase().startsWith("room=")) {
+    clean = clean.slice(5);
+  }
+
   // Strip query parameters (&role=..., ?role=..., etc.), hashes, and unwanted characters
-  clean = clean.split("?")[0].split("&")[0].split("#")[0].trim().replace(/\s+/g, "-").toLowerCase();
+  clean = clean.split("?")[0].split("&")[0].split("#")[0].trim();
+  clean = clean.replace(/^[\/\s]+|[\/\s]+$/g, "").trim().replace(/\s+/g, "-").toLowerCase();
 
   return clean || "main-lounge";
 }
@@ -390,8 +356,13 @@ async function startServer() {
 
   // Master Machine & Hardware Validation Endpoint
   app.post("/api/auth/master-check", (req, res) => {
-    const { masterToken } = req.body || {};
-    const auth = validateServerMasterAuth(masterToken);
+    const { masterToken, masterKey } = req.body || {};
+    let auth = validateServerMasterAuth(masterToken);
+    if (!auth.isMaster && masterKey && typeof masterKey === "string") {
+      if (verifyRawMasterKey(masterKey)) {
+        auth = { isMaster: true, authMethod: "owner_key" };
+      }
+    }
     res.json({
       isMaster: auth.isMaster,
       authMethod: auth.authMethod,
@@ -486,7 +457,15 @@ async function startServer() {
       // 1. Full room state sync
       io.to(room.roomId).emit("room:sync", payload);
 
-      // 2. Both snake_case and kebab-case for users list
+      // 2. Broadcast room:participants (direct array and object format)
+      io.to(room.roomId).emit("room:participants", participantsList);
+      io.to(room.roomId).emit("room:participants", {
+        roomId: room.roomId,
+        participants: participantsList,
+        total: participantsList.length,
+      });
+
+      // 3. Both snake_case and kebab-case for users list
       io.to(room.roomId).emit("room:users_list", {
         roomId: room.roomId,
         participants: participantsList,
@@ -498,7 +477,7 @@ async function startServer() {
         total: participantsList.length,
       });
 
-      // 3. Voice participants list and map
+      // 4. Voice participants list and map
       const voiceParticipantsMap: Record<string, ServerParticipant[]> = {};
       participantsList.forEach((p) => {
         const vChan = p.voiceChannelId || "voice-geral";
@@ -869,9 +848,16 @@ async function startServer() {
         currentRoomId = cleanRoomId;
         socket.join(cleanRoomId);
 
-        // Broadcast new participant and room state to everyone
-        io.to(cleanRoomId).emit("room:user-joined", participant);
+        // Broadcast new participant and room state to everyone in that room
         io.to(cleanRoomId).emit("room:user_joined", participant);
+        io.to(cleanRoomId).emit("room:user-joined", participant);
+        const currentParticipants = Array.from(room.participants.values());
+        io.to(cleanRoomId).emit("room:participants", currentParticipants);
+        io.to(cleanRoomId).emit("room:participants", {
+          roomId: cleanRoomId,
+          participants: currentParticipants,
+          total: currentParticipants.length,
+        });
         broadcastRoomState(room);
 
         const joinMsg: ServerChatMessage = {
@@ -1047,39 +1033,68 @@ async function startServer() {
     });
 
     // 4. WebRTC Mesh Signaling with streamType and screen sharing support
-    socket.on("signal:offer", (payload: { targetId: string; offer: RTCSessionDescriptionInit; streamType?: string; isScreen?: boolean }) => {
-      io.to(payload.targetId).emit("signal:offer", {
+    socket.on("signal:offer", (payload: { targetId?: string; to?: string; offer: RTCSessionDescriptionInit; streamType?: string; isScreen?: boolean }) => {
+      const destId = payload?.targetId || payload?.to;
+      if (!destId || !payload?.offer) return;
+      io.to(destId).emit("signal:offer", {
         senderId: socket.id,
+        from: socket.id,
+        targetId: destId,
         offer: payload.offer,
         streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
         isScreen: Boolean(payload.isScreen),
       });
     });
 
-    socket.on("signal:answer", (payload: { targetId: string; answer: RTCSessionDescriptionInit; streamType?: string; isScreen?: boolean }) => {
-      io.to(payload.targetId).emit("signal:answer", {
+    socket.on("signal:answer", (payload: { targetId?: string; to?: string; answer: RTCSessionDescriptionInit; streamType?: string; isScreen?: boolean }) => {
+      const destId = payload?.targetId || payload?.to;
+      if (!destId || !payload?.answer) return;
+      io.to(destId).emit("signal:answer", {
         senderId: socket.id,
+        from: socket.id,
+        targetId: destId,
         answer: payload.answer,
         streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
         isScreen: Boolean(payload.isScreen),
       });
     });
 
-    socket.on("signal:ice-candidate", (payload: { targetId: string; candidate: RTCIceCandidateInit; streamType?: string; isScreen?: boolean }) => {
-      io.to(payload.targetId).emit("signal:ice-candidate", {
+    socket.on("signal:ice-candidate", (payload: { targetId?: string; to?: string; candidate?: RTCIceCandidateInit; iceCandidate?: RTCIceCandidateInit; streamType?: string; isScreen?: boolean }) => {
+      const destId = payload?.targetId || payload?.to;
+      const candidate = payload?.candidate || payload?.iceCandidate;
+      if (!destId || !candidate) return;
+      io.to(destId).emit("signal:ice-candidate", {
         senderId: socket.id,
-        candidate: payload.candidate,
+        from: socket.id,
+        targetId: destId,
+        candidate,
         streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
         isScreen: Boolean(payload.isScreen),
       });
     });
 
-    socket.on("signal", (payload: { to?: string; targetId?: string; signal?: any; offer?: any; answer?: any; candidate?: any; streamType?: string; isScreen?: boolean }) => {
+    socket.on("signal:ice_candidate", (payload: { targetId?: string; to?: string; candidate?: RTCIceCandidateInit; iceCandidate?: RTCIceCandidateInit; streamType?: string; isScreen?: boolean }) => {
+      const destId = payload?.targetId || payload?.to;
+      const candidate = payload?.candidate || payload?.iceCandidate;
+      if (!destId || !candidate) return;
+      io.to(destId).emit("signal:ice-candidate", {
+        senderId: socket.id,
+        from: socket.id,
+        targetId: destId,
+        candidate,
+        streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
+        isScreen: Boolean(payload.isScreen),
+      });
+    });
+
+    socket.on("signal", (payload: { to?: string; targetId?: string; signal?: any; offer?: any; answer?: any; candidate?: any; iceCandidate?: any; streamType?: string; isScreen?: boolean }) => {
       const destId = payload?.targetId || payload?.to;
       if (!destId) return;
       if (payload.offer) {
         io.to(destId).emit("signal:offer", {
           senderId: socket.id,
+          from: socket.id,
+          targetId: destId,
           offer: payload.offer,
           streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
           isScreen: Boolean(payload.isScreen),
@@ -1087,14 +1102,18 @@ async function startServer() {
       } else if (payload.answer) {
         io.to(destId).emit("signal:answer", {
           senderId: socket.id,
+          from: socket.id,
+          targetId: destId,
           answer: payload.answer,
           streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
           isScreen: Boolean(payload.isScreen),
         });
-      } else if (payload.candidate) {
+      } else if (payload.candidate || payload.iceCandidate) {
         io.to(destId).emit("signal:ice-candidate", {
           senderId: socket.id,
-          candidate: payload.candidate,
+          from: socket.id,
+          targetId: destId,
+          candidate: payload.candidate || payload.iceCandidate,
           streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
           isScreen: Boolean(payload.isScreen),
         });
@@ -1102,32 +1121,46 @@ async function startServer() {
       io.to(destId).emit("signal", {
         senderId: socket.id,
         from: socket.id,
+        targetId: destId,
         ...payload,
       });
     });
 
-    socket.on("offer", (payload: { targetId: string; offer: RTCSessionDescriptionInit; streamType?: string; isScreen?: boolean }) => {
-      io.to(payload.targetId).emit("signal:offer", {
+    socket.on("offer", (payload: { targetId?: string; to?: string; offer: RTCSessionDescriptionInit; streamType?: string; isScreen?: boolean }) => {
+      const destId = payload?.targetId || payload?.to;
+      if (!destId || !payload?.offer) return;
+      io.to(destId).emit("signal:offer", {
         senderId: socket.id,
+        from: socket.id,
+        targetId: destId,
         offer: payload.offer,
         streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
         isScreen: Boolean(payload.isScreen),
       });
     });
 
-    socket.on("answer", (payload: { targetId: string; answer: RTCSessionDescriptionInit; streamType?: string; isScreen?: boolean }) => {
-      io.to(payload.targetId).emit("signal:answer", {
+    socket.on("answer", (payload: { targetId?: string; to?: string; answer: RTCSessionDescriptionInit; streamType?: string; isScreen?: boolean }) => {
+      const destId = payload?.targetId || payload?.to;
+      if (!destId || !payload?.answer) return;
+      io.to(destId).emit("signal:answer", {
         senderId: socket.id,
+        from: socket.id,
+        targetId: destId,
         answer: payload.answer,
         streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
         isScreen: Boolean(payload.isScreen),
       });
     });
 
-    socket.on("ice-candidate", (payload: { targetId: string; candidate: RTCIceCandidateInit; streamType?: string; isScreen?: boolean }) => {
-      io.to(payload.targetId).emit("signal:ice-candidate", {
+    socket.on("ice-candidate", (payload: { targetId?: string; to?: string; candidate?: RTCIceCandidateInit; iceCandidate?: RTCIceCandidateInit; streamType?: string; isScreen?: boolean }) => {
+      const destId = payload?.targetId || payload?.to;
+      const candidate = payload?.candidate || payload?.iceCandidate;
+      if (!destId || !candidate) return;
+      io.to(destId).emit("signal:ice-candidate", {
         senderId: socket.id,
-        candidate: payload.candidate,
+        from: socket.id,
+        targetId: destId,
+        candidate,
         streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
         isScreen: Boolean(payload.isScreen),
       });
@@ -1763,6 +1796,32 @@ async function startServer() {
     });
 
     // 7. Channel Messages & Antivirus Filter
+    // 20. Client State Synchronization / Reconnection Query
+    socket.on("room:get-state", (payload: { roomId?: string }, callback) => {
+      let targetRoomId = payload?.roomId ? normalizeRoomId(payload.roomId) : currentRoomId;
+      if (!targetRoomId) {
+        for (const [rId, r] of rooms.entries()) {
+          if (r.participants.has(socket.id)) {
+            targetRoomId = rId;
+            currentRoomId = rId;
+            break;
+          }
+        }
+      }
+      if (!targetRoomId) {
+        if (typeof callback === "function") callback({ success: false, message: "Sala não encontrada" });
+        return;
+      }
+      const room = rooms.get(targetRoomId);
+      if (!room) {
+        if (typeof callback === "function") callback({ success: false, message: "Sala não encontrada" });
+        return;
+      }
+      if (typeof callback === "function") {
+        callback({ success: true, room: formatRoomPayload(room) });
+      }
+    });
+
     socket.on("room:get-channel-messages", (channelId: string, callback) => {
       let targetRoomId = currentRoomId;
       if (!targetRoomId) {

@@ -42,6 +42,7 @@ interface ControlBarProps {
   masterVoiceVolume: number;
   screenQualityPreset?: ScreenSharePresetId;
   pendingKnocksCount?: number;
+  isMaster?: boolean;
   onVolumeChange: (newVol: number) => void;
   onToggleAudio: () => void;
   onToggleVideo: () => void;
@@ -72,6 +73,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
   masterVoiceVolume,
   screenQualityPreset = DEFAULT_SCREEN_PRESET_ID,
   pendingKnocksCount = 0,
+  isMaster = false,
   onVolumeChange,
   onToggleAudio,
   onToggleVideo,
@@ -424,8 +426,8 @@ export const ControlBar: React.FC<ControlBarProps> = ({
           )}
         </button>
 
-        {/* Host master admission / Portaria control */}
-        {self.isHost && onOpenAdmissionModal && (
+        {/* Host master admission / Portaria control - strictly visible for Master */}
+        {isMaster && onOpenAdmissionModal && (
           <button
             onClick={onOpenAdmissionModal}
             className={`relative p-2 sm:p-2.5 rounded-lg border transition-all cursor-pointer ${
@@ -444,8 +446,8 @@ export const ControlBar: React.FC<ControlBarProps> = ({
           </button>
         )}
 
-        {/* Host master control */}
-        {self.isHost && (
+        {/* Master Control Panel - strictly visible for Master */}
+        {isMaster && (
           <button
             onClick={onOpenHostPanel}
             className="p-2 sm:p-2.5 rounded-lg bg-[#162032] hover:bg-[#1e2c44] border border-amber-500/40 text-amber-300 transition-all cursor-pointer"
