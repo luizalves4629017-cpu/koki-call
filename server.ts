@@ -286,6 +286,17 @@ function normalizeRoomId(rawRoomId?: string | null): string {
     } catch {}
   }
 
+  // Also handle cases like "/?room=xyz" or "http://...?room=xyz"
+  if (clean.includes("?")) {
+    const queryPart = clean.split("?")[1];
+    if (queryPart && queryPart.includes("room=")) {
+      const match = queryPart.match(/room=([^&?#\s]+)/i);
+      if (match && match[1]) {
+        clean = decodeURIComponent(match[1]).trim();
+      }
+    }
+  }
+
   // Strip leading question marks, slashes, or room= prefix
   clean = clean.replace(/^[/?#&]+/, "");
   if (clean.toLowerCase().startsWith("room=")) {
@@ -677,7 +688,9 @@ async function startServer() {
     // 2. Join or Request Entry (Knock approval gatekeeper)
     socket.on("room:join", (payload: {
       roomId: string;
-      name: string;
+      username?: string;
+      name?: string;
+      isMaster?: boolean;
       role?: "guest" | "host" | "auto";
       isGuestOnly?: boolean;
       masterToken?: string;
@@ -701,14 +714,15 @@ async function startServer() {
           return;
         }
 
-        const { roomId, name, role, isGuestOnly, masterToken, hostSecretToken, passcode, profile } = payload;
+        const { roomId, username, name, role, isGuestOnly, masterToken, hostSecretToken, passcode, profile } = payload;
         const cleanRoomId = normalizeRoomId(roomId) || "main-lounge";
+        const effectiveName = (username || name || "").trim() || `Convidado ${Math.floor(100 + Math.random() * 900)}`;
 
         let room = rooms.get(cleanRoomId);
 
-        // Validate Master status strictly via masterToken
+        // Validate Master status strictly via masterToken or explicit isMaster parameter
         const masterAuth = validateServerMasterAuth(masterToken);
-        const isMasterUser = Boolean(masterAuth.isMaster);
+        const isMasterUser = Boolean(payload.isMaster || masterAuth.isMaster);
 
         // If room was not found in memory (e.g. server restart or invite link opened before host created),
         // seamlessly auto-create the room so guests and friends never get blocked with an error!
@@ -804,7 +818,7 @@ async function startServer() {
 
         // Direct entry
         const isHost = isAuthenticHost;
-        const resolvedTag = resolveServerParticipantTag(name, isMasterUser, profile?.tag);
+        const resolvedTag = resolveServerParticipantTag(effectiveName, isMasterUser, profile?.tag);
 
         let cleanBadges: string[] = [];
         if (isMasterUser) {
@@ -819,7 +833,7 @@ async function startServer() {
 
         const participant: ServerParticipant = {
           id: socket.id,
-          name: (name && name.trim().length > 0) ? name.trim() : (isHost ? (isMasterUser ? MASTER_NAME : "Anfitrião") : `Convidado ${Math.floor(100 + Math.random() * 900)}`),
+          name: effectiveName || (isHost ? (isMasterUser ? MASTER_NAME : "Anfitrião") : `Convidado ${Math.floor(100 + Math.random() * 900)}`),
           tag: resolvedTag,
           isHost,
           isMaster: isMasterUser,
@@ -848,16 +862,29 @@ async function startServer() {
         currentRoomId = cleanRoomId;
         socket.join(cleanRoomId);
 
-        // Broadcast new participant and room state to everyone in that room
-        io.to(cleanRoomId).emit("room:user_joined", participant);
-        io.to(cleanRoomId).emit("room:user-joined", participant);
         const currentParticipants = Array.from(room.participants.values());
+        const formattedRoom = formatRoomPayload(room);
+
+        // Immediately emit room:joined back to the user
+        socket.emit("room:joined", {
+          roomId: cleanRoomId,
+          room: formattedRoom,
+          self: participant,
+          isMaster: participant.isMaster,
+          participants: currentParticipants,
+        });
+
+        // Immediately emit room:participants to everyone in the room
         io.to(cleanRoomId).emit("room:participants", currentParticipants);
         io.to(cleanRoomId).emit("room:participants", {
           roomId: cleanRoomId,
           participants: currentParticipants,
           total: currentParticipants.length,
         });
+
+        // Broadcast participant join events to room
+        io.to(cleanRoomId).emit("room:user_joined", participant);
+        io.to(cleanRoomId).emit("room:user-joined", participant);
         broadcastRoomState(room);
 
         const joinMsg: ServerChatMessage = {

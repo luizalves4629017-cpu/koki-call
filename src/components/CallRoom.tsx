@@ -54,6 +54,7 @@ interface CallRoomProps {
   hasVipBadge?: boolean;
   masterToken?: string | null;
   onLeaveRoom: () => void;
+  audioRef?: React.RefObject<HTMLAudioElement | null>;
 }
 
 export const CallRoom: React.FC<CallRoomProps> = ({
@@ -64,6 +65,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   hasVipBadge: initialHasVipBadge = false,
   masterToken = null,
   onLeaveRoom,
+  audioRef,
 }) => {
   const [room, setRoom] = useState<RoomState>(initialRoom);
   const [self, setSelf] = useState<Participant>(initialSelf);
@@ -261,6 +263,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
   const remoteScreenStreamsRef = useRef<Map<string, MediaStream>>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+  const remoteAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const makingOfferRef = useRef<Map<string, boolean>>(new Map());
+  const ignoreOfferRef = useRef<Map<string, boolean>>(new Map());
   const [forceUpdate, setForceUpdate] = useState(0);
 
   const audioTrackerRef = useRef<AudioVolumeTracker | null>(null);
@@ -319,41 +324,59 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
         localStreamRef.current = stream;
 
-        // Add or replace tracks on all existing peer connections and renegotiate
+        // Apply mute state to local audio track
+        const audioTracks = stream.getAudioTracks();
+        if (audioTracks.length > 0) {
+          audioTracks[0].enabled = !isAudioMuted && !self.isMutedByHost;
+        }
+
+        // WebRTC Stream & Track Binding:
+        // Ensure localStream.getAudioTracks()[0] is attached to every RTCPeerConnection instance via peerConnection.addTrack(track, localStream)
         peerConnectionsRef.current.forEach((pc, targetId) => {
           const senders = pc.getSenders();
-          stream.getTracks().forEach((track) => {
-            const existingSender = senders.find((s) => s.track?.kind === track.kind);
-            if (existingSender) {
-              existingSender.replaceTrack(track).catch((e) => console.warn("replaceTrack error:", e));
+          
+          if (audioTracks.length > 0) {
+            const localAudioTrack = audioTracks[0];
+            const existingAudioSender = senders.find((s) => s.track?.kind === "audio");
+            if (existingAudioSender) {
+              existingAudioSender.replaceTrack(localAudioTrack).catch((e) => console.warn("replaceTrack audio error:", e));
+            } else {
+              try {
+                pc.addTrack(localAudioTrack, stream);
+              } catch (e) {
+                console.warn("addTrack audio error:", e);
+              }
+            }
+          }
+
+          stream.getVideoTracks().forEach((track) => {
+            const existingVideoSender = senders.find((s) => s.track?.kind === "video");
+            if (existingVideoSender) {
+              existingVideoSender.replaceTrack(track).catch((e) => console.warn("replaceTrack video error:", e));
             } else {
               try {
                 pc.addTrack(track, stream);
               } catch (e) {
-                console.warn("addTrack error:", e);
+                console.warn("addTrack video error:", e);
               }
             }
           });
 
-          // Trigger renegotiation so remote peers immediately receive media
+          // Trigger renegotiation so remote peers immediately receive media without failures
           if (pc.signalingState === "stable") {
             pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
               .then((offer) => pc.setLocalDescription(offer))
               .then(() => {
                 socket.emit("signal:offer", {
                   targetId,
+                  to: targetId,
                   offer: pc.localDescription,
+                  streamType: "camera",
                 });
               })
               .catch((e) => console.warn("Renegotiation offer error:", e));
           }
         });
-
-        // Apply mute state
-        const audioTracks = stream.getAudioTracks();
-        if (audioTracks.length > 0) {
-          audioTracks[0].enabled = !isAudioMuted && !self.isMutedByHost;
-        }
 
         // Setup volume tracker
         audioTrackerRef.current = new AudioVolumeTracker((level) => {
@@ -412,15 +435,28 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     const pc = new RTCPeerConnection(RTC_CONFIG);
     peerConnectionsRef.current.set(targetId, pc);
 
-    // Add local media tracks
+    // WebRTC Stream & Track Binding:
+    // Ensure localStream.getAudioTracks()[0] is attached to every RTCPeerConnection instance via peerConnection.addTrack(track, localStream)
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !isAudioMuted && !self.isMutedByHost;
         try {
-          pc.addTrack(track, localStreamRef.current!);
+          pc.addTrack(audioTrack, localStreamRef.current);
         } catch (e) {
-          console.warn("addTrack localStream error:", e);
+          console.warn("addTrack audio localStream error:", e);
         }
-      });
+      }
+
+      // Add camera video track if active
+      const videoTrack = localStreamRef.current.getVideoTracks()[0];
+      if (videoTrack && !isVideoMuted && !preferences.lowResourceMode) {
+        try {
+          pc.addTrack(videoTrack, localStreamRef.current);
+        } catch (e) {
+          console.warn("addTrack video localStream error:", e);
+        }
+      }
     }
 
     // Add screen share tracks if sharing
@@ -439,15 +475,60 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       if (event.candidate) {
         socket.emit("signal:ice-candidate", {
           targetId,
+          to: targetId,
           candidate: event.candidate,
+          iceCandidate: event.candidate,
           streamType: localScreenStreamRef.current ? "screen" : "camera",
         });
       }
     };
 
     // Handle Incoming Remote Tracks (Camera & Screen Share)
+    // Handle peerConnection.ontrack: attach event.streams[0] directly to an HTML <audio autoplay> element (or audioRef.current.srcObject = event.streams[0]) so remote peer audio plays instantly.
     pc.ontrack = (event) => {
       const stream = event.streams[0] || new MediaStream([event.track]);
+
+      // Direct audioRef binding if supplied by App.tsx (or audioRef.current.srcObject = event.streams[0])
+      if (audioRef && audioRef.current) {
+        try {
+          if (audioRef.current.srcObject !== stream) {
+            audioRef.current.srcObject = stream;
+          }
+          audioRef.current.play().catch((err) => {
+            console.warn("audioRef autoplay error (interaction pending):", err);
+          });
+        } catch (e) {
+          console.warn("Error attaching event.streams[0] to audioRef:", e);
+        }
+      }
+
+      // Dedicated per-peer HTML <audio autoplay> element to guarantee concurrent audio for all peers
+      let peerAudioEl = remoteAudioElementsRef.current.get(targetId);
+      if (!peerAudioEl) {
+        peerAudioEl = document.getElementById(`remote-peer-audio-${targetId}`) as HTMLAudioElement;
+        if (!peerAudioEl) {
+          peerAudioEl = document.createElement("audio");
+          peerAudioEl.id = `remote-peer-audio-${targetId}`;
+          peerAudioEl.autoplay = true;
+          peerAudioEl.playsInline = true;
+          peerAudioEl.setAttribute("playsinline", "true");
+          peerAudioEl.style.display = "none";
+          document.body.appendChild(peerAudioEl);
+        }
+        remoteAudioElementsRef.current.set(targetId, peerAudioEl);
+      }
+
+      if (peerAudioEl) {
+        if (peerAudioEl.srcObject !== stream) {
+          peerAudioEl.srcObject = stream;
+        }
+        const userVol = participantVolumes[targetId] ?? 100;
+        peerAudioEl.volume = Math.max(0, Math.min(1, (userVol / 100) * (masterVoiceVolume / 100)));
+        peerAudioEl.play().catch((err) => {
+          console.warn(`Autoplay audio for peer ${targetId} pending user interaction:`, err);
+        });
+      }
+
       const currentParticipant = room.participants.find((p) => p.id === targetId);
 
       // Check if this track is from a screen share stream
@@ -467,6 +548,13 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     // Handle Connection State
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "closed" || pc.connectionState === "failed") {
+        const audioEl = remoteAudioElementsRef.current.get(targetId);
+        if (audioEl) {
+          audioEl.pause();
+          audioEl.srcObject = null;
+          audioEl.remove();
+          remoteAudioElementsRef.current.delete(targetId);
+        }
         peerConnectionsRef.current.delete(targetId);
         remoteStreamsRef.current.delete(targetId);
         remoteScreenStreamsRef.current.delete(targetId);
@@ -481,17 +569,25 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         if (typeof (pc as any).restartIce === "function") {
           (pc as any).restartIce();
         }
-        pc.createOffer({ iceRestart: true })
+        pc.createOffer({ iceRestart: true, offerToReceiveAudio: true, offerToReceiveVideo: true })
           .then((offer) => pc.setLocalDescription(offer))
           .then(() => {
             socket.emit("signal:offer", {
               targetId,
+              to: targetId,
               offer: pc.localDescription,
               streamType: localScreenStreamRef.current ? "screen" : "camera",
             });
           })
           .catch((err) => console.warn("ICE restart offer error:", err));
       } else if (pc.iceConnectionState === "closed") {
+        const audioEl = remoteAudioElementsRef.current.get(targetId);
+        if (audioEl) {
+          audioEl.pause();
+          audioEl.srcObject = null;
+          audioEl.remove();
+          remoteAudioElementsRef.current.delete(targetId);
+        }
         peerConnectionsRef.current.delete(targetId);
         remoteStreamsRef.current.delete(targetId);
         remoteScreenStreamsRef.current.delete(targetId);
@@ -501,20 +597,25 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
     // If initiator, create and send Offer
     if (isInitiator) {
+      makingOfferRef.current.set(targetId, true);
       pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
         .then((offer) => pc.setLocalDescription(offer))
         .then(() => {
           socket.emit("signal:offer", {
             targetId,
+            to: targetId,
             offer: pc.localDescription,
             streamType: localScreenStreamRef.current ? "screen" : "camera",
           });
         })
-        .catch((err) => console.warn("Error creating WebRTC offer:", err));
+        .catch((err) => console.warn("Error creating WebRTC offer:", err))
+        .finally(() => {
+          makingOfferRef.current.set(targetId, false);
+        });
     }
 
     return pc;
-  }, [socket, room.participants]);
+  }, [socket, room.participants, isAudioMuted, isVideoMuted, preferences.lowResourceMode, self.isMutedByHost, masterVoiceVolume, participantVolumes, audioRef]);
 
   // 5. Socket.IO Event Listeners
   useEffect(() => {
@@ -541,7 +642,16 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         participants: prev.participants.filter((p) => p.id !== data.id),
       }));
 
-      // Clean up peer connection
+      // Clean up remote audio element
+      const audioEl = remoteAudioElementsRef.current.get(data.id);
+      if (audioEl) {
+        audioEl.pause();
+        audioEl.srcObject = null;
+        audioEl.remove();
+        remoteAudioElementsRef.current.delete(data.id);
+      }
+
+      // Clean up peer connection & WebRTC refs
       const pc = peerConnectionsRef.current.get(data.id);
       if (pc) {
         pc.close();
@@ -549,6 +659,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       }
       remoteStreamsRef.current.delete(data.id);
       remoteScreenStreamsRef.current.delete(data.id);
+      pendingCandidatesRef.current.delete(data.id);
+      makingOfferRef.current.delete(data.id);
+      ignoreOfferRef.current.delete(data.id);
 
       if (spotlightId === data.id) {
         setSpotlightId(null);
@@ -581,26 +694,74 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       }
     };
 
-    const handleOffer = async (payload: { senderId: string; offer: RTCSessionDescriptionInit; streamType?: string }) => {
-      const pc = createPeerConnection(payload.senderId, false);
+    // ICE Candidate & Signaling Exchange:
+    // Ensure signal:offer, signal:answer, and signal:ice-candidate pass audio media descriptions without renegotiation failures or dropping audio tracks.
+    const handleOffer = async (payload: {
+      senderId?: string;
+      from?: string;
+      offer: RTCSessionDescriptionInit;
+      streamType?: string;
+    }) => {
+      const senderId = payload.senderId || payload.from;
+      if (!senderId || !payload.offer) return;
+
+      const pc = createPeerConnection(senderId, false);
+      const isPolite = (socket.id || "") < senderId;
+      const isOfferCollision =
+        makingOfferRef.current.get(senderId) || pc.signalingState !== "stable";
+
+      ignoreOfferRef.current.set(senderId, !isPolite && isOfferCollision);
+      if (ignoreOfferRef.current.get(senderId)) {
+        console.warn(`[WebRTC] Glare handled: Impolite peer ignoring colliding offer from ${senderId}`);
+        return;
+      }
+
       try {
+        if (isOfferCollision) {
+          // Polite peer rolls back local offer to prevent renegotiation failure
+          try {
+            await pc.setLocalDescription({ type: "rollback" } as any);
+          } catch (rollbackErr) {
+            console.warn("Rollback caught:", rollbackErr);
+          }
+        }
+
         await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
-        
+
         // Process any queued ICE candidates for this peer
-        const queued = pendingCandidatesRef.current.get(payload.senderId) || [];
+        const queued = pendingCandidatesRef.current.get(senderId) || [];
         for (const cand of queued) {
           try {
             await pc.addIceCandidate(new RTCIceCandidate(cand));
           } catch (e) {
-            console.warn("Error adding queued ICE candidate:", e);
+            console.warn("Error adding queued ICE candidate in handleOffer:", e);
           }
         }
-        pendingCandidatesRef.current.delete(payload.senderId);
+        pendingCandidatesRef.current.delete(senderId);
+
+        // Ensure local audio track is attached to answer with audio
+        if (localStreamRef.current) {
+          const audioTrack = localStreamRef.current.getAudioTracks()[0];
+          if (audioTrack) {
+            audioTrack.enabled = !isAudioMuted && !self.isMutedByHost;
+            const senders = pc.getSenders();
+            const hasAudioSender = senders.some((s) => s.track?.kind === "audio");
+            if (!hasAudioSender) {
+              try {
+                pc.addTrack(audioTrack, localStreamRef.current);
+              } catch (e) {
+                console.warn("addTrack audio before answer error:", e);
+              }
+            }
+          }
+        }
 
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
+
         socket.emit("signal:answer", {
-          targetId: payload.senderId,
+          targetId: senderId,
+          to: senderId,
           answer: pc.localDescription,
           streamType: payload.streamType || "camera",
         });
@@ -609,40 +770,60 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       }
     };
 
-    const handleAnswer = async (payload: { senderId: string; answer: RTCSessionDescriptionInit }) => {
-      const pc = peerConnectionsRef.current.get(payload.senderId);
+    const handleAnswer = async (payload: {
+      senderId?: string;
+      from?: string;
+      answer: RTCSessionDescriptionInit;
+    }) => {
+      const senderId = payload.senderId || payload.from;
+      if (!senderId || !payload.answer) return;
+
+      const pc = peerConnectionsRef.current.get(senderId);
       if (pc) {
         try {
-          await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
-          
-          // Process any queued ICE candidates for this peer
-          const queued = pendingCandidatesRef.current.get(payload.senderId) || [];
-          for (const cand of queued) {
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(cand));
-            } catch (e) {
-              console.warn("Error adding queued ICE candidate:", e);
+          if (pc.signalingState === "have-local-offer") {
+            await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
+
+            // Process any queued ICE candidates for this peer
+            const queued = pendingCandidatesRef.current.get(senderId) || [];
+            for (const cand of queued) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(cand));
+              } catch (e) {
+                console.warn("Error adding queued ICE candidate in handleAnswer:", e);
+              }
             }
+            pendingCandidatesRef.current.delete(senderId);
           }
-          pendingCandidatesRef.current.delete(payload.senderId);
         } catch (err) {
           console.warn("Error handling WebRTC answer:", err);
         }
       }
     };
 
-    const handleIceCandidate = async (payload: { senderId: string; candidate: RTCIceCandidateInit }) => {
-      const pc = peerConnectionsRef.current.get(payload.senderId);
-      if (pc && pc.remoteDescription) {
+    const handleIceCandidate = async (payload: {
+      senderId?: string;
+      from?: string;
+      candidate?: RTCIceCandidateInit;
+      iceCandidate?: RTCIceCandidateInit;
+    }) => {
+      const senderId = payload.senderId || payload.from;
+      const candidateInit = payload.candidate || payload.iceCandidate;
+      if (!senderId || !candidateInit) return;
+
+      const pc = peerConnectionsRef.current.get(senderId);
+      if (pc && pc.remoteDescription && pc.remoteDescription.type) {
         try {
-          await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+          await pc.addIceCandidate(new RTCIceCandidate(candidateInit));
         } catch (err) {
-          console.warn("Error adding ICE candidate:", err);
+          if (!ignoreOfferRef.current.get(senderId)) {
+            console.warn("Error adding ICE candidate:", err);
+          }
         }
       } else {
-        const queued = pendingCandidatesRef.current.get(payload.senderId) || [];
-        queued.push(payload.candidate);
-        pendingCandidatesRef.current.set(payload.senderId, queued);
+        const queued = pendingCandidatesRef.current.get(senderId) || [];
+        queued.push(candidateInit);
+        pendingCandidatesRef.current.set(senderId, queued);
       }
     };
 
@@ -956,19 +1137,84 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   }, [isAudioMuted, isVideoMuted, isScreenSharing, isDeafened, localAudioLevel, preferences.lowResourceMode, self.isMutedByHost, socket]);
 
   // Toggle Microphone
-  const handleToggleAudio = () => {
+  const handleToggleAudio = async () => {
     if (self.isMutedByHost) return;
 
-    const nextState = !isAudioMuted;
-    setIsAudioMuted(nextState);
+    const nextMuted = !isAudioMuted;
+    setIsAudioMuted(nextMuted);
+
+    // If activating/unmuting, re-acquire audio track if missing
+    if (!nextMuted) {
+      if (!localStreamRef.current || localStreamRef.current.getAudioTracks().length === 0) {
+        try {
+          const micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: preferences.echoCancellation,
+              noiseSuppression: preferences.noiseSuppression,
+              deviceId: preferences.selectedAudioInput ? { exact: preferences.selectedAudioInput } : undefined,
+            },
+            video: false,
+          });
+          const newAudioTrack = micStream.getAudioTracks()[0];
+          if (newAudioTrack) {
+            if (localStreamRef.current) {
+              localStreamRef.current.addTrack(newAudioTrack);
+            } else {
+              localStreamRef.current = new MediaStream([newAudioTrack]);
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to acquire microphone track on unmute:", e);
+        }
+      }
+    }
 
     if (localStreamRef.current) {
       const audioTracks = localStreamRef.current.getAudioTracks();
-      audioTracks.forEach((t) => (t.enabled = !nextState));
+      audioTracks.forEach((t) => (t.enabled = !nextMuted));
+
+      // WebRTC Stream & Track Binding:
+      // Ensure localStream.getAudioTracks()[0] is attached to every RTCPeerConnection instance via peerConnection.addTrack(track, localStream) as soon as the microphone is unmuted/activated.
+      if (!nextMuted && audioTracks.length > 0) {
+        const activeAudioTrack = audioTracks[0];
+        peerConnectionsRef.current.forEach((pc, targetId) => {
+          const senders = pc.getSenders();
+          const existingAudioSender = senders.find((s) => s.track?.kind === "audio");
+          if (existingAudioSender) {
+            existingAudioSender.replaceTrack(activeAudioTrack).catch((err) => {
+              console.warn("replaceTrack error on unmute:", err);
+            });
+          } else {
+            try {
+              pc.addTrack(activeAudioTrack, localStreamRef.current!);
+            } catch (err) {
+              console.warn("addTrack error on unmute:", err);
+            }
+          }
+
+          if (pc.signalingState === "stable") {
+            makingOfferRef.current.set(targetId, true);
+            pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
+              .then((offer) => pc.setLocalDescription(offer))
+              .then(() => {
+                socket.emit("signal:offer", {
+                  targetId,
+                  to: targetId,
+                  offer: pc.localDescription,
+                  streamType: "camera",
+                });
+              })
+              .catch((err) => console.warn("Renegotiate offer on unmute error:", err))
+              .finally(() => {
+                makingOfferRef.current.set(targetId, false);
+              });
+          }
+        });
+      }
     }
 
-    setSelf((prev) => ({ ...prev, hasAudio: !nextState }));
-    socket.emit("room:state-update", { hasAudio: !nextState });
+    setSelf((prev) => ({ ...prev, hasAudio: !nextMuted }));
+    socket.emit("room:state-update", { hasAudio: !nextMuted });
   };
 
   // Toggle Video Camera
@@ -1400,6 +1646,39 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const handleVolumeChange = (userId: string, vol: number) => {
     setParticipantVolumes((prev) => ({ ...prev, [userId]: vol }));
   };
+
+  // Sync remote audio element volumes when master volume, deafen, or participant volumes update
+  useEffect(() => {
+    remoteAudioElementsRef.current.forEach((audioEl, targetId) => {
+      if (isDeafened) {
+        audioEl.muted = true;
+      } else {
+        audioEl.muted = false;
+        const userVol = participantVolumes[targetId] ?? 100;
+        audioEl.volume = Math.max(0, Math.min(1, (userVol / 100) * (masterVoiceVolume / 100)));
+      }
+    });
+    if (audioRef && audioRef.current) {
+      if (isDeafened) {
+        audioRef.current.muted = true;
+      } else {
+        audioRef.current.muted = false;
+        audioRef.current.volume = Math.max(0, Math.min(1, masterVoiceVolume / 100));
+      }
+    }
+  }, [isDeafened, masterVoiceVolume, participantVolumes, audioRef]);
+
+  // Clean up remote audio tags on unmount
+  useEffect(() => {
+    return () => {
+      remoteAudioElementsRef.current.forEach((el) => {
+        el.pause();
+        el.srcObject = null;
+        el.remove();
+      });
+      remoteAudioElementsRef.current.clear();
+    };
+  }, []);
 
   // Keyboard shortcut: Key '0' to mute/unmute microphone
   useEffect(() => {

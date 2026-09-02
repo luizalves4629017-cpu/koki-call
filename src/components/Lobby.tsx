@@ -195,7 +195,7 @@ export const Lobby: React.FC<LobbyProps> = ({
   const [lowBandwidthPreset, setLowBandwidthPreset] = useState(false);
 
   // Guest inputs
-  const [joinRoomId, setJoinRoomId] = useState(initialRoomId);
+  const [joinRoomId, setJoinRoomId] = useState(initialRoomId || "main-lounge");
   const [joinPasscode, setJoinPasscode] = useState("");
 
   // Media preview state
@@ -349,10 +349,11 @@ export const Lobby: React.FC<LobbyProps> = ({
     });
   };
 
-  const handleJoinSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleJoinSubmit = (e?: React.FormEvent) => {
+    if (e && typeof e.preventDefault === "function") {
+      e.preventDefault();
+    }
     const effectiveRoomId = (joinRoomId || initialRoomId || "main-lounge").trim().toLowerCase();
-    if (!effectiveRoomId) return;
 
     const finalName = nickname.trim() || `Convidado ${Math.floor(100 + Math.random() * 900)}`;
     persistCurrentProfile(finalName);
@@ -1129,13 +1130,12 @@ export const Lobby: React.FC<LobbyProps> = ({
               <form onSubmit={handleJoinSubmit} className="space-y-3.5">
                 <div>
                   <label className="text-xs font-semibold text-slate-300 block mb-1">
-                    Código ou Link da Sala <span className="text-rose-400">*</span>
+                    Código ou Link da Sala <span className="text-slate-400 text-[11px] font-normal">(padrão: main-lounge)</span>
                   </label>
                   <input
                     type="text"
-                    required
                     placeholder="Ex: main-lounge ou link do convite"
-                    value={joinRoomId || initialRoomId}
+                    value={joinRoomId}
                     onChange={(e) => {
                       const val = e.target.value;
                       if (val.includes("?room=") || val.includes("&room=")) {
@@ -1158,11 +1158,11 @@ export const Lobby: React.FC<LobbyProps> = ({
 
                 <div>
                   <label className="text-xs font-semibold text-slate-300 block mb-1">
-                    Senha da Sala (Se for privada)
+                    Senha da Sala <span className="text-slate-400 text-[11px] font-normal">(Opcional para salas públicas)</span>
                   </label>
                   <input
                     type="password"
-                    placeholder="Opcional se a sala for pública"
+                    placeholder="Deixe em branco para salas públicas"
                     value={joinPasscode}
                     onChange={(e) => setJoinPasscode(e.target.value)}
                     className="w-full bg-[#121a2d] border border-[#253550] text-slate-100 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-cyan-500"
@@ -1171,8 +1171,12 @@ export const Lobby: React.FC<LobbyProps> = ({
 
                 <button
                   type="submit"
-                  disabled={!((joinRoomId || initialRoomId).trim())}
-                  className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-xs transition-all shadow-lg shadow-cyan-950/50 flex items-center justify-center gap-2 cursor-pointer"
+                  id="btn-enter-call"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleJoinSubmit(e);
+                  }}
+                  className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded-xl text-xs transition-all shadow-lg shadow-cyan-950/50 flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <LogIn className="w-4 h-4" />
                   <span>Entrar na Chamada</span>
