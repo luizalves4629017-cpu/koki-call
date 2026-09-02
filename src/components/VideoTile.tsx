@@ -73,21 +73,26 @@ export const VideoTile: React.FC<VideoTileProps> = ({
 
   // Handle Video Track
   useEffect(() => {
-    if (videoRef.current && stream && participant.hasVideo && !lowResourceMode) {
-      if (videoRef.current.srcObject !== stream) {
-        videoRef.current.srcObject = stream;
+    if (videoRef.current && stream && !lowResourceMode) {
+      const videoTracks = stream.getVideoTracks();
+      if (videoTracks.length > 0) {
+        if (videoRef.current.srcObject !== stream) {
+          videoRef.current.srcObject = stream;
+        }
+        videoRef.current.play().catch(() => {});
       }
     }
   }, [stream, participant.hasVideo, lowResourceMode]);
 
-  // Handle Screen Share Track
+  // Handle Screen Share Track (if specifically used standalone)
   useEffect(() => {
-    if (screenRef.current && screenStream && participant.isScreenSharing) {
+    if (screenRef.current && screenStream) {
       if (screenRef.current.srcObject !== screenStream) {
         screenRef.current.srcObject = screenStream;
       }
+      screenRef.current.play().catch(() => {});
     }
-  }, [screenStream, participant.isScreenSharing]);
+  }, [screenStream]);
 
   const screenAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -136,8 +141,9 @@ export const VideoTile: React.FC<VideoTileProps> = ({
     }
   }, [screenStream, isSelf, localVolume, masterVoiceVolume, participant.isDeafened, isSameVoiceChannel]);
 
-  const hasActiveVideo = participant.hasVideo && !lowResourceMode && stream;
-  const isDisplayingScreen = participant.isScreenSharing && screenStream;
+  const hasActiveVideo = (participant.hasVideo || (stream && stream.getVideoTracks().some((t) => t.enabled))) && !lowResourceMode && Boolean(stream && stream.getVideoTracks().length > 0);
+  // Only display screen directly inside VideoTile if screenStream is passed AND participant has no stream/camera
+  const isDisplayingScreen = Boolean(screenStream && !stream && participant.isScreenSharing);
 
   return (
     <div

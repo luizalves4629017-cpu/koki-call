@@ -468,13 +468,8 @@ async function startServer() {
       // 1. Full room state sync
       io.to(room.roomId).emit("room:sync", payload);
 
-      // 2. Broadcast room:participants (direct array and object format)
+      // 2. Canonical array of active room participants
       io.to(room.roomId).emit("room:participants", participantsList);
-      io.to(room.roomId).emit("room:participants", {
-        roomId: room.roomId,
-        participants: participantsList,
-        total: participantsList.length,
-      });
 
       // 3. Both snake_case and kebab-case for users list
       io.to(room.roomId).emit("room:users_list", {
@@ -874,13 +869,8 @@ async function startServer() {
           participants: currentParticipants,
         });
 
-        // Immediately emit room:participants to everyone in the room
+        // Immediately emit room:participants with array of active users to everyone in the room
         io.to(cleanRoomId).emit("room:participants", currentParticipants);
-        io.to(cleanRoomId).emit("room:participants", {
-          roomId: cleanRoomId,
-          participants: currentParticipants,
-          total: currentParticipants.length,
-        });
 
         // Broadcast participant join events to room
         io.to(cleanRoomId).emit("room:user_joined", participant);

@@ -292,11 +292,97 @@ export default function App() {
       setInCall(true);
     };
 
+    const handleRoomParticipants = (data: any) => {
+      const list: Participant[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.participants)
+        ? data.participants
+        : [];
+      if (!list) return;
+
+      setCurrentRoom((prev) => {
+        if (!prev) return prev;
+        const prevMap = new Map<string, Participant>(prev.participants.map((p) => [p.id, p]));
+        const merged = list.map((incoming) => {
+          const existing = prevMap.get(incoming.id);
+          return existing ? { ...existing, ...incoming } : incoming;
+        });
+        return {
+          ...prev,
+          participants: merged,
+        };
+      });
+    };
+
+    const handleUserJoined = (participant: Participant) => {
+      if (!participant || !participant.id) return;
+      setCurrentRoom((prev) => {
+        if (!prev) return prev;
+        const exists = prev.participants.some((p) => p.id === participant.id);
+        if (exists) {
+          return {
+            ...prev,
+            participants: prev.participants.map((p) =>
+              p.id === participant.id ? { ...p, ...participant } : p
+            ),
+          };
+        }
+        return {
+          ...prev,
+          participants: [...prev.participants, participant],
+        };
+      });
+    };
+
+    const handleUserLeft = (data: { id: string }) => {
+      if (!data?.id) return;
+      setCurrentRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          participants: prev.participants.filter((p) => p.id !== data.id),
+        };
+      });
+    };
+
+    const handleUserUpdated = (updatedUser: Participant) => {
+      if (!updatedUser?.id) return;
+      setCurrentRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          participants: prev.participants.map((p) =>
+            p.id === updatedUser.id ? { ...p, ...updatedUser } : p
+          ),
+        };
+      });
+      setSelfParticipant((prev) =>
+        prev && prev.id === updatedUser.id ? { ...prev, ...updatedUser } : prev
+      );
+    };
+
+    const handleRoomSync = (syncedRoom: RoomState) => {
+      if (syncedRoom && syncedRoom.roomId) {
+        setCurrentRoom((prev) => ({
+          ...(prev || {}),
+          ...syncedRoom,
+          participants: syncedRoom.participants || prev?.participants || [],
+        }));
+      }
+    };
+
     socketInstance.on("connect", handleConnect);
     socketInstance.on("disconnect", handleDisconnect);
     socketInstance.io.on("reconnect", handleConnect);
 
     socketInstance.on("room:joined", handleRoomJoined);
+    socketInstance.on("room:participants", handleRoomParticipants);
+    socketInstance.on("room:sync", handleRoomSync);
+    socketInstance.on("room:user-joined", handleUserJoined);
+    socketInstance.on("room:user_joined", handleUserJoined);
+    socketInstance.on("room:user-left", handleUserLeft);
+    socketInstance.on("room:user_left", handleUserLeft);
+    socketInstance.on("room:user-updated", handleUserUpdated);
     socketInstance.on("room:knock-approved", handleKnockApproved);
     socketInstance.on("room:knock-rejected", handleKnockRejected);
     socketInstance.on("voice:joined", handleVoiceChannelEvent);
@@ -307,6 +393,13 @@ export default function App() {
       socketInstance.off("disconnect", handleDisconnect);
       socketInstance.io.off("reconnect", handleConnect);
       socketInstance.off("room:joined", handleRoomJoined);
+      socketInstance.off("room:participants", handleRoomParticipants);
+      socketInstance.off("room:sync", handleRoomSync);
+      socketInstance.off("room:user-joined", handleUserJoined);
+      socketInstance.off("room:user_joined", handleUserJoined);
+      socketInstance.off("room:user-left", handleUserLeft);
+      socketInstance.off("room:user_left", handleUserLeft);
+      socketInstance.off("room:user-updated", handleUserUpdated);
       socketInstance.off("room:knock-approved", handleKnockApproved);
       socketInstance.off("room:knock-rejected", handleKnockRejected);
       socketInstance.off("voice:joined", handleVoiceChannelEvent);

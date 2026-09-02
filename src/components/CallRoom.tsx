@@ -13,6 +13,7 @@ import { AudioVolumeTracker } from "../utils/audioAnalyser";
 import { playVoiceJoinChime } from "../utils/audioChimes";
 import { Header } from "./Header";
 import { VideoTile } from "./VideoTile";
+import { ScreenShareTile } from "./ScreenShareTile";
 import { ControlBar } from "./ControlBar";
 import { DiscordChatAndChannels } from "./DiscordChatAndChannels";
 import { ChannelSidebar, VoiceChannel } from "./ChannelSidebar";
@@ -262,6 +263,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
   const remoteScreenStreamsRef = useRef<Map<string, MediaStream>>(new Map());
+  const incomingStreamTypeRef = useRef<Map<string, "camera" | "screen">>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const remoteAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const makingOfferRef = useRef<Map<string, boolean>>(new Map());
@@ -484,63 +486,82 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     };
 
     // Handle Incoming Remote Tracks (Camera & Screen Share)
-    // Handle peerConnection.ontrack: attach event.streams[0] directly to an HTML <audio autoplay> element (or audioRef.current.srcObject = event.streams[0]) so remote peer audio plays instantly.
+    // Handle peerConnection.ontrack: attach event.streams[0] directly to media elements (<audio autoplay> / <video autoplay>)
     pc.ontrack = (event) => {
       const stream = event.streams[0] || new MediaStream([event.track]);
+      const track = event.track;
 
-      // Direct audioRef binding if supplied by App.tsx (or audioRef.current.srcObject = event.streams[0])
-      if (audioRef && audioRef.current) {
-        try {
-          if (audioRef.current.srcObject !== stream) {
-            audioRef.current.srcObject = stream;
+      if (track.kind === "audio") {
+        // Direct audioRef binding if supplied by App.tsx (or audioRef.current.srcObject = event.streams[0])
+        if (audioRef && audioRef.current) {
+          try {
+            if (audioRef.current.srcObject !== stream) {
+              audioRef.current.srcObject = stream;
+            }
+            audioRef.current.play().catch((err) => {
+              console.warn("audioRef autoplay error (interaction pending):", err);
+            });
+          } catch (e) {
+            console.warn("Error attaching event.streams[0] to audioRef:", e);
           }
-          audioRef.current.play().catch((err) => {
-            console.warn("audioRef autoplay error (interaction pending):", err);
-          });
-        } catch (e) {
-          console.warn("Error attaching event.streams[0] to audioRef:", e);
         }
-      }
 
-      // Dedicated per-peer HTML <audio autoplay> element to guarantee concurrent audio for all peers
-      let peerAudioEl = remoteAudioElementsRef.current.get(targetId);
-      if (!peerAudioEl) {
-        peerAudioEl = document.getElementById(`remote-peer-audio-${targetId}`) as HTMLAudioElement;
+        // Dedicated per-peer HTML <audio autoplay> element to guarantee concurrent audio for all peers
+        let peerAudioEl = remoteAudioElementsRef.current.get(targetId);
         if (!peerAudioEl) {
-          peerAudioEl = document.createElement("audio");
-          peerAudioEl.id = `remote-peer-audio-${targetId}`;
-          peerAudioEl.autoplay = true;
-          peerAudioEl.playsInline = true;
-          peerAudioEl.setAttribute("playsinline", "true");
-          peerAudioEl.style.display = "none";
-          document.body.appendChild(peerAudioEl);
+          peerAudioEl = document.getElementById(`remote-peer-audio-${targetId}`) as HTMLAudioElement;
+          if (!peerAudioEl) {
+            peerAudioEl = document.createElement("audio");
+            peerAudioEl.id = `remote-peer-audio-${targetId}`;
+            peerAudioEl.autoplay = true;
+            peerAudioEl.playsInline = true;
+            peerAudioEl.setAttribute("playsinline", "true");
+            peerAudioEl.style.display = "none";
+            document.body.appendChild(peerAudioEl);
+          }
+          remoteAudioElementsRef.current.set(targetId, peerAudioEl);
         }
-        remoteAudioElementsRef.current.set(targetId, peerAudioEl);
-      }
 
-      if (peerAudioEl) {
-        if (peerAudioEl.srcObject !== stream) {
-          peerAudioEl.srcObject = stream;
+        if (peerAudioEl) {
+          if (peerAudioEl.srcObject !== stream) {
+            peerAudioEl.srcObject = stream;
+          }
+          const userVol = participantVolumes[targetId] ?? 100;
+          peerAudioEl.volume = Math.max(0, Math.min(1, (userVol / 100) * (masterVoiceVolume / 100)));
+          peerAudioEl.play().catch((err) => {
+            console.warn(`Autoplay audio for peer ${targetId} pending user interaction:`, err);
+          });
         }
-        const userVol = participantVolumes[targetId] ?? 100;
-        peerAudioEl.volume = Math.max(0, Math.min(1, (userVol / 100) * (masterVoiceVolume / 100)));
-        peerAudioEl.play().catch((err) => {
-          console.warn(`Autoplay audio for peer ${targetId} pending user interaction:`, err);
-        });
       }
 
       const currentParticipant = room.participants.find((p) => p.id === targetId);
 
-      // Check if this track is from a screen share stream
+      // Distinguish screen share track from webcam camera track
+      const trackLabel = (track.label || "").toLowerCase();
       const isScreenShare =
-        Boolean(currentParticipant?.isScreenSharing) ||
-        (event.track.kind === "video" && remoteStreamsRef.current.has(targetId) && remoteStreamsRef.current.get(targetId)?.getVideoTracks().length! > 0);
+        trackLabel.includes("screen") ||
+        trackLabel.includes("window") ||
+        trackLabel.includes("display") ||
+        trackLabel.includes("monitor") ||
+        trackLabel.includes("tab") ||
+        incomingStreamTypeRef.current.get(targetId) === "screen" ||
+        Boolean(currentParticipant?.isScreenSharing && remoteStreamsRef.current.has(targetId));
 
       if (isScreenShare) {
         remoteScreenStreamsRef.current.set(targetId, stream);
       } else {
         remoteStreamsRef.current.set(targetId, stream);
       }
+
+      track.onended = () => {
+        if (isScreenShare) {
+          remoteScreenStreamsRef.current.delete(targetId);
+          if (spotlightId === `screen-${targetId}`) {
+            setSpotlightId(null);
+          }
+        }
+        setForceUpdate((prev) => prev + 1);
+      };
 
       setForceUpdate((prev) => prev + 1);
     };
@@ -690,7 +711,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
       // If user started screen sharing, auto spotlight if none set
       if (updatedUser.isScreenSharing && !spotlightId) {
-        setSpotlightId(updatedUser.id);
+        setSpotlightId(`screen-${updatedUser.id}`);
       }
     };
 
@@ -701,9 +722,13 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       from?: string;
       offer: RTCSessionDescriptionInit;
       streamType?: string;
+      isScreen?: boolean;
     }) => {
       const senderId = payload.senderId || payload.from;
       if (!senderId || !payload.offer) return;
+
+      const isScreen = payload.isScreen || payload.streamType === "screen";
+      incomingStreamTypeRef.current.set(senderId, isScreen ? "screen" : "camera");
 
       const pc = createPeerConnection(senderId, false);
       const isPolite = (socket.id || "") < senderId;
@@ -1324,9 +1349,11 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         localScreenStreamRef.current = null;
       }
       setIsScreenSharing(false);
-      if (spotlightId === self.id) setSpotlightId(null);
+      if (spotlightId === `screen-${self.id}` || spotlightId === self.id) {
+        setSpotlightId(null);
+      }
 
-      // Remove screen tracks from peer connections and renegotiate
+      // Remove or replace screen tracks on peer connections and renegotiate
       peerConnectionsRef.current.forEach((pc, targetId) => {
         const senders = pc.getSenders();
         senders.forEach((sender) => {
@@ -1338,23 +1365,30 @@ export const CallRoom: React.FC<CallRoomProps> = ({
             try {
               pc.removeTrack(sender);
             } catch (e) {
-              console.warn("removeTrack screen error:", e);
+              try {
+                sender.replaceTrack(null);
+              } catch (err) {}
             }
           }
         });
 
         if (pc.signalingState === "stable") {
+          makingOfferRef.current.set(targetId, true);
           pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
             .then((offer) => pc.setLocalDescription(offer))
             .then(() => {
               socket.emit("signal:offer", {
                 targetId,
+                to: targetId,
                 offer: pc.localDescription,
                 streamType: "camera",
                 isScreen: false,
               });
             })
-            .catch((err) => console.warn("Renegotiation after stop screen error:", err));
+            .catch((err) => console.warn("Renegotiation after stop screen error:", err))
+            .finally(() => {
+              makingOfferRef.current.set(targetId, false);
+            });
         }
       });
 
@@ -1367,37 +1401,71 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
         localScreenStreamRef.current = screenStream;
         setIsScreenSharing(true);
-        setSpotlightId(self.id);
+        setSpotlightId(`screen-${self.id}`);
 
         // Apply quality encodings and max framerate parameters
         applyScreenShareQuality(screenStream, screenQualityPreset, peerConnectionsRef.current);
 
-        screenStream.getVideoTracks()[0].onended = () => {
-          handleToggleScreenShare();
-        };
+        const screenVideoTrack = screenStream.getVideoTracks()[0];
+        const screenAudioTrack = screenStream.getAudioTracks()[0];
 
-        // Add screen tracks to all peer connections and trigger renegotiation
+        if (screenVideoTrack) {
+          screenVideoTrack.onended = () => {
+            handleToggleScreenShare();
+          };
+        }
+
+        // Replace/add screen video & audio track on all active RTCPeerConnection instances
         peerConnectionsRef.current.forEach((pc, targetId) => {
-          screenStream.getTracks().forEach((track) => {
-            try {
-              pc.addTrack(track, screenStream);
-            } catch (e) {
-              console.warn("addTrack screen error:", e);
+          const senders = pc.getSenders();
+
+          if (screenVideoTrack) {
+            const existingScreenSender = senders.find(
+              (s) =>
+                s.track &&
+                (s.track.label.toLowerCase().includes("screen") ||
+                  s.track.label.toLowerCase().includes("display") ||
+                  s.track === screenVideoTrack)
+            );
+
+            if (existingScreenSender) {
+              existingScreenSender.replaceTrack(screenVideoTrack).catch((e) => {
+                console.warn("replaceTrack screen video error:", e);
+              });
+            } else {
+              try {
+                pc.addTrack(screenVideoTrack, screenStream);
+              } catch (e) {
+                console.warn("addTrack screen video error:", e);
+              }
             }
-          });
+          }
+
+          if (screenAudioTrack) {
+            try {
+              pc.addTrack(screenAudioTrack, screenStream);
+            } catch (e) {
+              console.warn("addTrack screen audio error:", e);
+            }
+          }
 
           if (pc.signalingState === "stable") {
+            makingOfferRef.current.set(targetId, true);
             pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
               .then((offer) => pc.setLocalDescription(offer))
               .then(() => {
                 socket.emit("signal:offer", {
                   targetId,
+                  to: targetId,
                   offer: pc.localDescription,
                   streamType: "screen",
                   isScreen: true,
                 });
               })
-              .catch((err) => console.warn("Renegotiation offer screen error:", err));
+              .catch((err) => console.warn("Renegotiation offer screen error:", err))
+              .finally(() => {
+                makingOfferRef.current.set(targetId, false);
+              });
           }
         });
 
@@ -1707,10 +1775,45 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     };
   }, [isAudioMuted, self.isMutedByHost]);
 
-  // Active Spotlight Participant
-  const activeSpotlight = spotlightId
-    ? room.participants.find((p) => p.id === spotlightId) || (spotlightId === self.id ? self : null)
+  // Active screen shares in the room (Self and Remotes)
+  interface ScreenShareItem {
+    participant: Participant;
+    isSelf: boolean;
+    stream: MediaStream | null;
+  }
+
+  const activeScreenShares: ScreenShareItem[] = [
+    ...(isScreenSharing && localScreenStreamRef.current
+      ? [{ participant: self, isSelf: true, stream: localScreenStreamRef.current }]
+      : []),
+    ...room.participants
+      .filter(
+        (p) =>
+          p.id !== self.id &&
+          (p.isScreenSharing || remoteScreenStreamsRef.current.has(p.id))
+      )
+      .map((p) => ({
+        participant: p,
+        isSelf: false,
+        stream: remoteScreenStreamsRef.current.get(p.id) || null,
+      })),
+  ];
+
+  // If a screen share is explicitly spotlighted (e.g. "screen-userId")
+  const activeSpotlightScreen = spotlightId?.startsWith("screen-")
+    ? activeScreenShares.find(
+        (s) => s.participant.id === spotlightId.replace("screen-", "")
+      )
     : null;
+
+  // Active Spotlight Participant Camera (if not screen spotlight)
+  const activeSpotlight =
+    spotlightId && !activeSpotlightScreen
+      ? room.participants.find((p) => p.id === spotlightId) ||
+        (spotlightId === self.id ? self : null)
+      : null;
+
+  const totalGridTiles = activeScreenShares.length + room.participants.length;
 
   const isUserMaster = Boolean(isMaster);
   const hasVipBadge = Boolean(
@@ -1790,8 +1893,86 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         />
 
         <main className="flex-1 p-3 overflow-y-auto flex flex-col justify-center items-center">
-          {activeSpotlight ? (
-            /* Spotlight Mode (Screen share or pinned user) */
+          {activeSpotlightScreen ? (
+            /* Spotlight Mode: Screen Share Primary View with Participant Ribbon */
+            <div className="w-full h-full flex flex-col gap-3 max-w-7xl mx-auto">
+              <div className="flex-1 min-h-0">
+                <ScreenShareTile
+                  participant={activeSpotlightScreen.participant}
+                  isSelf={activeSpotlightScreen.isSelf}
+                  screenStream={activeSpotlightScreen.stream}
+                  isSpotlight={true}
+                  userVolume={participantVolumes[activeSpotlightScreen.participant.id] ?? 100}
+                  masterVoiceVolume={masterVoiceVolume}
+                  currentVoiceChannelId={activeVoiceChannelId}
+                  onToggleSpotlight={() => setSpotlightId(null)}
+                  onVolumeChange={handleVolumeChange}
+                />
+              </div>
+
+              {/* Mini participant ribbon below spotlight containing ALL camera feeds */}
+              <div className="h-28 flex items-center gap-2.5 overflow-x-auto pb-1 px-1">
+                {/* Self camera tile */}
+                <div className="w-44 h-full shrink-0">
+                  <VideoTile
+                    participant={self}
+                    isSelf={true}
+                    isHostViewer={self.isHost}
+                    stream={localStreamRef.current}
+                    audioLevel={localAudioLevel}
+                    lowResourceMode={preferences.lowResourceMode}
+                    onToggleSpotlight={() => setSpotlightId(self.id)}
+                    onSelectProfile={(p) => setSelectedProfileParticipant(p)}
+                  />
+                </div>
+
+                {/* Other participants' camera feeds */}
+                {room.participants
+                  .filter((p) => p.id !== self.id)
+                  .map((p) => (
+                    <div key={p.id} className="w-44 h-full shrink-0">
+                      <VideoTile
+                        participant={p}
+                        isSelf={false}
+                        isHostViewer={self.isHost}
+                        stream={remoteStreamsRef.current.get(p.id)}
+                        audioLevel={p.audioLevel}
+                        lowResourceMode={preferences.lowResourceMode}
+                        userVolume={participantVolumes[p.id] ?? 100}
+                        masterVoiceVolume={masterVoiceVolume}
+                        currentVoiceChannelId={activeVoiceChannelId}
+                        onMoveToVoiceChannel={isUserMaster ? handleMoveToVoiceChannel : undefined}
+                        onToggleSpotlight={() => setSpotlightId(p.id)}
+                        onHostMute={handleHostMuteUser}
+                        onHostKick={handleHostKickUser}
+                        onSelectProfile={(part) => setSelectedProfileParticipant(part)}
+                        onVolumeChange={handleVolumeChange}
+                      />
+                    </div>
+                  ))}
+
+                {/* Other active screen shares if multiple people are sharing */}
+                {activeScreenShares
+                  .filter((s) => s.participant.id !== activeSpotlightScreen.participant.id)
+                  .map((s) => (
+                    <div key={`ribbon-screen-${s.participant.id}`} className="w-44 h-full shrink-0">
+                      <ScreenShareTile
+                        participant={s.participant}
+                        isSelf={s.isSelf}
+                        screenStream={s.stream}
+                        isSpotlight={false}
+                        userVolume={participantVolumes[s.participant.id] ?? 100}
+                        masterVoiceVolume={masterVoiceVolume}
+                        currentVoiceChannelId={activeVoiceChannelId}
+                        onToggleSpotlight={() => setSpotlightId(`screen-${s.participant.id}`)}
+                        onVolumeChange={handleVolumeChange}
+                      />
+                    </div>
+                  ))}
+              </div>
+            </div>
+          ) : activeSpotlight ? (
+            /* Spotlight Mode: Pinned Participant Camera with Ribbon */
             <div className="w-full h-full flex flex-col gap-3 max-w-7xl mx-auto">
               <div className="flex-1 min-h-0">
                 <VideoTile
@@ -1799,7 +1980,6 @@ export const CallRoom: React.FC<CallRoomProps> = ({
                   isSelf={activeSpotlight.id === self.id}
                   isHostViewer={self.isHost}
                   stream={activeSpotlight.id === self.id ? localStreamRef.current : remoteStreamsRef.current.get(activeSpotlight.id)}
-                  screenStream={activeSpotlight.id === self.id ? localScreenStreamRef.current : remoteScreenStreamsRef.current.get(activeSpotlight.id)}
                   audioLevel={activeSpotlight.id === self.id ? localAudioLevel : 0}
                   lowResourceMode={preferences.lowResourceMode}
                   isSpotlight={true}
@@ -1817,24 +1997,42 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
               {/* Mini participant ribbon below spotlight */}
               <div className="h-28 flex items-center gap-2.5 overflow-x-auto pb-1 px-1">
-                {/* Self tile */}
-                <div className="w-44 h-full shrink-0">
-                  <VideoTile
-                    participant={self}
-                    isSelf={true}
-                    isHostViewer={self.isHost}
-                    stream={localStreamRef.current}
-                    screenStream={localScreenStreamRef.current}
-                    audioLevel={localAudioLevel}
-                    lowResourceMode={preferences.lowResourceMode}
-                    onToggleSpotlight={() => setSpotlightId(self.id)}
-                    onSelectProfile={(p) => setSelectedProfileParticipant(p)}
-                  />
-                </div>
+                {/* Active screen shares in the ribbon */}
+                {activeScreenShares.map((s) => (
+                  <div key={`ribbon-screen-${s.participant.id}`} className="w-44 h-full shrink-0">
+                    <ScreenShareTile
+                      participant={s.participant}
+                      isSelf={s.isSelf}
+                      screenStream={s.stream}
+                      isSpotlight={false}
+                      userVolume={participantVolumes[s.participant.id] ?? 100}
+                      masterVoiceVolume={masterVoiceVolume}
+                      currentVoiceChannelId={activeVoiceChannelId}
+                      onToggleSpotlight={() => setSpotlightId(`screen-${s.participant.id}`)}
+                      onVolumeChange={handleVolumeChange}
+                    />
+                  </div>
+                ))}
+
+                {/* Self tile if not spotlighted */}
+                {activeSpotlight.id !== self.id && (
+                  <div className="w-44 h-full shrink-0">
+                    <VideoTile
+                      participant={self}
+                      isSelf={true}
+                      isHostViewer={self.isHost}
+                      stream={localStreamRef.current}
+                      audioLevel={localAudioLevel}
+                      lowResourceMode={preferences.lowResourceMode}
+                      onToggleSpotlight={() => setSpotlightId(self.id)}
+                      onSelectProfile={(p) => setSelectedProfileParticipant(p)}
+                    />
+                  </div>
+                )}
 
                 {/* Other participants */}
                 {room.participants
-                  .filter((p) => p.id !== self.id)
+                  .filter((p) => p.id !== self.id && p.id !== activeSpotlight.id)
                   .map((p) => (
                     <div key={p.id} className="w-44 h-full shrink-0">
                       <VideoTile
@@ -1842,7 +2040,6 @@ export const CallRoom: React.FC<CallRoomProps> = ({
                         isSelf={false}
                         isHostViewer={self.isHost}
                         stream={remoteStreamsRef.current.get(p.id)}
-                        screenStream={remoteScreenStreamsRef.current.get(p.id)}
                         audioLevel={p.audioLevel}
                         lowResourceMode={preferences.lowResourceMode}
                         userVolume={participantVolumes[p.id] ?? 100}
@@ -1860,42 +2057,57 @@ export const CallRoom: React.FC<CallRoomProps> = ({
               </div>
             </div>
           ) : (
-            /* Standard Dynamic Grid Mode */
+            /* Standard Dynamic Grid Mode: Shows ALL screen share containers AND ALL participant camera feeds simultaneously */
             <div
               className={`w-full h-full max-w-7xl mx-auto grid gap-3.5 items-center content-center ${
-                room.participants.length <= 1
+                totalGridTiles <= 1
                   ? "grid-cols-1 max-w-2xl"
-                  : room.participants.length === 2
+                  : totalGridTiles === 2
                   ? "grid-cols-1 sm:grid-cols-2 max-w-4xl"
-                  : room.participants.length <= 4
+                  : totalGridTiles <= 4
                   ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 max-w-5xl"
                   : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4"
               }`}
             >
-              {/* Local Participant Tile */}
+              {/* Separate containers for each active screen share */}
+              {activeScreenShares.map((s) => (
+                <ScreenShareTile
+                  key={`grid-screen-${s.participant.id}`}
+                  participant={s.participant}
+                  isSelf={s.isSelf}
+                  screenStream={s.stream}
+                  isSpotlight={false}
+                  userVolume={participantVolumes[s.participant.id] ?? 100}
+                  masterVoiceVolume={masterVoiceVolume}
+                  currentVoiceChannelId={activeVoiceChannelId}
+                  onToggleSpotlight={() => setSpotlightId(`screen-${s.participant.id}`)}
+                  onVolumeChange={handleVolumeChange}
+                />
+              ))}
+
+              {/* Local Participant Camera / Avatar Tile */}
               <VideoTile
+                key={`grid-cam-${self.id}`}
                 participant={self}
                 isSelf={true}
                 isHostViewer={self.isHost}
                 stream={localStreamRef.current}
-                screenStream={localScreenStreamRef.current}
                 audioLevel={localAudioLevel}
                 lowResourceMode={preferences.lowResourceMode}
                 onToggleSpotlight={() => setSpotlightId(self.id)}
                 onSelectProfile={(p) => setSelectedProfileParticipant(p)}
               />
 
-              {/* Remote Participants Tiles */}
+              {/* Remote Participants Camera / Avatar Tiles */}
               {room.participants
                 .filter((p) => p.id !== self.id)
                 .map((p) => (
                   <VideoTile
-                    key={p.id}
+                    key={`grid-cam-${p.id}`}
                     participant={p}
                     isSelf={false}
                     isHostViewer={self.isHost}
                     stream={remoteStreamsRef.current.get(p.id)}
-                    screenStream={remoteScreenStreamsRef.current.get(p.id)}
                     audioLevel={p.audioLevel}
                     lowResourceMode={preferences.lowResourceMode}
                     userVolume={participantVolumes[p.id] ?? 100}
