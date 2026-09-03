@@ -284,9 +284,19 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const incomingStreamTypeRef = useRef<Map<string, "camera" | "screen">>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const remoteAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const remoteAudioTrackersRef = useRef<Map<string, AudioVolumeTracker>>(new Map());
   const makingOfferRef = useRef<Map<string, boolean>>(new Map());
   const ignoreOfferRef = useRef<Map<string, boolean>>(new Map());
   const [forceUpdate, setForceUpdate] = useState(0);
+
+  const roomRef = useRef(room);
+  roomRef.current = room;
+  const selfRef = useRef(self);
+  selfRef.current = self;
+  const participantVolumesRef = useRef(participantVolumes);
+  participantVolumesRef.current = participantVolumes;
+  const masterVoiceVolumeRef = useRef(masterVoiceVolume);
+  masterVoiceVolumeRef.current = masterVoiceVolume;
 
   const audioTrackerRef = useRef<AudioVolumeTracker | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
@@ -534,6 +544,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
             peerAudioEl.id = `remote-peer-audio-${targetId}`;
             peerAudioEl.autoplay = true;
             peerAudioEl.playsInline = true;
+            peerAudioEl.setAttribute("autoplay", "true");
             peerAudioEl.setAttribute("playsinline", "true");
             peerAudioEl.style.display = "none";
             document.body.appendChild(peerAudioEl);
@@ -545,15 +556,29 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           if (peerAudioEl.srcObject !== stream) {
             peerAudioEl.srcObject = stream;
           }
-          const userVol = participantVolumes[targetId] ?? 100;
-          peerAudioEl.volume = Math.max(0, Math.min(1, (userVol / 100) * (masterVoiceVolume / 100)));
+          const userVol = participantVolumesRef.current[targetId] ?? 100;
+          peerAudioEl.volume = Math.max(0, Math.min(1, (userVol / 100) * (masterVoiceVolumeRef.current / 100)));
           peerAudioEl.play().catch((err) => {
             console.warn(`Autoplay audio for peer ${targetId} pending user interaction:`, err);
           });
         }
+
+        // Real-time audio volume tracker for remote user speaking indicator
+        if (!remoteAudioTrackersRef.current.has(targetId)) {
+          const tracker = new AudioVolumeTracker((level) => {
+            setRoom((prev) => ({
+              ...prev,
+              participants: prev.participants.map((p) =>
+                p.id === targetId ? { ...p, audioLevel: level } : p
+              ),
+            }));
+          });
+          tracker.start(stream);
+          remoteAudioTrackersRef.current.set(targetId, tracker);
+        }
       }
 
-      const currentParticipant = room.participants.find((p) => p.id === targetId);
+      const currentParticipant = roomRef.current.participants.find((p) => p.id === targetId);
 
       // Distinguish screen share track from webcam camera track
       const trackLabel = (track.label || "").toLowerCase();
@@ -655,7 +680,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     }
 
     return pc;
-  }, [socket, room.participants, isAudioMuted, isVideoMuted, preferences.lowResourceMode, self.isMutedByHost, masterVoiceVolume, participantVolumes, audioRef]);
+  }, [socket, isAudioMuted, isVideoMuted, preferences.lowResourceMode, self.isMutedByHost, audioRef]);
 
   // 5. Socket.IO Event Listeners
   useEffect(() => {
@@ -682,13 +707,18 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         participants: prev.participants.filter((p) => p.id !== data.id),
       }));
 
-      // Clean up remote audio element
+      // Clean up remote audio element and volume tracker
       const audioEl = remoteAudioElementsRef.current.get(data.id);
       if (audioEl) {
         audioEl.pause();
         audioEl.srcObject = null;
         audioEl.remove();
         remoteAudioElementsRef.current.delete(data.id);
+      }
+      const tracker = remoteAudioTrackersRef.current.get(data.id);
+      if (tracker) {
+        tracker.stop();
+        remoteAudioTrackersRef.current.delete(data.id);
       }
 
       // Clean up peer connection & WebRTC refs
@@ -784,6 +814,21 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         pendingCandidatesRef.current.delete(senderId);
 
         // Ensure local audio track is attached to answer with audio
+        if (!localStreamRef.current && navigator.mediaDevices?.getUserMedia) {
+          try {
+            const fallbackAudioStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: preferences.echoCancellation,
+                noiseSuppression: preferences.noiseSuppression,
+              },
+              video: false,
+            });
+            localStreamRef.current = fallbackAudioStream;
+          } catch (err) {
+            console.warn("Could not acquire fallback audio stream:", err);
+          }
+        }
+
         if (localStreamRef.current) {
           const audioTrack = localStreamRef.current.getAudioTracks()[0];
           if (audioTrack) {
@@ -1033,7 +1078,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       } else if (data && data.room && Array.isArray(data.room.participants)) {
         list = data.room.participants;
       }
-      if (!list || list.length === 0) return;
+      if (!list) return;
 
       setRoom((prev) => {
         const prevMap = new Map<string, Participant>(prev.participants.map((p) => [p.id, p]));
@@ -1047,9 +1092,39 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         };
       });
 
+      const selfInList = list.find((p) => p.id === self.id);
+      if (selfInList) {
+        setSelf((prev) => ({ ...prev, ...selfInList }));
+      }
+
+      // Mesh WebRTC Audio Connections:
+      // When room:participants or voice:participants is received, create a new RTCPeerConnection for each remote participant
       list.forEach((p: Participant) => {
         if (p.id !== self.id && !peerConnectionsRef.current.has(p.id)) {
           createPeerConnection(p.id, true);
+        }
+      });
+
+      // Clean up stale peer connections and audio elements for peers who left
+      const activeIds = new Set(list.map((p) => p.id));
+      peerConnectionsRef.current.forEach((pc, pId) => {
+        if (!activeIds.has(pId)) {
+          pc.close();
+          peerConnectionsRef.current.delete(pId);
+          const audioEl = remoteAudioElementsRef.current.get(pId);
+          if (audioEl) {
+            audioEl.pause();
+            audioEl.srcObject = null;
+            audioEl.remove();
+            remoteAudioElementsRef.current.delete(pId);
+          }
+          const tracker = remoteAudioTrackersRef.current.get(pId);
+          if (tracker) {
+            tracker.stop();
+            remoteAudioTrackersRef.current.delete(pId);
+          }
+          remoteStreamsRef.current.delete(pId);
+          remoteScreenStreamsRef.current.delete(pId);
         }
       });
     };
@@ -1090,8 +1165,12 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     socket.on("connect", handleSocketReconnect);
     socket.on("room:user-joined", handleUserJoined);
     socket.on("room:user_joined", handleUserJoined);
+    socket.on("user-connected", handleUserJoined);
+    socket.on("user_connected", handleUserJoined);
     socket.on("room:user-left", handleUserLeft);
     socket.on("room:user_left", handleUserLeft);
+    socket.on("user-disconnected", handleUserLeft);
+    socket.on("user_disconnected", handleUserLeft);
     socket.on("room:user-updated", handleUserUpdated);
     socket.on("room:user_updated", handleUserUpdated);
     socket.on("room:users-list", handleSyncUsersList);
@@ -1127,7 +1206,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       });
     }
 
-    // Connect to all existing participants
+    // Connect to all existing participants upon joining
     room.participants.forEach((p) => {
       if (p.id !== self.id) {
         createPeerConnection(p.id, true);
@@ -1137,8 +1216,12 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     return () => {
       socket.off("room:user-joined", handleUserJoined);
       socket.off("room:user_joined", handleUserJoined);
+      socket.off("user-connected", handleUserJoined);
+      socket.off("user_connected", handleUserJoined);
       socket.off("room:user-left", handleUserLeft);
       socket.off("room:user_left", handleUserLeft);
+      socket.off("user-disconnected", handleUserLeft);
+      socket.off("user_disconnected", handleUserLeft);
       socket.off("room:user-updated", handleUserUpdated);
       socket.off("room:user_updated", handleUserUpdated);
       socket.off("room:users-list", handleSyncUsersList);
@@ -1167,7 +1250,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       socket.off("voice:forced-channel-change", handleForcedChannelChange);
       socket.off("connect", handleSocketReconnect);
     };
-  }, [socket, self.id, self.isHost, isMaster, isChatOpen, createPeerConnection, onLeaveRoom, selectedProfileParticipant?.id, spotlightId, room.participants]);
+  }, [socket, self.id, self.isHost, isMaster, isChatOpen, createPeerConnection, onLeaveRoom, selectedProfileParticipant?.id, spotlightId]);
 
   // 6. Broadcast local audio level and state changes
   useEffect(() => {

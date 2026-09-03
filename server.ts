@@ -468,8 +468,9 @@ async function startServer() {
       // 1. Full room state sync
       io.to(room.roomId).emit("room:sync", payload);
 
-      // 2. Canonical array of active room participants
+      // 2. Canonical array of active room participants - Force both room:participants and voice:participants to broadcast the exact same user array to io.to(cleanRoomId)
       io.to(room.roomId).emit("room:participants", participantsList);
+      io.to(room.roomId).emit("voice:participants", participantsList);
 
       // 3. Both snake_case and kebab-case for users list
       io.to(room.roomId).emit("room:users_list", {
@@ -483,7 +484,7 @@ async function startServer() {
         total: participantsList.length,
       });
 
-      // 4. Voice participants list and map
+      // 4. Voice channels map state for specific UI helpers
       const voiceParticipantsMap: Record<string, ServerParticipant[]> = {};
       participantsList.forEach((p) => {
         const vChan = p.voiceChannelId || "voice-geral";
@@ -491,7 +492,7 @@ async function startServer() {
         voiceParticipantsMap[vChan].push(p);
       });
 
-      io.to(room.roomId).emit("voice:participants", {
+      io.to(room.roomId).emit("voice:map", {
         roomId: room.roomId,
         voiceMap: voiceParticipantsMap,
         participants: participantsList,
@@ -653,6 +654,8 @@ async function startServer() {
         // Broadcast active room and user state
         io.to(targetRoomId).emit("room:user-joined", hostParticipant);
         io.to(targetRoomId).emit("room:user_joined", hostParticipant);
+        io.to(targetRoomId).emit("user-connected", hostParticipant);
+        io.to(targetRoomId).emit("user_connected", hostParticipant);
         io.to(targetRoomId).emit("room:participants", participantsList);
         io.to(targetRoomId).emit("voice:participants", participantsList);
         broadcastRoomState(targetRoom);
@@ -704,6 +707,12 @@ async function startServer() {
 
         const { roomId, username, name, role, isGuestOnly, masterToken, hostSecretToken, passcode, profile } = payload;
         const cleanRoomId = normalizeRoomId(roomId) || "main-lounge";
+        // Ensure socket.join(cleanRoomId) is called immediately when joining a room
+        socket.join(cleanRoomId);
+        socket.join(`${cleanRoomId}:voice-geral`);
+        socket.join(`${cleanRoomId}:Geral`);
+        currentRoomId = cleanRoomId;
+
         const effectiveName = (username || name || "").trim() || `Convidado ${Math.floor(100 + Math.random() * 900)}`;
 
         let room = rooms.get(cleanRoomId);
@@ -871,6 +880,8 @@ async function startServer() {
         // Broadcast participant join events to room
         io.to(cleanRoomId).emit("room:user_joined", participant);
         io.to(cleanRoomId).emit("room:user-joined", participant);
+        io.to(cleanRoomId).emit("user-connected", participant);
+        io.to(cleanRoomId).emit("user_connected", participant);
         broadcastRoomState(room);
 
         const joinMsg: ServerChatMessage = {
@@ -980,6 +991,8 @@ async function startServer() {
       const currentParticipants = Array.from(room.participants.values());
       io.to(room.roomId).emit("room:user-joined", participant);
       io.to(room.roomId).emit("room:user_joined", participant);
+      io.to(room.roomId).emit("user-connected", participant);
+      io.to(room.roomId).emit("user_connected", participant);
       io.to(room.roomId).emit("room:participants", currentParticipants);
       io.to(room.roomId).emit("voice:participants", currentParticipants);
       broadcastRoomState(room);
@@ -1047,6 +1060,8 @@ async function startServer() {
 
         io.to(room.roomId).emit("room:user-joined", participant);
         io.to(room.roomId).emit("room:user_joined", participant);
+        io.to(room.roomId).emit("user-connected", participant);
+        io.to(room.roomId).emit("user_connected", participant);
       });
 
       const currentParticipants = Array.from(room.participants.values());
@@ -2122,6 +2137,8 @@ async function startServer() {
         const remainingParticipants = Array.from(room.participants.values());
         io.to(currentRoomId).emit("room:user-left", { id: socket.id, name: participant.name });
         io.to(currentRoomId).emit("room:user_left", { id: socket.id, name: participant.name });
+        io.to(currentRoomId).emit("user-disconnected", { id: socket.id, name: participant.name });
+        io.to(currentRoomId).emit("user_disconnected", { id: socket.id, name: participant.name });
         io.to(currentRoomId).emit("room:participants", remainingParticipants);
         io.to(currentRoomId).emit("voice:participants", remainingParticipants);
         broadcastRoomState(room);

@@ -312,6 +312,12 @@ export default function App() {
           participants: merged,
         };
       });
+
+      setSelfParticipant((prev) => {
+        if (!prev) return prev;
+        const selfInList = list.find((p) => p.id === prev.id);
+        return selfInList ? { ...prev, ...selfInList } : prev;
+      });
     };
 
     const handleUserJoined = (participant: Participant) => {
@@ -377,11 +383,16 @@ export default function App() {
 
     socketInstance.on("room:joined", handleRoomJoined);
     socketInstance.on("room:participants", handleRoomParticipants);
+    socketInstance.on("voice:participants", handleRoomParticipants);
     socketInstance.on("room:sync", handleRoomSync);
     socketInstance.on("room:user-joined", handleUserJoined);
     socketInstance.on("room:user_joined", handleUserJoined);
+    socketInstance.on("user-connected", handleUserJoined);
+    socketInstance.on("user_connected", handleUserJoined);
     socketInstance.on("room:user-left", handleUserLeft);
     socketInstance.on("room:user_left", handleUserLeft);
+    socketInstance.on("user-disconnected", handleUserLeft);
+    socketInstance.on("user_disconnected", handleUserLeft);
     socketInstance.on("room:user-updated", handleUserUpdated);
     socketInstance.on("room:knock-approved", handleKnockApproved);
     socketInstance.on("room:knock-rejected", handleKnockRejected);
@@ -394,11 +405,16 @@ export default function App() {
       socketInstance.io.off("reconnect", handleConnect);
       socketInstance.off("room:joined", handleRoomJoined);
       socketInstance.off("room:participants", handleRoomParticipants);
+      socketInstance.off("voice:participants", handleRoomParticipants);
       socketInstance.off("room:sync", handleRoomSync);
       socketInstance.off("room:user-joined", handleUserJoined);
       socketInstance.off("room:user_joined", handleUserJoined);
+      socketInstance.off("user-connected", handleUserJoined);
+      socketInstance.off("user_connected", handleUserJoined);
       socketInstance.off("room:user-left", handleUserLeft);
       socketInstance.off("room:user_left", handleUserLeft);
+      socketInstance.off("user-disconnected", handleUserLeft);
+      socketInstance.off("user_disconnected", handleUserLeft);
       socketInstance.off("room:user-updated", handleUserUpdated);
       socketInstance.off("room:knock-approved", handleKnockApproved);
       socketInstance.off("room:knock-rejected", handleKnockRejected);
