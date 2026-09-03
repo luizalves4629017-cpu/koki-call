@@ -70,6 +70,24 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 }) => {
   const [room, setRoom] = useState<RoomState>(initialRoom);
   const [self, setSelf] = useState<Participant>(initialSelf);
+
+  useEffect(() => {
+    if (initialRoom) {
+      setRoom((prev) => ({
+        ...prev,
+        ...initialRoom,
+        participants: initialRoom.participants && initialRoom.participants.length > 0
+          ? initialRoom.participants
+          : prev.participants,
+      }));
+    }
+  }, [initialRoom]);
+
+  useEffect(() => {
+    if (initialSelf) {
+      setSelf((prev) => ({ ...prev, ...initialSelf }));
+    }
+  }, [initialSelf]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeChannelId, setActiveChannelId] = useState<string>("geral");
   const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string>("voice-geral");
@@ -492,17 +510,18 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       const track = event.track;
 
       if (track.kind === "audio") {
-        // Direct audioRef binding if supplied by App.tsx (or audioRef.current.srcObject = event.streams[0])
-        if (audioRef && audioRef.current) {
+        // Direct binding to global background <audio id="remote-audio"> and call .play()
+        const remoteAudioEl = (document.getElementById("remote-audio") as HTMLAudioElement) || (audioRef && audioRef.current);
+        if (remoteAudioEl) {
           try {
-            if (audioRef.current.srcObject !== stream) {
-              audioRef.current.srcObject = stream;
+            if (remoteAudioEl.srcObject !== stream) {
+              remoteAudioEl.srcObject = stream;
             }
-            audioRef.current.play().catch((err) => {
-              console.warn("audioRef autoplay error (interaction pending):", err);
+            remoteAudioEl.play().catch((err) => {
+              console.warn("remote-audio autoplay pending interaction:", err);
             });
           } catch (e) {
-            console.warn("Error attaching event.streams[0] to audioRef:", e);
+            console.warn("Error attaching event.streams[0] to remote-audio:", e);
           }
         }
 
@@ -1353,24 +1372,14 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         setSpotlightId(null);
       }
 
-      // Remove or replace screen tracks on peer connections and renegotiate
+      // Revert video track on active peer connections back to camera (or null if camera disabled)
+      const cameraTrack = (!isVideoMuted && !preferences.lowResourceMode && localStreamRef.current?.getVideoTracks()[0]) || null;
       peerConnectionsRef.current.forEach((pc, targetId) => {
         const senders = pc.getSenders();
-        senders.forEach((sender) => {
-          if (
-            sender.track &&
-            (sender.track.label.toLowerCase().includes("screen") ||
-              (localStreamRef.current && !localStreamRef.current.getTracks().includes(sender.track)))
-          ) {
-            try {
-              pc.removeTrack(sender);
-            } catch (e) {
-              try {
-                sender.replaceTrack(null);
-              } catch (err) {}
-            }
-          }
-        });
+        const videoSender = senders.find((s) => s.track?.kind === "video" || s.track === null);
+        if (videoSender) {
+          videoSender.replaceTrack(cameraTrack).catch((e) => console.warn("replaceTrack back to camera error:", e));
+        }
 
         if (pc.signalingState === "stable") {
           makingOfferRef.current.set(targetId, true);
@@ -1415,21 +1424,15 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           };
         }
 
-        // Replace/add screen video & audio track on all active RTCPeerConnection instances
+        // Replace current video track on all active RTCPeerConnection instances using sender.replaceTrack
         peerConnectionsRef.current.forEach((pc, targetId) => {
           const senders = pc.getSenders();
 
           if (screenVideoTrack) {
-            const existingScreenSender = senders.find(
-              (s) =>
-                s.track &&
-                (s.track.label.toLowerCase().includes("screen") ||
-                  s.track.label.toLowerCase().includes("display") ||
-                  s.track === screenVideoTrack)
-            );
+            const videoSender = senders.find((s) => s.track?.kind === "video" || s.track === null);
 
-            if (existingScreenSender) {
-              existingScreenSender.replaceTrack(screenVideoTrack).catch((e) => {
+            if (videoSender) {
+              videoSender.replaceTrack(screenVideoTrack).catch((e) => {
                 console.warn("replaceTrack screen video error:", e);
               });
             } else {
@@ -2166,7 +2169,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         allowScreenShare={room.settings.allowScreenShare}
         masterVoiceVolume={masterVoiceVolume}
         pendingKnocksCount={pendingKnocks.length}
-        isMaster={isUserMaster}
+        isMaster={Boolean(isMaster)}
         onVolumeChange={setMasterVoiceVolume}
         onToggleAudio={handleToggleAudio}
         onToggleVideo={handleToggleVideo}

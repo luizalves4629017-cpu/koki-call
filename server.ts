@@ -563,19 +563,7 @@ async function startServer() {
         const hostSecretToken = `hst_${Math.random().toString(36).substring(2, 15)}_${Date.now()}`;
 
         let existingRoom = rooms.get(cleanRoomId);
-
-        // If room already exists, handle gracefully:
-        // If the room has no active host or is empty or caller is Master, reclaim it;
-        // Otherwise generate a fresh unique room ID so it never blocks the user.
         let targetRoomId = cleanRoomId;
-        if (existingRoom) {
-          const hostIsConnected = existingRoom.hostSocketId && existingRoom.participants.has(existingRoom.hostSocketId);
-          if (hostIsConnected && !isMasterHost && existingRoom.hostSocketId !== socket.id) {
-            // Room is actively in use by someone else, generate a unique sub-room ID
-            targetRoomId = `${cleanRoomId}-${Math.random().toString(36).substring(2, 6)}`;
-            existingRoom = undefined;
-          }
-        }
 
         const messagesMap = existingRoom ? existingRoom.messagesByChannel : new Map<string, ServerChatMessage[]>();
         if (!existingRoom) {
@@ -658,10 +646,15 @@ async function startServer() {
         rooms.set(targetRoomId, targetRoom);
         currentRoomId = targetRoomId;
         socket.join(targetRoomId);
+        socket.join(`${targetRoomId}:voice-geral`);
+        socket.join(`${targetRoomId}:Geral`);
 
+        const participantsList = Array.from(targetRoom.participants.values());
         // Broadcast active room and user state
         io.to(targetRoomId).emit("room:user-joined", hostParticipant);
         io.to(targetRoomId).emit("room:user_joined", hostParticipant);
+        io.to(targetRoomId).emit("room:participants", participantsList);
+        io.to(targetRoomId).emit("voice:participants", participantsList);
         broadcastRoomState(targetRoom);
 
         if (typeof callback === "function") {
@@ -856,6 +849,8 @@ async function startServer() {
         room.participants.set(socket.id, participant);
         currentRoomId = cleanRoomId;
         socket.join(cleanRoomId);
+        socket.join(`${cleanRoomId}:voice-geral`);
+        socket.join(`${cleanRoomId}:Geral`);
 
         const currentParticipants = Array.from(room.participants.values());
         const formattedRoom = formatRoomPayload(room);
@@ -869,8 +864,9 @@ async function startServer() {
           participants: currentParticipants,
         });
 
-        // Immediately emit room:participants with array of active users to everyone in the room
+        // Immediately emit room:participants and voice:participants with array of active users to everyone in the room
         io.to(cleanRoomId).emit("room:participants", currentParticipants);
+        io.to(cleanRoomId).emit("voice:participants", currentParticipants);
 
         // Broadcast participant join events to room
         io.to(cleanRoomId).emit("room:user_joined", participant);
@@ -973,14 +969,19 @@ async function startServer() {
 
       if (targetSocket) {
         targetSocket.join(room.roomId);
+        targetSocket.join(`${room.roomId}:voice-geral`);
+        targetSocket.join(`${room.roomId}:Geral`);
         targetSocket.emit("room:knock-approved", {
           room: formatRoomPayload(room),
           self: participant,
         });
       }
 
+      const currentParticipants = Array.from(room.participants.values());
       io.to(room.roomId).emit("room:user-joined", participant);
       io.to(room.roomId).emit("room:user_joined", participant);
+      io.to(room.roomId).emit("room:participants", currentParticipants);
+      io.to(room.roomId).emit("voice:participants", currentParticipants);
       broadcastRoomState(room);
 
       const joinMsg: ServerChatMessage = {
@@ -1036,6 +1037,8 @@ async function startServer() {
 
         if (targetSocket) {
           targetSocket.join(room.roomId);
+          targetSocket.join(`${room.roomId}:voice-geral`);
+          targetSocket.join(`${room.roomId}:Geral`);
           targetSocket.emit("room:knock-approved", {
             room: formatRoomPayload(room),
             self: participant,
@@ -1046,6 +1049,9 @@ async function startServer() {
         io.to(room.roomId).emit("room:user_joined", participant);
       });
 
+      const currentParticipants = Array.from(room.participants.values());
+      io.to(room.roomId).emit("room:participants", currentParticipants);
+      io.to(room.roomId).emit("voice:participants", currentParticipants);
       broadcastRoomState(room);
     });
 
@@ -2113,8 +2119,11 @@ async function startServer() {
       }
 
       if (participant) {
+        const remainingParticipants = Array.from(room.participants.values());
         io.to(currentRoomId).emit("room:user-left", { id: socket.id, name: participant.name });
         io.to(currentRoomId).emit("room:user_left", { id: socket.id, name: participant.name });
+        io.to(currentRoomId).emit("room:participants", remainingParticipants);
+        io.to(currentRoomId).emit("voice:participants", remainingParticipants);
         broadcastRoomState(room);
       }
 

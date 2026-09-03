@@ -98,7 +98,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
       <button
         onClick={onOpenSelfProfile}
         className="flex items-center gap-2.5 p-1 -ml-1 rounded-xl hover:bg-[#131b2c] transition-all text-left max-w-[160px] sm:max-w-[200px]"
-        title={self.isHost ? "Seu Perfil do Dono (Clique para editar)" : "Seu Perfil de Convidado"}
+        title={isMaster ? "Seu Perfil de Dono Master (Clique para editar)" : "Seu Perfil de Membro (Clique para visualizar)"}
       >
         <div
           className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-md text-base shrink-0 ring-1 ring-white/10 overflow-hidden"
@@ -114,7 +114,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
               className="w-full h-full object-cover"
             />
           ) : (
-            <span>{self.avatarEmoji || (self.isHost ? "👑" : "🎮")}</span>
+            <span>{self.avatarEmoji || (isMaster ? "👑" : "🎮")}</span>
           )}
         </div>
         <div className="flex flex-col truncate">
@@ -261,7 +261,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
         <div className="relative flex items-center">
           <div
             className={`flex items-center rounded-xl overflow-hidden shadow-md transition-all ${
-              !allowScreenShare && !self.isHost
+              !allowScreenShare && !isMaster
                 ? "bg-[#101726] border border-[#1b253b]"
                 : isScreenSharing
                 ? "bg-emerald-600 border border-emerald-400/60 shadow-emerald-950 ring-2 ring-emerald-400/30"
@@ -271,16 +271,16 @@ export const ControlBar: React.FC<ControlBarProps> = ({
             {/* Main Screen Share Toggle */}
             <button
               onClick={onToggleScreenShare}
-              disabled={!allowScreenShare && !self.isHost}
+              disabled={!allowScreenShare && !isMaster}
               className={`p-2.5 sm:p-3 flex items-center justify-center transition-all cursor-pointer ${
-                !allowScreenShare && !self.isHost
+                !allowScreenShare && !isMaster
                   ? "text-slate-600 cursor-not-allowed"
                   : isScreenSharing
                   ? "text-white"
                   : "text-slate-200 hover:text-white"
               }`}
               title={
-                !allowScreenShare && !self.isHost
+                !allowScreenShare && !isMaster
                   ? "Compartilhamento de tela desativado pelo anfitrião"
                   : isScreenSharing
                   ? `Transmitindo (${SCREEN_SHARE_PRESETS[screenQualityPreset]?.label}) • Clique para parar`
@@ -293,9 +293,9 @@ export const ControlBar: React.FC<ControlBarProps> = ({
             {/* Quality Preset Trigger Button */}
             <button
               onClick={() => setShowScreenQualityMenu(!showScreenQualityMenu)}
-              disabled={!allowScreenShare && !self.isHost}
+              disabled={!allowScreenShare && !isMaster}
               className={`px-1.5 sm:px-2 py-2.5 sm:py-3 border-l flex items-center gap-1 transition-all text-[10px] font-mono font-bold cursor-pointer ${
-                !allowScreenShare && !self.isHost
+                !allowScreenShare && !isMaster
                   ? "border-[#1b253b] text-slate-700 cursor-not-allowed"
                   : isScreenSharing
                   ? "border-emerald-500/50 bg-emerald-700/60 hover:bg-emerald-700 text-emerald-100"
