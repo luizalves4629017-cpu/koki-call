@@ -1,3 +1,5 @@
+import { isMasterIdentity } from "../utils/storage";
+import { tagVisivel } from "../utils/tagExibida";
 import React, { useState, useEffect } from "react";
 import {
   Mic,
@@ -62,7 +64,7 @@ export const SelfProfileBar: React.FC<SelfProfileBarProps> = ({
             }`}
             style={{ backgroundColor: self.avatarColor || "#38bdf8" }}
           >
-            {self.avatarEmoji || (self.isHost ? "👑" : "🎮")}
+            {self.avatarEmoji || ((self as any).isMaster ? "👑" : "🎮")}
           </div>
 
           {/* Status Dot */}
@@ -92,7 +94,7 @@ export const SelfProfileBar: React.FC<SelfProfileBarProps> = ({
               </span>
             ) : (
               <span className="text-[9px] font-mono text-slate-500 shrink-0">
-                #{self.tag || "1024"}
+                #{tagVisivel(self, "1024")}
               </span>
             )}
           </div>
@@ -107,8 +109,8 @@ export const SelfProfileBar: React.FC<SelfProfileBarProps> = ({
         {onOpenStore && (
           <button
             onClick={onOpenStore}
-            className="p-2 rounded-lg text-amber-400 hover:bg-amber-950/40 hover:text-amber-300 transition-colors"
-            title={`Loja Koki Coins (${formatCoinDisplay(coins, self.isHost)} Coins)`}
+            className="p-2 rounded-lg text-[#5EEAD4] hover:bg-[#5EEAD4]/10 transition-colors"
+            title={`Loja Eco Coins (${formatCoinDisplay(coins, isMasterIdentity() || Boolean(self.isCofundador))} Coins)`}
           >
             <Coins className="w-4 h-4 fill-amber-400/20" />
           </button>

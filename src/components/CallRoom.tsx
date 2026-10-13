@@ -1,4 +1,16 @@
+import { esquecerSala } from "../utils/conta";
+import { AnuncioBanner } from "./AnuncioBanner";
+import { ChuvaMoedas } from "./ChuvaMoedas";
+import { MissoesModal } from "./MissoesModal";
+import { RoletaModal } from "./RoletaModal";
+import { RankCoinsModal } from "./RankCoinsModal";
+import { RankSubiuAviso } from "./RankSubiuAviso";
+import { PainelExtrasMaster, AbaExtras } from "./PainelExtrasMaster";
+import { somarMissao } from "../utils/missoes";
+import { savePurchasedPerks as salvarPerksExtras } from "../utils/storage";
+import { getMemberSince } from "../utils/storage";
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Ghost, Eye, Mic } from "lucide-react";
 import { Socket } from "socket.io-client";
 import {
   Participant,
@@ -20,6 +32,7 @@ import { ChannelSidebar, VoiceChannel } from "./ChannelSidebar";
 import { MemberList } from "./MemberList";
 import { UserProfileCard } from "./UserProfileCard";
 import { SettingsModal } from "./SettingsModal";
+import { MicProcessor } from "../utils/micProcessor";
 import { HostPanelModal } from "./HostPanelModal";
 import { InviteModal } from "./InviteModal";
 import { EditOwnerProfileModal } from "./EditOwnerProfileModal";
@@ -28,6 +41,9 @@ import { FloatingAdmissionBanner } from "./FloatingAdmissionBanner";
 import { GrantVipModal } from "./GrantVipModal";
 import { GrantBadgesModal } from "./GrantBadgesModal";
 import { StoreModal } from "./StoreModal";
+import { notify } from "./Toast";
+import { PunirModal } from "./PunirModal";
+import { AmigosPainel } from "./AmigosPainel";
 import {
   saveUserProfile,
   saveUserPreferences,
@@ -47,6 +63,60 @@ import {
   applyScreenShareQuality,
 } from "../utils/screenShareConfig";
 
+const DEMO_PARTICIPANTS: Participant[] = [
+  {
+    id: "demo-ana",
+    name: "Ana Silva",
+    tag: "2041",
+    isHost: false,
+    hasAudio: true,
+    hasVideo: false,
+    isScreenSharing: false,
+    isDeafened: false,
+    isMutedByHost: false,
+    avatarColor: "#0284c7",
+    avatarEmoji: "🎨",
+    customStatus: "UI/UX em tons de azul",
+    audioLevel: 28,
+    joinedAt: Date.now() - 360000,
+    voiceChannelId: "voice-geral",
+  },
+  {
+    id: "demo-lucas",
+    name: "Lucas Gamer",
+    tag: "8832",
+    isHost: false,
+    hasAudio: true,
+    hasVideo: false,
+    isScreenSharing: false,
+    isDeafened: false,
+    isMutedByHost: false,
+    avatarColor: "#6366f1",
+    avatarEmoji: "⚡",
+    customStatus: "Ecrã 1080p 90 FPS",
+    audioLevel: 0,
+    joinedAt: Date.now() - 120000,
+    voiceChannelId: "voice-geral",
+  },
+  {
+    id: "demo-sofia",
+    name: "Sofia Dev",
+    tag: "1920",
+    isHost: false,
+    hasAudio: false,
+    hasVideo: false,
+    isScreenSharing: false,
+    isDeafened: false,
+    isMutedByHost: false,
+    avatarColor: "#059669",
+    avatarEmoji: "💻",
+    customStatus: "Desktop layout limpo",
+    audioLevel: 0,
+    joinedAt: Date.now() - 60000,
+    voiceChannelId: "voice-geral",
+  },
+];
+
 interface CallRoomProps {
   socket: Socket;
   initialRoom: RoomState;
@@ -56,7 +126,17 @@ interface CallRoomProps {
   masterToken?: string | null;
   onLeaveRoom: () => void;
   audioRef?: React.RefObject<HTMLAudioElement | null>;
+  salasSlot?: React.ReactNode;
+  /** Entrou pelo modo invisível (Dono Master / Co-fundador; o servidor confere) */
+  entrouInvisivel?: boolean;
+  /** Entrar invisível em outra sala (só chega pra Dono Master / Co-fundador) */
+  onEntrarInvisivel?: (roomId: string) => void;
+  /** Saiu do modo invisível (App atualiza a reconexão) */
+  onRevelado?: () => void;
 }
+
+// Mensagens automáticas do servidor (ids "sys-...") ficam fora do chat
+const ehAvisoAutomatico = (m: { id?: string }) => typeof m?.id === "string" && m.id.startsWith("sys-");
 
 export const CallRoom: React.FC<CallRoomProps> = ({
   socket,
@@ -67,9 +147,22 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   masterToken = null,
   onLeaveRoom,
   audioRef,
+  salasSlot,
+  entrouInvisivel = false,
+  onEntrarInvisivel,
+  onRevelado,
 }) => {
   const [room, setRoom] = useState<RoomState>(initialRoom);
   const [self, setSelf] = useState<Participant>(initialSelf);
+
+  // ---------------- Modo invisível ----------------
+  // invisivelRef é lido na hora (dentro da sinalização WebRTC), o estado só redesenha a tela.
+  const [invisivel, setInvisivel] = useState<boolean>(Boolean(entrouInvisivel));
+  const invisivelRef = useRef<boolean>(Boolean(entrouInvisivel));
+  // Lado de quem está visível: ids de invisíveis com quem temos conexão só-envio (sem card, fora da lista)
+  const espectadoresRef = useRef<Set<string>>(new Set());
+  // Dono Master / Co-fundador: quem mais está invisível nesta sala (o servidor só manda pra eles)
+  const [invisiveisNaSala, setInvisiveisNaSala] = useState<Participant[]>([]);
 
   useEffect(() => {
     if (initialRoom) {
@@ -156,12 +249,13 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       {
         targetSocketId,
         targetChannelId,
+        channelName: (defaultVoiceChannels as any[]).find((c) => c.id === targetChannelId)?.name,
         masterToken,
         roomId: room.roomId,
       },
       (res: { success: boolean; message?: string }) => {
         if (res && !res.success && res.message) {
-          alert(res.message);
+          notify(res.message, "error");
         }
       }
     );
@@ -193,6 +287,10 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const [isGrantVipOpen, setIsGrantVipOpen] = useState<boolean>(false);
   const [isGrantBadgesOpen, setIsGrantBadgesOpen] = useState<boolean>(false);
   const [isStoreOpen, setIsStoreOpen] = useState<boolean>(false);
+  const [isMissoesOpen, setIsMissoesOpen] = useState<boolean>(false);
+  const [isRoletaOpen, setIsRoletaOpen] = useState<boolean>(false);
+  const [isRankOpen, setIsRankOpen] = useState<boolean>(false);
+  const [abaExtras, setAbaExtras] = useState<AbaExtras | null>(null);
   const [targetVipParticipant, setTargetVipParticipant] = useState<Participant | null>(null);
   const [targetBadgeParticipant, setTargetBadgeParticipant] = useState<Participant | null>(null);
 
@@ -221,8 +319,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         }
       }
 
-      // Broadcast profile update to room participants
-      socket.emit("profile:update", {
+      // Avisa o servidor (e todo mundo na call) do item comprado
+      socket.emit("user:update-profile", {
+        masterToken,
         avatarEmoji: next.avatarEmoji,
         avatarColor: next.avatarColor,
         avatarUrl: next.avatarUrl,
@@ -240,6 +339,41 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     });
   };
 
+  // ---- Moedas ganhas/gastas em Missões e Roleta ----
+  const ganharMoedas = (qtd: number, motivo: string) => {
+    if (!qtd) return;
+    const atual = getKokiCoins();
+    const novo = setKokiCoins(atual + Math.floor(qtd));
+    setSelf((prev) => ({ ...prev, kokiCoins: novo }));
+    socket.emit("room:state-update", { kokiCoins: novo });
+    notify(`+${qtd} Eco Coins · ${motivo}`, "success");
+  };
+
+  const gastarMoedas = (qtd: number): boolean => {
+    // Co-fundador tem moedas infinitas (igual ao Dono): gasta sem perder
+    if (selfRef.current?.isCofundador) return true;
+    const atual = getKokiCoins();
+    if (atual < qtd) return false;
+    const novo = setKokiCoins(atual - qtd);
+    setSelf((prev) => ({ ...prev, kokiCoins: novo }));
+    socket.emit("room:state-update", { kokiCoins: novo });
+    return true;
+  };
+
+  const ganharItem = (perkId: string, horas: number) => {
+    const perks = getPurchasedPerks();
+    const ate = Math.max(perks[perkId] || 0, Date.now()) + horas * 3600 * 1000;
+    salvarPerksExtras({ ...perks, [perkId]: ate });
+    handlePerkPurchased(perkId as StorePerkId, ate);
+    notify(`Você ganhou um item na roleta! Vale por ${horas}h.`, "success");
+  };
+
+  // Missão "Ficar 30 min em call": conta 1 minuto por minuto na sala
+  useEffect(() => {
+    const t = setInterval(() => somarMissao("call", 1), 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
+
   // Pending Knock Requests (Owner Portaria)
   const [pendingKnocks, setPendingKnocks] = useState<KnockRequest[]>([]);
 
@@ -250,7 +384,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const [pingMs, setPingMs] = useState<number>(24);
 
   // Media and Control states
-  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
+  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(Boolean(entrouInvisivel));
   const [isVideoMuted, setIsVideoMuted] = useState<boolean>(true);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [screenQualityPreset, setScreenQualityPreset] = useState<ScreenSharePresetId>(DEFAULT_SCREEN_PRESET_ID);
@@ -269,6 +403,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       pushToTalkKey: saved.pushToTalkKey || "Space",
       noiseSuppression: saved.noiseSuppression,
       echoCancellation: saved.echoCancellation,
+      aiNoiseSuppression: saved.aiNoiseSuppression,
+      autoSensitivity: saved.autoSensitivity,
+      sensitivityDb: saved.sensitivityDb,
       lowResourceMode: saved.lowResourceMode || initialRoom.settings.lowBandwidthDefault,
       videoQuality: saved.videoQuality || "medium",
       volume: saved.volume ?? 100,
@@ -278,6 +415,47 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   // Media Streams refs
   const localStreamRef = useRef<MediaStream | null>(null);
   const localScreenStreamRef = useRef<MediaStream | null>(null);
+
+  // Microfone com IA (RNNoise + noise gate). localStreamRef guarda a trilha PROCESSADA,
+  // então tudo que lê localStreamRef (slots WebRTC, reconexão, mute) já usa o áudio limpo.
+  const micProcessorRef = useRef<MicProcessor | null>(null);
+  const [micProcessor, setMicProcessor] = useState<MicProcessor | null>(null);
+  const micOptionsRef = useRef({
+    aiNoiseSuppression: preferences.aiNoiseSuppression,
+    autoSensitivity: preferences.autoSensitivity,
+    sensitivityDb: preferences.sensitivityDb,
+  });
+  micOptionsRef.current = {
+    aiNoiseSuppression: preferences.aiNoiseSuppression,
+    autoSensitivity: preferences.autoSensitivity,
+    sensitivityDb: preferences.sensitivityDb,
+  };
+
+  // Restrições do navegador (continuam ligadas por baixo da IA)
+  const buildMicConstraints = (withDevice = true): MediaTrackConstraints => ({
+    echoCancellation: preferences.echoCancellation,
+    noiseSuppression: preferences.noiseSuppression,
+    autoGainControl: true,
+    ...(withDevice && preferences.selectedAudioInput ? { deviceId: { exact: preferences.selectedAudioInput } } : {}),
+  });
+
+  const closeMicProcessor = () => {
+    if (micProcessorRef.current) {
+      micProcessorRef.current.close();
+      micProcessorRef.current = null;
+    }
+    setMicProcessor(null);
+  };
+
+  // Passa a trilha crua pelo pipeline de IA. Se falhar, devolve a crua (a call nunca quebra).
+  const createProcessedMic = async (rawTrack: MediaStreamTrack): Promise<{ track: MediaStreamTrack; proc: MicProcessor | null }> => {
+    const proc = await MicProcessor.create(rawTrack, micOptionsRef.current);
+    if (!proc) {
+      console.warn("[mic-ia] usando microfone sem IA (fallback com filtros do navegador).");
+      return { track: rawTrack, proc: null };
+    }
+    return { track: proc.track, proc };
+  };
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
   const remoteScreenStreamsRef = useRef<Map<string, MediaStream>>(new Map());
@@ -287,7 +465,183 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const remoteAudioTrackersRef = useRef<Map<string, AudioVolumeTracker>>(new Map());
   const makingOfferRef = useRef<Map<string, boolean>>(new Map());
   const ignoreOfferRef = useRef<Map<string, boolean>>(new Map());
+  const isSettingRemoteAnswerPendingRef = useRef<Map<string, boolean>>(new Map());
+  const peerTransceiversRef = useRef<Map<string, {
+    audioTransceiver?: RTCRtpTransceiver;
+    cameraTransceiver?: RTCRtpTransceiver;
+    screenTransceiver?: RTCRtpTransceiver;
+    screenAudioTransceiver?: RTCRtpTransceiver;
+  }>>(new Map());
+  const knownScreenTrackIdsRef = useRef<Map<string, string>>(new Map());
+  const remoteScreenHasAudioRef = useRef<Map<string, boolean>>(new Map());
+  const offerFallbackTimersRef = useRef<Map<string, number>>(new Map());
+
+  // ---------------------------------------------------------------------------
+  // Slots fixos de mídia por conexão (mesma ordem nos dois lados):
+  //   0 = microfone, 1 = câmera, 2 = vídeo da tela, 3 = áudio da tela
+  // Só UM lado cria os slots (o "ofertante", definido pelo socket id maior).
+  // O outro lado adota os slots que chegam na oferta. Assim, ligar/desligar
+  // microfone, câmera ou tela é só replaceTrack, sem renegociar e sem colisão.
+  // ---------------------------------------------------------------------------
+  const SLOT_KINDS: Array<"audio" | "video"> = ["audio", "video", "video", "audio"];
+
+  const isDesignatedOfferer = (targetId: string) => (socket.id || "") > targetId;
+
+  const getNegotiatedTransceivers = (pc: RTCPeerConnection) =>
+    pc.getTransceivers().filter((t) => t.mid !== null && !(t as any).stopped);
+
+  const safeReplaceTrack = (tr: RTCRtpTransceiver | undefined, track: MediaStreamTrack | null) => {
+    if (!tr) return;
+    if (tr.sender.track === track) return;
+    tr.sender.replaceTrack(track).catch((e) => console.warn("[webrtc] replaceTrack falhou:", e));
+  };
+
+  // Coloca as trilhas locais atuais nos slots da conexão com targetId
+  const syncLocalTracksToPeer = (targetId: string) => {
+    const slots = peerTransceiversRef.current.get(targetId);
+    if (!slots) return;
+    // Invisível nunca coloca trilha nenhuma nas conexões
+    if (invisivelRef.current) return;
+    const mic = localStreamRef.current?.getAudioTracks()[0] || null;
+    const cam = localStreamRef.current?.getVideoTracks().find((t) => t.readyState === "live") || null;
+    const scr = localScreenStreamRef.current?.getVideoTracks()[0] || null;
+    const scrAudio = localScreenStreamRef.current?.getAudioTracks()[0] || null;
+    safeReplaceTrack(slots.audioTransceiver, mic);
+    safeReplaceTrack(slots.cameraTransceiver, cam);
+    safeReplaceTrack(slots.screenTransceiver, scr);
+    safeReplaceTrack(slots.screenAudioTransceiver, scrAudio);
+    if (scr) {
+      console.log(`[tela] track da tela atribuída ao slot de tela do peer ${targetId}`);
+    }
+  };
+
+  const syncLocalTracksToAllPeers = () => {
+    peerConnectionsRef.current.forEach((_pc, targetId) => syncLocalTracksToPeer(targetId));
+  };
+
+  // Lado ofertante: cria os 4 slots
+  const createOwnSlots = (targetId: string, pc: RTCPeerConnection) => {
+    const [audioTransceiver, cameraTransceiver, screenTransceiver, screenAudioTransceiver] = SLOT_KINDS.map((kind) =>
+      // Invisível: slots só-recebe (o servidor também reescreve a oferta pra recvonly)
+      pc.addTransceiver(kind, { direction: invisivelRef.current ? "recvonly" : "sendrecv" })
+    );
+    peerTransceiversRef.current.set(targetId, {
+      audioTransceiver,
+      cameraTransceiver,
+      screenTransceiver,
+      screenAudioTransceiver,
+    });
+    syncLocalTracksToPeer(targetId);
+  };
+
+  // Lado que recebe a oferta: adota os slots na ordem em que vieram
+  const adoptRemoteSlots = (targetId: string, pc: RTCPeerConnection) => {
+    const negotiated = getNegotiatedTransceivers(pc);
+    // Para slots criados por este lado que nunca foram negociados (ex.: colisão), descarta
+    pc.getTransceivers().forEach((t) => {
+      if (t.mid === null) {
+        try { t.stop(); } catch { /* ignore */ }
+      }
+    });
+    if (negotiated.length < 4) {
+      console.warn(`[webrtc] oferta de ${targetId} veio com ${negotiated.length} slots (esperado 4)`);
+    }
+    negotiated.slice(0, 4).forEach((t) => {
+      t.direction = "sendrecv";
+    });
+    peerTransceiversRef.current.set(targetId, {
+      audioTransceiver: negotiated[0],
+      cameraTransceiver: negotiated[1],
+      screenTransceiver: negotiated[2],
+      screenAudioTransceiver: negotiated[3],
+    });
+    syncLocalTracksToPeer(targetId);
+  };
+
+  // Monta (com objetos novos, para os players atualizarem) os streams remotos de câmera e tela
+  const rebuildRemoteStreams = (targetId: string) => {
+    const pc = peerConnectionsRef.current.get(targetId);
+    if (!pc) return;
+    const negotiated = getNegotiatedTransceivers(pc);
+    const micTrack = negotiated[0]?.receiver.track || null;
+    const camTrack = negotiated[1]?.receiver.track || null;
+    const scrTrack = negotiated[2]?.receiver.track || null;
+    const scrAudioTrack = negotiated[3]?.receiver.track || null;
+
+    const camTracks = [micTrack, camTrack].filter(Boolean) as MediaStreamTrack[];
+    if (camTracks.length > 0) {
+      remoteStreamsRef.current.set(targetId, new MediaStream(camTracks));
+    }
+
+    if (scrTrack) {
+      const includeAudio = remoteScreenHasAudioRef.current.get(targetId) !== false;
+      // Segurança: o player da tela NUNCA toca uma trilha local (seu próprio microfone)
+      const idsLocais = new Set<string>([
+        ...(localStreamRef.current?.getTracks().map((t) => t.id) || []),
+        ...(localScreenStreamRef.current?.getTracks().map((t) => t.id) || []),
+      ]);
+      const audioTela = includeAudio && scrAudioTrack && !idsLocais.has(scrAudioTrack.id) ? scrAudioTrack : null;
+      const scrTracks = [scrTrack, audioTela].filter(Boolean) as MediaStreamTrack[];
+      remoteScreenStreamsRef.current.set(targetId, new MediaStream(scrTracks));
+    }
+  };
+
+  const sendOffer = async (targetId: string, pc: RTCPeerConnection, iceRestart = false) => {
+    try {
+      makingOfferRef.current.set(targetId, true);
+      const offer = await pc.createOffer(iceRestart ? { iceRestart: true } : undefined);
+      if (pc.signalingState !== "stable" && !iceRestart) return;
+      await pc.setLocalDescription(offer);
+      socket.emit("signal:offer", {
+        targetId,
+        to: targetId,
+        offer: pc.localDescription,
+        streamType: "camera",
+      });
+    } catch (err) {
+      console.warn("[webrtc] erro ao criar oferta:", err);
+    } finally {
+      makingOfferRef.current.set(targetId, false);
+    }
+  };
   const [forceUpdate, setForceUpdate] = useState(0);
+
+  // Theme state: defaults to true (Dark Mode suave descansativo para a vista)
+  const [isDarkTheme, setIsDarkTheme] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem("koki_theme");
+      if (stored === "light_blue" || stored === "light") return false;
+      return true;
+    } catch {
+      return true;
+    }
+  });
+
+  const handleToggleTheme = () => {
+    setIsDarkTheme((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("koki_theme", next ? "dark" : "light_blue");
+        if (next) {
+          document.body.classList.add("theme-dark");
+        } else {
+          document.body.classList.remove("theme-dark");
+        }
+      } catch {}
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (isDarkTheme) {
+      document.body.classList.add("theme-dark");
+    } else {
+      document.body.classList.remove("theme-dark");
+    }
+  }, [isDarkTheme]);
+
+  // Interactive Desktop UI/UX Mockup Demo Mode state
+  const [isMockupDemoActive, setIsMockupDemoActive] = useState<boolean>(false);
 
   const roomRef = useRef(room);
   roomRef.current = room;
@@ -318,15 +672,13 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     let active = true;
 
     const setupMedia = async () => {
+      // Invisível não abre microfone nem câmera (nada pra mandar). Ao Aparecer, ligar o mic pede de novo.
+      if (invisivelRef.current) return;
       try {
         let stream: MediaStream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: preferences.echoCancellation,
-              noiseSuppression: preferences.noiseSuppression,
-              deviceId: preferences.selectedAudioInput ? { exact: preferences.selectedAudioInput } : undefined,
-            },
+            audio: buildMicConstraints(true),
             video: !isVideoMuted && !preferences.lowResourceMode
               ? {
                   deviceId: preferences.selectedVideoInput ? { exact: preferences.selectedVideoInput } : undefined,
@@ -339,10 +691,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           console.warn("Retrying with audio-only...", mediaErr);
           setIsVideoMuted(true);
           stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: preferences.echoCancellation,
-              noiseSuppression: preferences.noiseSuppression,
-            },
+            audio: buildMicConstraints(false),
             video: false,
           });
         }
@@ -350,6 +699,22 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         if (!active) {
           stream.getTracks().forEach((t) => t.stop());
           return;
+        }
+
+        // Microfone → IA (RNNoise) → noise gate → trilha que vai pra call
+        const rawAudio = stream.getAudioTracks()[0];
+        if (rawAudio) {
+          const { track, proc } = await createProcessedMic(rawAudio);
+          if (!active) {
+            proc?.close();
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          if (proc) {
+            micProcessorRef.current = proc;
+            setMicProcessor(proc);
+            stream = new MediaStream([track, ...stream.getVideoTracks()]);
+          }
         }
 
         localStreamRef.current = stream;
@@ -360,53 +725,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           audioTracks[0].enabled = !isAudioMuted && !self.isMutedByHost;
         }
 
-        // WebRTC Stream & Track Binding:
-        // Ensure localStream.getAudioTracks()[0] is attached to every RTCPeerConnection instance via peerConnection.addTrack(track, localStream)
-        peerConnectionsRef.current.forEach((pc, targetId) => {
-          const senders = pc.getSenders();
-          
-          if (audioTracks.length > 0) {
-            const localAudioTrack = audioTracks[0];
-            const existingAudioSender = senders.find((s) => s.track?.kind === "audio");
-            if (existingAudioSender) {
-              existingAudioSender.replaceTrack(localAudioTrack).catch((e) => console.warn("replaceTrack audio error:", e));
-            } else {
-              try {
-                pc.addTrack(localAudioTrack, stream);
-              } catch (e) {
-                console.warn("addTrack audio error:", e);
-              }
-            }
-          }
-
-          stream.getVideoTracks().forEach((track) => {
-            const existingVideoSender = senders.find((s) => s.track?.kind === "video");
-            if (existingVideoSender) {
-              existingVideoSender.replaceTrack(track).catch((e) => console.warn("replaceTrack video error:", e));
-            } else {
-              try {
-                pc.addTrack(track, stream);
-              } catch (e) {
-                console.warn("addTrack video error:", e);
-              }
-            }
-          });
-
-          // Trigger renegotiation so remote peers immediately receive media without failures
-          if (pc.signalingState === "stable") {
-            pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
-              .then((offer) => pc.setLocalDescription(offer))
-              .then(() => {
-                socket.emit("signal:offer", {
-                  targetId,
-                  to: targetId,
-                  offer: pc.localDescription,
-                  streamType: "camera",
-                });
-              })
-              .catch((e) => console.warn("Renegotiation offer error:", e));
-          }
-        });
+        // Coloca microfone/câmera nos slots de todas as conexões (sem renegociar)
+        syncLocalTracksToAllPeers();
 
         // Setup volume tracker
         audioTrackerRef.current = new AudioVolumeTracker((level) => {
@@ -438,8 +758,19 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((t) => t.stop());
       }
+      // Fecha o AudioContext da IA e o microfone cru (ao sair da call ou trocar de microfone)
+      closeMicProcessor();
     };
   }, [preferences.echoCancellation, preferences.noiseSuppression, preferences.selectedAudioInput, preferences.selectedVideoInput]);
+
+  // IA / sensibilidade mudam ao vivo (sem pedir o microfone de novo nem renegociar)
+  useEffect(() => {
+    micProcessorRef.current?.setOptions({
+      aiNoiseSuppression: preferences.aiNoiseSuppression,
+      autoSensitivity: preferences.autoSensitivity,
+      sensitivityDb: preferences.sensitivityDb,
+    });
+  }, [preferences.aiNoiseSuppression, preferences.autoSensitivity, preferences.sensitivityDb, micProcessor]);
 
   // 3. Ping Interval
   useEffect(() => {
@@ -465,39 +796,24 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     const pc = new RTCPeerConnection(RTC_CONFIG);
     peerConnectionsRef.current.set(targetId, pc);
 
-    // WebRTC Stream & Track Binding:
-    // Ensure localStream.getAudioTracks()[0] is attached to every RTCPeerConnection instance via peerConnection.addTrack(track, localStream)
-    if (localStreamRef.current) {
-      const audioTrack = localStreamRef.current.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !isAudioMuted && !self.isMutedByHost;
-        try {
-          pc.addTrack(audioTrack, localStreamRef.current);
-        } catch (e) {
-          console.warn("addTrack audio localStream error:", e);
+    // Só o ofertante designado cria os slots e manda a oferta inicial.
+    // O outro lado espera a oferta; se ela não chegar em 4s, assume o papel.
+    // Modo invisível: o invisível SEMPRE oferece (só-recebe); quem está visível só responde a ele.
+    const ehEspectador = espectadoresRef.current.has(targetId);
+    const souOfertante = invisivelRef.current || (!ehEspectador && isDesignatedOfferer(targetId));
+    if (souOfertante) {
+      createOwnSlots(targetId, pc);
+    } else if (!ehEspectador) {
+      const timer = window.setTimeout(() => {
+        offerFallbackTimersRef.current.delete(targetId);
+        const current = peerConnectionsRef.current.get(targetId);
+        if (current === pc && !pc.remoteDescription && pc.signalingState === "stable" && !peerTransceiversRef.current.has(targetId)) {
+          console.warn(`[webrtc] oferta de ${targetId} não chegou, criando a conexão por este lado`);
+          createOwnSlots(targetId, pc);
+          sendOffer(targetId, pc);
         }
-      }
-
-      // Add camera video track if active
-      const videoTrack = localStreamRef.current.getVideoTracks()[0];
-      if (videoTrack && !isVideoMuted && !preferences.lowResourceMode) {
-        try {
-          pc.addTrack(videoTrack, localStreamRef.current);
-        } catch (e) {
-          console.warn("addTrack video localStream error:", e);
-        }
-      }
-    }
-
-    // Add screen share tracks if sharing
-    if (localScreenStreamRef.current) {
-      localScreenStreamRef.current.getTracks().forEach((track) => {
-        try {
-          pc.addTrack(track, localScreenStreamRef.current!);
-        } catch (e) {
-          console.warn("addTrack localScreenStream error:", e);
-        }
-      });
+      }, 4000);
+      offerFallbackTimersRef.current.set(targetId, timer);
     }
 
     // Handle ICE Candidates
@@ -514,12 +830,28 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     };
 
     // Handle Incoming Remote Tracks (Camera & Screen Share)
-    // Handle peerConnection.ontrack: attach event.streams[0] directly to media elements (<audio autoplay> / <video autoplay>)
     pc.ontrack = (event) => {
-      const stream = event.streams[0] || new MediaStream([event.track]);
+      // Conexão com um invisível: dele não vem nada (e se vier, ignora)
+      if (espectadoresRef.current.has(targetId)) return;
       const track = event.track;
+      const slotIndex = getNegotiatedTransceivers(pc).indexOf(event.transceiver);
+
+      console.log(`[tela] ontrack recebido: kind = ${track.kind}, id = ${track.id}, slot = ${slotIndex} de peer ${targetId}`);
+
+      // Slots 2 e 3 = tela (vídeo e áudio)
+      if (slotIndex === 2 || slotIndex === 3) {
+        rebuildRemoteStreams(targetId);
+        track.onunmute = () => {
+          console.log(`[tela] trilha da tela (${track.kind}) começou a receber dados de ${targetId}`);
+          rebuildRemoteStreams(targetId);
+          setForceUpdate((prev) => prev + 1);
+        };
+        setForceUpdate((prev) => prev + 1);
+        return;
+      }
 
       if (track.kind === "audio") {
+        const stream = new MediaStream([track]);
         // Direct binding to global background <audio id="remote-audio"> and call .play()
         const remoteAudioEl = (document.getElementById("remote-audio") as HTMLAudioElement) || (audioRef && audioRef.current);
         if (remoteAudioEl) {
@@ -531,7 +863,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
               console.warn("remote-audio autoplay pending interaction:", err);
             });
           } catch (e) {
-            console.warn("Error attaching event.streams[0] to remote-audio:", e);
+            console.warn("Error attaching stream to remote-audio:", e);
           }
         }
 
@@ -553,9 +885,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         }
 
         if (peerAudioEl) {
-          if (peerAudioEl.srcObject !== stream) {
-            peerAudioEl.srcObject = stream;
-          }
+          peerAudioEl.srcObject = stream;
           const userVol = participantVolumesRef.current[targetId] ?? 100;
           peerAudioEl.volume = Math.max(0, Math.min(1, (userVol / 100) * (masterVoiceVolumeRef.current / 100)));
           peerAudioEl.play().catch((err) => {
@@ -564,55 +894,39 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         }
 
         // Real-time audio volume tracker for remote user speaking indicator
-        if (!remoteAudioTrackersRef.current.has(targetId)) {
-          const tracker = new AudioVolumeTracker((level) => {
-            setRoom((prev) => ({
-              ...prev,
-              participants: prev.participants.map((p) =>
-                p.id === targetId ? { ...p, audioLevel: level } : p
-              ),
-            }));
-          });
-          tracker.start(stream);
-          remoteAudioTrackersRef.current.set(targetId, tracker);
-        }
+        const oldTracker = remoteAudioTrackersRef.current.get(targetId);
+        if (oldTracker) oldTracker.stop();
+        const tracker = new AudioVolumeTracker((level) => {
+          setRoom((prev) => ({
+            ...prev,
+            participants: prev.participants.map((p) =>
+              p.id === targetId ? { ...p, audioLevel: level } : p
+            ),
+          }));
+        });
+        tracker.start(stream);
+        remoteAudioTrackersRef.current.set(targetId, tracker);
       }
 
-      const currentParticipant = roomRef.current.participants.find((p) => p.id === targetId);
-
-      // Distinguish screen share track from webcam camera track
-      const trackLabel = (track.label || "").toLowerCase();
-      const isScreenShare =
-        trackLabel.includes("screen") ||
-        trackLabel.includes("window") ||
-        trackLabel.includes("display") ||
-        trackLabel.includes("monitor") ||
-        trackLabel.includes("tab") ||
-        incomingStreamTypeRef.current.get(targetId) === "screen" ||
-        Boolean(currentParticipant?.isScreenSharing && remoteStreamsRef.current.has(targetId));
-
-      if (isScreenShare) {
-        remoteScreenStreamsRef.current.set(targetId, stream);
-      } else {
-        remoteStreamsRef.current.set(targetId, stream);
+      // Slot 0 (microfone) e slot 1 (câmera) formam o stream de câmera
+      rebuildRemoteStreams(targetId);
+      if (track.kind === "video") {
+        track.onunmute = () => {
+          rebuildRemoteStreams(targetId);
+          setForceUpdate((prev) => prev + 1);
+        };
+        // Câmera desligada do outro lado: volta a mostrar o avatar
+        track.onmute = () => {
+          setForceUpdate((prev) => prev + 1);
+        };
       }
-
-      track.onended = () => {
-        if (isScreenShare) {
-          remoteScreenStreamsRef.current.delete(targetId);
-          if (spotlightId === `screen-${targetId}`) {
-            setSpotlightId(null);
-          }
-        }
-        setForceUpdate((prev) => prev + 1);
-      };
-
       setForceUpdate((prev) => prev + 1);
     };
 
     // Handle Connection State
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "closed" || pc.connectionState === "failed") {
+        if (peerConnectionsRef.current.get(targetId) === pc) espectadoresRef.current.delete(targetId);
         const audioEl = remoteAudioElementsRef.current.get(targetId);
         if (audioEl) {
           audioEl.pause();
@@ -621,6 +935,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           remoteAudioElementsRef.current.delete(targetId);
         }
         peerConnectionsRef.current.delete(targetId);
+        peerTransceiversRef.current.delete(targetId);
+        knownScreenTrackIdsRef.current.delete(targetId);
         remoteStreamsRef.current.delete(targetId);
         remoteScreenStreamsRef.current.delete(targetId);
         setForceUpdate((prev) => prev + 1);
@@ -631,20 +947,12 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === "failed") {
         console.warn(`ICE failed for peer ${targetId}, restarting ICE...`);
-        if (typeof (pc as any).restartIce === "function") {
-          (pc as any).restartIce();
+        // Só o ofertante reinicia, para não causar colisão de ofertas
+        // (com invisível no meio, só o invisível reinicia)
+        if (espectadoresRef.current.has(targetId)) return;
+        if (invisivelRef.current || isDesignatedOfferer(targetId) || !pc.remoteDescription) {
+          sendOffer(targetId, pc, true);
         }
-        pc.createOffer({ iceRestart: true, offerToReceiveAudio: true, offerToReceiveVideo: true })
-          .then((offer) => pc.setLocalDescription(offer))
-          .then(() => {
-            socket.emit("signal:offer", {
-              targetId,
-              to: targetId,
-              offer: pc.localDescription,
-              streamType: localScreenStreamRef.current ? "screen" : "camera",
-            });
-          })
-          .catch((err) => console.warn("ICE restart offer error:", err));
       } else if (pc.iceConnectionState === "closed") {
         const audioEl = remoteAudioElementsRef.current.get(targetId);
         if (audioEl) {
@@ -654,29 +962,16 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           remoteAudioElementsRef.current.delete(targetId);
         }
         peerConnectionsRef.current.delete(targetId);
+        peerTransceiversRef.current.delete(targetId);
         remoteStreamsRef.current.delete(targetId);
         remoteScreenStreamsRef.current.delete(targetId);
         setForceUpdate((prev) => prev + 1);
       }
     };
 
-    // If initiator, create and send Offer
-    if (isInitiator) {
-      makingOfferRef.current.set(targetId, true);
-      pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
-        .then((offer) => pc.setLocalDescription(offer))
-        .then(() => {
-          socket.emit("signal:offer", {
-            targetId,
-            to: targetId,
-            offer: pc.localDescription,
-            streamType: localScreenStreamRef.current ? "screen" : "camera",
-          });
-        })
-        .catch((err) => console.warn("Error creating WebRTC offer:", err))
-        .finally(() => {
-          makingOfferRef.current.set(targetId, false);
-        });
+    // Ofertante designado (ou o invisível) manda a oferta inicial
+    if (souOfertante) {
+      sendOffer(targetId, pc);
     }
 
     return pc;
@@ -732,6 +1027,13 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       pendingCandidatesRef.current.delete(data.id);
       makingOfferRef.current.delete(data.id);
       ignoreOfferRef.current.delete(data.id);
+      peerTransceiversRef.current.delete(data.id);
+      remoteScreenHasAudioRef.current.delete(data.id);
+      const fallbackTimer = offerFallbackTimersRef.current.get(data.id);
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        offerFallbackTimersRef.current.delete(data.id);
+      }
 
       if (spotlightId === data.id) {
         setSpotlightId(null);
@@ -745,6 +1047,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     };
 
     const handleUserUpdated = (updatedUser: Participant) => {
+      const antes = roomRef.current.participants.find((p) => p.id === updatedUser.id);
       setRoom((prev) => ({
         ...prev,
         participants: prev.participants.map((p) => (p.id === updatedUser.id ? { ...p, ...updatedUser } : p)),
@@ -752,6 +1055,11 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
       if (updatedUser.id === self.id) {
         setSelf((prev) => ({ ...prev, ...updatedUser }));
+        // Guarda no aparelho a data mais antiga que o servidor conhece
+        const desde = Number((updatedUser as any).memberSince);
+        if (Number.isFinite(desde) && desde > 1600000000000 && desde < getMemberSince()) {
+          try { localStorage.setItem("eco_member_since_v1", String(desde)); } catch {}
+        }
       }
 
       if (selectedProfileParticipant?.id === updatedUser.id) {
@@ -759,7 +1067,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       }
 
       // If user started screen sharing, auto spotlight if none set
-      if (updatedUser.isScreenSharing && !spotlightId) {
+      // (só quando começou agora: atualização de perfil não pode puxar o destaque de volta)
+      if (updatedUser.isScreenSharing && !antes?.isScreenSharing && !spotlightId) {
         setSpotlightId(`screen-${updatedUser.id}`);
       }
     };
@@ -775,24 +1084,60 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     }) => {
       const senderId = payload.senderId || payload.from;
       if (!senderId || !payload.offer) return;
+      // Invisível não aceita oferta de ninguém (o servidor já barra; aqui é só garantia)
+      if (invisivelRef.current) return;
+      // Oferta de um invisível (marcada pelo SERVIDOR): conexão só-envio, sem card e fora da lista
+      if ((payload as any).espectador === true) {
+        const atual = peerConnectionsRef.current.get(senderId);
+        if (atual && !espectadoresRef.current.has(senderId)) {
+          try { atual.close(); } catch { /* ignore */ }
+          peerConnectionsRef.current.delete(senderId);
+          peerTransceiversRef.current.delete(senderId);
+        }
+        espectadoresRef.current.add(senderId);
+      }
 
       const isScreen = payload.isScreen || payload.streamType === "screen";
       incomingStreamTypeRef.current.set(senderId, isScreen ? "screen" : "camera");
 
       const pc = createPeerConnection(senderId, false);
       const isPolite = (socket.id || "") < senderId;
-      const isOfferCollision =
-        makingOfferRef.current.get(senderId) || pc.signalingState !== "stable";
+      const isMakingOffer = Boolean(makingOfferRef.current.get(senderId));
+      const isSettingRemoteAnswerPending = Boolean(isSettingRemoteAnswerPendingRef.current.get(senderId));
+
+      const readyForOffer = !isMakingOffer && (pc.signalingState === "stable" || isSettingRemoteAnswerPending);
+      const isOfferCollision = !readyForOffer;
 
       ignoreOfferRef.current.set(senderId, !isPolite && isOfferCollision);
       if (ignoreOfferRef.current.get(senderId)) {
         console.warn(`[WebRTC] Glare handled: Impolite peer ignoring colliding offer from ${senderId}`);
+        // Impolite peer must renegotiate after glare once signaling returns to stable
+        setTimeout(async () => {
+          const activePc = peerConnectionsRef.current.get(senderId);
+          if (activePc && activePc.signalingState === "stable") {
+            try {
+              makingOfferRef.current.set(senderId, true);
+              await activePc.setLocalDescription();
+              socket.emit("signal:offer", {
+                targetId: senderId,
+                to: senderId,
+                offer: activePc.localDescription,
+                streamType: localScreenStreamRef.current ? "screen" : "camera",
+                isScreen: Boolean(localScreenStreamRef.current),
+              });
+            } catch (retryErr) {
+              console.warn("[WebRTC] Erro ao refazer oferta após colisão:", retryErr);
+            } finally {
+              makingOfferRef.current.set(senderId, false);
+            }
+          }
+        }, 400);
         return;
       }
 
       try {
         if (isOfferCollision) {
-          // Polite peer rolls back local offer to prevent renegotiation failure
+          // Polite peer rolls back local offer to resolve glare
           try {
             await pc.setLocalDescription({ type: "rollback" } as any);
           } catch (rollbackErr) {
@@ -813,37 +1158,18 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         }
         pendingCandidatesRef.current.delete(senderId);
 
-        // Ensure local audio track is attached to answer with audio
-        if (!localStreamRef.current && navigator.mediaDevices?.getUserMedia) {
-          try {
-            const fallbackAudioStream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                echoCancellation: preferences.echoCancellation,
-                noiseSuppression: preferences.noiseSuppression,
-              },
-              video: false,
-            });
-            localStreamRef.current = fallbackAudioStream;
-          } catch (err) {
-            console.warn("Could not acquire fallback audio stream:", err);
-          }
+        // Oferta chegou: cancela o plano B e adota os slots (se ainda não temos)
+        const fallbackTimer = offerFallbackTimersRef.current.get(senderId);
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer);
+          offerFallbackTimersRef.current.delete(senderId);
         }
-
-        if (localStreamRef.current) {
-          const audioTrack = localStreamRef.current.getAudioTracks()[0];
-          if (audioTrack) {
-            audioTrack.enabled = !isAudioMuted && !self.isMutedByHost;
-            const senders = pc.getSenders();
-            const hasAudioSender = senders.some((s) => s.track?.kind === "audio");
-            if (!hasAudioSender) {
-              try {
-                pc.addTrack(audioTrack, localStreamRef.current);
-              } catch (e) {
-                console.warn("addTrack audio before answer error:", e);
-              }
-            }
-          }
+        if (!peerTransceiversRef.current.has(senderId) || isOfferCollision) {
+          adoptRemoteSlots(senderId, pc);
+        } else {
+          syncLocalTracksToPeer(senderId);
         }
+        rebuildRemoteStreams(senderId);
 
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -853,6 +1179,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           to: senderId,
           answer: pc.localDescription,
           streamType: payload.streamType || "camera",
+          isScreen: Boolean(payload.isScreen),
         });
       } catch (err) {
         console.warn("Error handling WebRTC offer:", err);
@@ -871,6 +1198,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       if (pc) {
         try {
           if (pc.signalingState === "have-local-offer") {
+            isSettingRemoteAnswerPendingRef.current.set(senderId, true);
             await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
 
             // Process any queued ICE candidates for this peer
@@ -886,6 +1214,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           }
         } catch (err) {
           console.warn("Error handling WebRTC answer:", err);
+        } finally {
+          isSettingRemoteAnswerPendingRef.current.set(senderId, false);
         }
       }
     };
@@ -917,6 +1247,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     };
 
     const handleChatMessage = (msg: ChatMessage) => {
+      // Avisos automáticos (entrou, moveu, insígnias, VIP, moedas...) não aparecem no chat
+      if (ehAvisoAutomatico(msg)) return;
       setMessages((prev) => {
         if (prev.some((m) => m.id === msg.id)) return prev;
         return [...prev, msg];
@@ -934,12 +1266,12 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     };
 
     const handleKicked = (data: { reason?: string }) => {
-      alert(data.reason || "Você foi desconectado pelo anfitrião.");
+      notify(data.reason || "Você foi desconectado pelo anfitrião.", "warning");
       onLeaveRoom();
     };
 
     const handleRoomClosed = (data: { reason?: string }) => {
-      alert(data.reason || "A sala foi encerrada pelo Dono da chamada.");
+      notify(data.reason || "A sala foi encerrada pelo Dono da chamada.", "info");
       onLeaveRoom();
     };
 
@@ -962,16 +1294,17 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       setPendingKnocks((prev) => prev.filter((k) => k.socketId !== data.socketId));
     };
 
+    // Junta (não substitui): substituir apagava campos locais (stream, nível de áudio...)
     const handleVipGranted = (data: { participant: Participant; message?: string }) => {
       setRoom((prev) => ({
         ...prev,
-        participants: prev.participants.map((p) => (p.id === data.participant.id ? data.participant : p)),
+        participants: prev.participants.map((p) => (p.id === data.participant.id ? { ...p, ...data.participant } : p)),
       }));
       if (data.participant.id === self.id) {
-        setSelf(data.participant);
+        setSelf((prev) => ({ ...prev, ...data.participant }));
       }
       if (selectedProfileParticipant && selectedProfileParticipant.id === data.participant.id) {
-        setSelectedProfileParticipant(data.participant);
+        setSelectedProfileParticipant((prev) => (prev ? { ...prev, ...data.participant } : data.participant));
       }
     };
 
@@ -1001,12 +1334,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       }
     };
 
-    const handleCoinsReceived = (data: { amount: number; senderName?: string; newBalance?: number; message?: string }) => {
-      addKokiCoins(data.amount);
-      setSelf((prev) => ({
-        ...prev,
-        kokiCoins: (prev.kokiCoins || getKokiCoins()) + data.amount,
-      }));
+    const handleCoinsReceived = (_data: { amount: number; senderName?: string; newBalance?: number; message?: string }) => {
+      // Só aviso: o saldo é ajustado uma única vez em "coins:updated" (antes somava aqui E lá = dobrava)
     };
 
     const handleCoinsUpdated = (data: {
@@ -1020,21 +1349,18 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       const targetId = data.participantId || data.socketId;
       const newCoins = data.kokiCoins ?? data.newBalance ?? data.balance;
 
-      // If the update is for the current local user (or no specific targetId is specified)
+      // Para mim: aplica só a diferença enviada (saldo real fica no meu aparelho)
       if (!targetId || targetId === self.id) {
-        if (typeof newCoins === "number") {
+        if (typeof data.amount === "number" && data.amount !== 0) {
+          const atual = getKokiCoins();
+          const updated = setKokiCoins(Math.max(0, atual + Math.floor(data.amount)));
+          setSelf((prev) => ({ ...prev, kokiCoins: updated }));
+          socket.emit("room:state-update", { kokiCoins: updated });
+        } else if (typeof newCoins === "number") {
           setKokiCoins(newCoins);
-          setSelf((prev) => ({
-            ...prev,
-            kokiCoins: newCoins,
-          }));
-        } else if (typeof data.amount === "number") {
-          const updated = addKokiCoins(data.amount);
-          setSelf((prev) => ({
-            ...prev,
-            kokiCoins: updated,
-          }));
+          setSelf((prev) => ({ ...prev, kokiCoins: newCoins }));
         }
+        return;
       }
 
       // If a participantId is provided, also sync participant's balance in room state & opened profile
@@ -1058,7 +1384,27 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       if (Array.isArray(data?.badges)) {
         setSelf((prev) => ({ ...prev, badges: data.badges }));
         saveUserProfile({ badges: data.badges });
+        // a lista do Dono substitui a guardada (assim insígnia removida some de vez)
+        try { localStorage.setItem("eco_insignias_recebidas", JSON.stringify(data.badges)); } catch {}
       }
+    };
+
+    // O Dono removeu itens da loja: apaga daqui também, junto com o que eles liberavam
+    const handleItensRemovidos = (data: { itens: string[]; limpar?: { avatar?: boolean; banner?: boolean; titulo?: boolean }; badges?: string[] }) => {
+      if (!Array.isArray(data?.itens) || !data.itens.length) return;
+      const perks = { ...getPurchasedPerks() };
+      for (const id of data.itens) delete perks[id];
+      salvarPerksExtras(perks);
+      const mudancas: any = {};
+      if (data.limpar?.avatar) mudancas.avatarUrl = undefined;
+      if (data.limpar?.banner) mudancas.bannerUrl = undefined;
+      if (data.limpar?.titulo) mudancas.customTitle = undefined;
+      setSelf((prev) => {
+        const badges = Array.isArray(data.badges) ? data.badges : data.itens.includes("vip_role") ? (prev.badges || []).filter((b) => b !== "vip_role") : prev.badges;
+        return { ...prev, ...mudancas, purchasedPerks: perks, badges };
+      });
+      saveUserProfile({ ...mudancas, ...(Array.isArray(data.badges) ? { badges: data.badges } : {}) });
+      notify("O Dono removeu um item da sua loja.", "info");
     };
 
     const handleForcedChannelChange = (data: { channelId: string; channelName?: string; movedBy?: string }) => {
@@ -1108,6 +1454,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       // Clean up stale peer connections and audio elements for peers who left
       const activeIds = new Set(list.map((p) => p.id));
       peerConnectionsRef.current.forEach((pc, pId) => {
+        // Conexão com invisível não está na lista de propósito: não fecha
+        if (espectadoresRef.current.has(pId)) return;
         if (!activeIds.has(pId)) {
           pc.close();
           peerConnectionsRef.current.delete(pId);
@@ -1125,6 +1473,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           }
           remoteStreamsRef.current.delete(pId);
           remoteScreenStreamsRef.current.delete(pId);
+          peerTransceiversRef.current.delete(pId);
         }
       });
     };
@@ -1157,10 +1506,36 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         if (pc.connectionState === "failed" || pc.connectionState === "closed") {
           pc.close();
           peerConnectionsRef.current.delete(peerId);
+          peerTransceiversRef.current.delete(peerId);
           createPeerConnection(peerId, true);
         }
       });
     };
+
+    // Invisível saiu ou apareceu: fecha a conexão só-envio com ele
+    const handleEspectadorFim = (data: { id?: string }) => {
+      const id = data?.id;
+      if (!id || !espectadoresRef.current.has(id)) return;
+      espectadoresRef.current.delete(id);
+      const pc = peerConnectionsRef.current.get(id);
+      if (pc) {
+        try { pc.close(); } catch { /* ignore */ }
+        peerConnectionsRef.current.delete(id);
+      }
+      peerTransceiversRef.current.delete(id);
+      pendingCandidatesRef.current.delete(id);
+      makingOfferRef.current.delete(id);
+      ignoreOfferRef.current.delete(id);
+      isSettingRemoteAnswerPendingRef.current.delete(id);
+      remoteStreamsRef.current.delete(id);
+      remoteScreenStreamsRef.current.delete(id);
+    };
+    const handleInvisiveis = (data: { roomId?: string; invisiveis?: Participant[] }) => {
+      if (data?.roomId && data.roomId !== roomRef.current.roomId) return;
+      setInvisiveisNaSala(Array.isArray(data?.invisiveis) ? data.invisiveis.filter((g) => g.id !== socket.id) : []);
+    };
+    socket.on("espectador:fim", handleEspectadorFim);
+    socket.on("sala:invisiveis", handleInvisiveis);
 
     socket.on("connect", handleSocketReconnect);
     socket.on("room:user-joined", handleUserJoined);
@@ -1188,6 +1563,51 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     socket.on("room:closed", handleRoomClosed);
     socket.on("room:lock-changed", handleLockChanged);
     socket.on("room:settings-changed", handleSettingsChanged);
+    const handleScreenShareStarted = (data: { userId: string; streamId?: string; trackId?: string; hasAudio?: boolean }) => {
+      console.log(`[tela] Evento screen-share-started recebido de ${data.userId}, áudio: ${data.hasAudio}`);
+      if (data.trackId) {
+        knownScreenTrackIdsRef.current.set(data.userId, data.trackId);
+      }
+      if (typeof data.hasAudio === "boolean") {
+        remoteScreenHasAudioRef.current.set(data.userId, data.hasAudio);
+      }
+      // A tela chega sempre pelo slot 2 da conexão com essa pessoa
+      rebuildRemoteStreams(data.userId);
+      if (!remoteScreenStreamsRef.current.has(data.userId)) {
+        console.warn(`[tela] ainda não há conexão pronta com ${data.userId}; a tela aparece quando ela conectar`);
+      }
+
+      setRoom((prev) => ({
+        ...prev,
+        participants: prev.participants.map((p) =>
+          p.id === data.userId ? { ...p, isScreenSharing: true } : p
+        ),
+      }));
+
+      setSpotlightId(`screen-${data.userId}`);
+      setForceUpdate((prev) => prev + 1);
+    };
+
+    const handleScreenShareStopped = (data: { userId: string }) => {
+      console.log(`[tela] Evento screen-share-stopped recebido de ${data.userId}`);
+      knownScreenTrackIdsRef.current.delete(data.userId);
+      // Mantém o stream do slot 2 (será reutilizado no próximo compartilhamento);
+      // o card some porque isScreenSharing vira false.
+      if (spotlightId === `screen-${data.userId}`) {
+        setSpotlightId(null);
+      }
+
+      setRoom((prev) => ({
+        ...prev,
+        participants: prev.participants.map((p) =>
+          p.id === data.userId ? { ...p, isScreenSharing: false } : p
+        ),
+      }));
+      setForceUpdate((prev) => prev + 1);
+    };
+
+    socket.on("screen-share-started", handleScreenShareStarted);
+    socket.on("screen-share-stopped", handleScreenShareStopped);
     socket.on("host:knock-request", handleKnockRequest);
     socket.on("host:knock-cancelled", handleKnockCancelled);
     socket.on("vip:granted", handleVipGranted);
@@ -1196,13 +1616,13 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     socket.on("coins:received", handleCoinsReceived);
     socket.on("coins:updated", handleCoinsUpdated);
     socket.on("badges:assigned", handleBadgesAssigned);
+    socket.on("loja:itens-removidos", handleItensRemovidos);
     socket.on("voice:forced-channel-change", handleForcedChannelChange);
 
-    if (self.isHost || isMaster) {
-      socket.emit("host:get-pending-knocks", (knocks: KnockRequest[]) => {
-        if (Array.isArray(knocks)) {
-          setPendingKnocks(knocks);
-        }
+    if (isMaster || ((self as any).poderes || []).includes("porta")) {
+      socket.emit("host:get-pending-knocks", (res: any) => {
+        const knocks = Array.isArray(res) ? res : res?.knocks;
+        if (Array.isArray(knocks)) setPendingKnocks(knocks);
       });
     }
 
@@ -1229,6 +1649,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       socket.off("room:participants", handleSyncUsersList);
       socket.off("voice:participants", handleSyncUsersList);
       socket.off("room:sync", handleRoomSync);
+      socket.off("espectador:fim", handleEspectadorFim);
+      socket.off("sala:invisiveis", handleInvisiveis);
       socket.off("signal:offer", handleOffer);
       socket.off("signal:answer", handleAnswer);
       socket.off("signal:ice-candidate", handleIceCandidate);
@@ -1244,27 +1666,52 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       socket.off("vip:granted", handleVipGranted);
       socket.off("vip:revoked", handleVipRevoked);
       socket.off("vip:expired", handleVipRevoked);
+      socket.off("screen-share-started", handleScreenShareStarted);
+      socket.off("screen-share-stopped", handleScreenShareStopped);
       socket.off("coins:received", handleCoinsReceived);
       socket.off("coins:updated", handleCoinsUpdated);
       socket.off("badges:assigned", handleBadgesAssigned);
+      socket.off("loja:itens-removidos", handleItensRemovidos);
       socket.off("voice:forced-channel-change", handleForcedChannelChange);
       socket.off("connect", handleSocketReconnect);
     };
-  }, [socket, self.id, self.isHost, isMaster, isChatOpen, createPeerConnection, onLeaveRoom, selectedProfileParticipant?.id, spotlightId]);
+  }, [socket, self.id, self.isHost, isMaster, ((self as any).poderes || []).join(), isChatOpen, createPeerConnection, onLeaveRoom, selectedProfileParticipant?.id, spotlightId]);
 
-  // 6. Broadcast local audio level and state changes
+  // 5.1 Desmutado pelo Dono + anti-spam do chat
+  const [chatBloqueadoAte, setChatBloqueadoAte] = useState<number>(0);
   useEffect(() => {
+    const handleForcedUnmute = (data?: { por?: string }) => {
+      // Só libera: o mic continua desligado até a pessoa ligar
+      setSelf((prev) => ({ ...prev, isMutedByHost: false }));
+      notify(`${data?.por || "O Dono"} liberou seu microfone. Ligue quando quiser.`, "info");
+    };
+    const handleChatTimeout = (data: { segundos?: number; escopo?: string; mensagem?: string }) => {
+      const seg = Math.max(1, Math.floor(Number(data?.segundos) || 30));
+      if (data?.escopo !== "dm") setChatBloqueadoAte(Date.now() + seg * 1000);
+    };
+    socket.on("host:forced-unmute", handleForcedUnmute);
+    socket.on("chat:timeout", handleChatTimeout);
+    return () => {
+      socket.off("host:forced-unmute", handleForcedUnmute);
+      socket.off("chat:timeout", handleChatTimeout);
+    };
+  }, [socket]);
+
+  // 6. Broadcast local media state changes (o nível do áudio não vai mais pro servidor: cada um mede o seu)
+  useEffect(() => {
+    if (invisivelRef.current) return;
     socket.emit("room:state-update", {
       hasAudio: !isAudioMuted && !self.isMutedByHost,
       hasVideo: !isVideoMuted && !preferences.lowResourceMode,
       isScreenSharing,
       isDeafened,
-      audioLevel: localAudioLevel,
     });
-  }, [isAudioMuted, isVideoMuted, isScreenSharing, isDeafened, localAudioLevel, preferences.lowResourceMode, self.isMutedByHost, socket]);
+  }, [isAudioMuted, isVideoMuted, isScreenSharing, isDeafened, preferences.lowResourceMode, self.isMutedByHost, socket]);
 
   // Toggle Microphone
+  const avisarInvisivel = () => notify("Você está invisível. Clique em Aparecer para falar ou ligar câmera/tela.", "info");
   const handleToggleAudio = async () => {
+    if (invisivelRef.current) return avisarInvisivel();
     if (self.isMutedByHost) return;
 
     const nextMuted = !isAudioMuted;
@@ -1275,14 +1722,19 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       if (!localStreamRef.current || localStreamRef.current.getAudioTracks().length === 0) {
         try {
           const micStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: preferences.echoCancellation,
-              noiseSuppression: preferences.noiseSuppression,
-              deviceId: preferences.selectedAudioInput ? { exact: preferences.selectedAudioInput } : undefined,
-            },
+            audio: buildMicConstraints(true),
             video: false,
           });
-          const newAudioTrack = micStream.getAudioTracks()[0];
+          const rawAudioTrack = micStream.getAudioTracks()[0];
+          let newAudioTrack: MediaStreamTrack | undefined = rawAudioTrack;
+          if (rawAudioTrack) {
+            // Mesmo pipeline de IA do início da call
+            if (micProcessorRef.current) micProcessorRef.current.close();
+            const { track, proc } = await createProcessedMic(rawAudioTrack);
+            micProcessorRef.current = proc;
+            setMicProcessor(proc);
+            newAudioTrack = track;
+          }
           if (newAudioTrack) {
             if (localStreamRef.current) {
               localStreamRef.current.addTrack(newAudioTrack);
@@ -1300,43 +1752,14 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       const audioTracks = localStreamRef.current.getAudioTracks();
       audioTracks.forEach((t) => (t.enabled = !nextMuted));
 
-      // WebRTC Stream & Track Binding:
-      // Ensure localStream.getAudioTracks()[0] is attached to every RTCPeerConnection instance via peerConnection.addTrack(track, localStream) as soon as the microphone is unmuted/activated.
+      // Garante o microfone (trilha processada pela IA) no slot 0 de todas as conexões (sem renegociar)
       if (!nextMuted && audioTracks.length > 0) {
-        const activeAudioTrack = audioTracks[0];
-        peerConnectionsRef.current.forEach((pc, targetId) => {
-          const senders = pc.getSenders();
-          const existingAudioSender = senders.find((s) => s.track?.kind === "audio");
-          if (existingAudioSender) {
-            existingAudioSender.replaceTrack(activeAudioTrack).catch((err) => {
-              console.warn("replaceTrack error on unmute:", err);
-            });
-          } else {
-            try {
-              pc.addTrack(activeAudioTrack, localStreamRef.current!);
-            } catch (err) {
-              console.warn("addTrack error on unmute:", err);
-            }
-          }
-
-          if (pc.signalingState === "stable") {
-            makingOfferRef.current.set(targetId, true);
-            pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
-              .then((offer) => pc.setLocalDescription(offer))
-              .then(() => {
-                socket.emit("signal:offer", {
-                  targetId,
-                  to: targetId,
-                  offer: pc.localDescription,
-                  streamType: "camera",
-                });
-              })
-              .catch((err) => console.warn("Renegotiate offer on unmute error:", err))
-              .finally(() => {
-                makingOfferRef.current.set(targetId, false);
-              });
-          }
-        });
+        syncLocalTracksToAllPeers();
+        // Indicador de fala lê o sinal processado (depois da IA e do gate)
+        if (!audioTrackerRef.current) {
+          audioTrackerRef.current = new AudioVolumeTracker((level) => setLocalAudioLevel(level));
+        }
+        audioTrackerRef.current.start(localStreamRef.current);
       }
     }
 
@@ -1346,6 +1769,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
   // Toggle Video Camera
   const handleToggleVideo = async () => {
+    if (invisivelRef.current) return avisarInvisivel();
     if (preferences.lowResourceMode) return;
 
     if (!isVideoMuted) {
@@ -1357,31 +1781,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         });
       }
 
-      peerConnectionsRef.current.forEach((pc, targetId) => {
-        const senders = pc.getSenders();
-        senders.forEach((sender) => {
-          if (sender.track && sender.track.kind === "video" && !sender.track.label.toLowerCase().includes("screen")) {
-            try {
-              pc.removeTrack(sender);
-            } catch (e) {
-              console.warn("removeTrack video error:", e);
-            }
-          }
-        });
-
-        if (pc.signalingState === "stable") {
-          pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
-            .then((offer) => pc.setLocalDescription(offer))
-            .then(() => {
-              socket.emit("signal:offer", {
-                targetId,
-                offer: pc.localDescription,
-                streamType: "camera",
-              });
-            })
-            .catch((e) => console.warn("Renegotiation after stop camera error:", e));
-        }
-      });
+      // Tira a câmera do slot 1 (sem renegociar)
+      syncLocalTracksToAllPeers();
 
       setIsVideoMuted(true);
       setSelf((prev) => ({ ...prev, hasVideo: false }));
@@ -1398,27 +1799,11 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         if (localStreamRef.current && newVideoTrack) {
           localStreamRef.current.addTrack(newVideoTrack);
 
-          // Add to all peer connections and renegotiate
-          peerConnectionsRef.current.forEach((pc, targetId) => {
-            try {
-              pc.addTrack(newVideoTrack, localStreamRef.current!);
-            } catch (e) {
-              console.warn("addTrack video error:", e);
-            }
-
-            if (pc.signalingState === "stable") {
-              pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
-                .then((offer) => pc.setLocalDescription(offer))
-                .then(() => {
-                  socket.emit("signal:offer", {
-                    targetId,
-                    offer: pc.localDescription,
-                    streamType: "camera",
-                  });
-                })
-                .catch((e) => console.warn("Renegotiation after start camera error:", e));
-            }
-          });
+          // Coloca a câmera no slot 1 de todas as conexões (sem renegociar)
+          syncLocalTracksToAllPeers();
+        } else if (newVideoTrack) {
+          localStreamRef.current = new MediaStream([newVideoTrack]);
+          syncLocalTracksToAllPeers();
         }
         setIsVideoMuted(false);
         setSelf((prev) => ({ ...prev, hasVideo: true }));
@@ -1437,15 +1822,12 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
     if (isScreenSharing && localScreenStreamRef.current) {
       await applyScreenShareQuality(localScreenStreamRef.current, presetId, peerConnectionsRef.current);
-      handleSendMessage(`⚙️ Qualidade de transmissão de tela alterada para: ${preset.label} (${preset.badge})`, activeChannelId);
       setForceUpdate((prev) => prev + 1);
     }
   };
 
-  // Toggle Screen Share with full WebRTC renegotiation & broadcast (Default: 1080p @ 90 FPS)
-  const handleToggleScreenShare = async () => {
-    if (isScreenSharing) {
-      // Stop screen share
+  // Toggle Screen Share with dedicated transceivers & instant replaceTrack (Default: 1080p @ 90 FPS)
+  const stopScreenShare = () => {
       if (localScreenStreamRef.current) {
         localScreenStreamRef.current.getTracks().forEach((t) => t.stop());
         localScreenStreamRef.current = null;
@@ -1455,112 +1837,88 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         setSpotlightId(null);
       }
 
-      // Revert video track on active peer connections back to camera (or null if camera disabled)
-      const cameraTrack = (!isVideoMuted && !preferences.lowResourceMode && localStreamRef.current?.getVideoTracks()[0]) || null;
-      peerConnectionsRef.current.forEach((pc, targetId) => {
-        const senders = pc.getSenders();
-        const videoSender = senders.find((s) => s.track?.kind === "video" || s.track === null);
-        if (videoSender) {
-          videoSender.replaceTrack(cameraTrack).catch((e) => console.warn("replaceTrack back to camera error:", e));
-        }
+      // Esvazia os slots de tela (sem renegociar)
+      syncLocalTracksToAllPeers();
 
-        if (pc.signalingState === "stable") {
-          makingOfferRef.current.set(targetId, true);
-          pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
-            .then((offer) => pc.setLocalDescription(offer))
-            .then(() => {
-              socket.emit("signal:offer", {
-                targetId,
-                to: targetId,
-                offer: pc.localDescription,
-                streamType: "camera",
-                isScreen: false,
-              });
-            })
-            .catch((err) => console.warn("Renegotiation after stop screen error:", err))
-            .finally(() => {
-              makingOfferRef.current.set(targetId, false);
-            });
-        }
-      });
-
+      socket.emit("screen-share-stopped", { userId: self.id, roomId: room.roomId });
       socket.emit("room:state-update", { isScreenSharing: false });
       setForceUpdate((prev) => prev + 1);
+  };
+
+  const handleToggleScreenShare = async () => {
+    if (invisivelRef.current && !localScreenStreamRef.current) return avisarInvisivel();
+    if (isScreenSharing || localScreenStreamRef.current) {
+      stopScreenShare();
     } else {
       try {
         const constraints = getDisplayMediaConstraints(screenQualityPreset);
-        const screenStream = await navigator.mediaDevices.getDisplayMedia(constraints);
+        let screenStream: MediaStream;
+        try {
+          screenStream = await navigator.mediaDevices.getDisplayMedia(constraints);
+        } catch (errOpcoes: any) {
+          // Navegador antigo que não entende alguma opção: tenta de novo com o básico
+          if (errOpcoes?.name === "TypeError" || errOpcoes?.name === "OverconstrainedError") {
+            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: (constraints as any).video, audio: true });
+          } else {
+            throw errOpcoes;
+          }
+        }
+
+        const screenVideoTrack = screenStream.getVideoTracks()[0];
+        const screenAudioTrack = screenStream.getAudioTracks()[0];
+
+        if (!screenVideoTrack) {
+          screenStream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        console.log(`[tela] compartilhamento iniciado: track id = ${screenVideoTrack.id}`);
 
         localScreenStreamRef.current = screenStream;
         setIsScreenSharing(true);
         setSpotlightId(`screen-${self.id}`);
 
-        // Apply quality encodings and max framerate parameters
-        applyScreenShareQuality(screenStream, screenQualityPreset, peerConnectionsRef.current);
 
-        const screenVideoTrack = screenStream.getVideoTracks()[0];
-        const screenAudioTrack = screenStream.getAudioTracks()[0];
+        // Native browser stop button listener (e.g. Chrome's "Stop sharing" ribbon)
+        screenVideoTrack.onended = () => {
+          console.log("[tela] compartilhamento encerrado pelo botão nativo do navegador.");
+          stopScreenShare();
+        };
 
-        if (screenVideoTrack) {
-          screenVideoTrack.onended = () => {
-            handleToggleScreenShare();
-          };
-        }
+        // Coloca a tela nos slots 2/3 de todas as conexões (sem renegociar)
+        syncLocalTracksToAllPeers();
+        somarMissao("tela", 1);
 
-        // Replace current video track on all active RTCPeerConnection instances using sender.replaceTrack
-        peerConnectionsRef.current.forEach((pc, targetId) => {
-          const senders = pc.getSenders();
+        // Aplica qualidade depois que a trilha já está nos senders
+        setTimeout(() => {
+          applyScreenShareQuality(screenStream, screenQualityPreset, peerConnectionsRef.current);
+        }, 300);
 
-          if (screenVideoTrack) {
-            const videoSender = senders.find((s) => s.track?.kind === "video" || s.track === null);
-
-            if (videoSender) {
-              videoSender.replaceTrack(screenVideoTrack).catch((e) => {
-                console.warn("replaceTrack screen video error:", e);
-              });
-            } else {
-              try {
-                pc.addTrack(screenVideoTrack, screenStream);
-              } catch (e) {
-                console.warn("addTrack screen video error:", e);
-              }
-            }
-          }
-
-          if (screenAudioTrack) {
-            try {
-              pc.addTrack(screenAudioTrack, screenStream);
-            } catch (e) {
-              console.warn("addTrack screen audio error:", e);
-            }
-          }
-
-          if (pc.signalingState === "stable") {
-            makingOfferRef.current.set(targetId, true);
-            pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
-              .then((offer) => pc.setLocalDescription(offer))
-              .then(() => {
-                socket.emit("signal:offer", {
-                  targetId,
-                  to: targetId,
-                  offer: pc.localDescription,
-                  streamType: "screen",
-                  isScreen: true,
-                });
-              })
-              .catch((err) => console.warn("Renegotiation offer screen error:", err))
-              .finally(() => {
-                makingOfferRef.current.set(targetId, false);
-              });
-          }
+        // ONLY emit screen-share-started and room:state-update AFTER getDisplayMedia succeeds
+        socket.emit("screen-share-started", {
+          userId: self.id,
+          streamId: screenStream.id,
+          trackId: screenVideoTrack.id,
+          hasAudio: Boolean(screenAudioTrack),
+          roomId: room.roomId,
         });
-
         socket.emit("room:state-update", { isScreenSharing: true });
+
         const presetObj = SCREEN_SHARE_PRESETS[screenQualityPreset];
-        handleSendMessage(`📺 Iniciou o compartilhamento de tela em ${presetObj.label} (${presetObj.badge}).`, activeChannelId);
         setForceUpdate((prev) => prev + 1);
-      } catch (err) {
-        console.warn("Screen share cancelled or failed:", err);
+      } catch (err: any) {
+        // User cancelled picker or permission denied: do not alert or tell other peers
+        if (
+          err?.name === "NotAllowedError" ||
+          err?.name === "PermissionDeniedError" ||
+          (err?.message && (err.message.includes("denied") || err.message.includes("cancelled") || err.message.includes("canceled")))
+        ) {
+          console.log("[tela] Usuário cancelou a janela de escolha de tela.");
+        } else {
+          console.warn("[tela] Falha ao capturar tela:", err);
+        }
+        setIsScreenSharing(false);
+        return;
       }
     }
   };
@@ -1580,6 +1938,11 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   // Send Message in specific channel with room context & instant local feedback
   const handleSendMessage = (text: string, channelId: string) => {
     if (!text.trim()) return;
+    if (invisivelRef.current) {
+      notify("Você está invisível. Apareça para mandar mensagens.", "info");
+      return;
+    }
+    somarMissao("mensagens", 1);
     const targetChannel = channelId || activeChannelId || "geral";
     socket.emit(
       "room:chat-message",
@@ -1588,15 +1951,120 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         channelId: targetChannel,
         roomId: room.roomId,
       },
-      (res: { success: boolean; message?: ChatMessage; error?: string }) => {
-        if (res && res.message) {
+      (res: { success: boolean; message?: ChatMessage | string; error?: string; segundos?: number }) => {
+        if (res && !res.success && typeof res.message === "string") {
+          if (typeof res.segundos === "number") setChatBloqueadoAte(Date.now() + res.segundos * 1000);
+          notify(res.message, "warning");
+          return;
+        }
+        if (res && res.message && typeof res.message !== "string") {
+          const nova = res.message as ChatMessage;
           setMessages((prev) => {
-            if (prev.some((m) => m.id === res.message!.id)) return prev;
-            return [...prev, res.message!];
+            if (prev.some((m) => m.id === nova.id)) return prev;
+            return [...prev, nova];
           });
         }
       }
     );
+  };
+
+  // Enviar print/foto/vídeo no chat
+  const handleSendMedia = (
+    files: { uploadId: string; name: string; width?: number; height?: number; spoiler?: boolean }[],
+    text: string,
+    channelId: string
+  ): Promise<boolean> =>
+    new Promise((resolve) => {
+      socket
+        .timeout(20000)
+        .emit(
+          "room:chat-media",
+          { files, text: text.trim(), channelId: channelId || activeChannelId || "geral" },
+          (err: any, res: { success: boolean; message?: ChatMessage | string }) => {
+            if (err) {
+              notify("O servidor não respondeu. Tente de novo.", "warning");
+              return resolve(false);
+            }
+            if (!res?.success) {
+              notify(typeof res?.message === "string" ? res.message : "Não deu pra enviar.", "warning");
+              return resolve(false);
+            }
+            if (res.message && typeof res.message !== "string") {
+              const nova = res.message as ChatMessage;
+              setMessages((prev) => (prev.some((m) => m.id === nova.id) ? prev : [...prev, nova]));
+            }
+            resolve(true);
+          }
+        );
+    });
+
+  // Saldo real de moedas vai pro servidor ao entrar (evita saldo errado quando o Dono manda moedas)
+  const enviarPerfilDaEntrada = () => {
+    socket.emit("room:state-update", { kokiCoins: getKokiCoins() });
+    // Itens da loja comprados antes continuam valendo ao entrar na call
+    const perks = getPurchasedPerks();
+    // "Membro desde" salvo: manda a data do primeiro acesso pra todos verem
+    socket.emit("user:update-profile", { masterToken, memberSince: getMemberSince(), purchasedPerks: getPurchasedPerks() });
+    if (perks && Object.keys(perks).length > 0) {
+      socket.emit("user:update-profile", {
+        masterToken,
+        purchasedPerks: perks,
+        avatarUrl: self.avatarUrl,
+        bannerUrl: self.bannerUrl,
+        customTitle: (self as any).customTitle,
+        badges: perks["vip_role"] && perks["vip_role"] > Date.now() ? Array.from(new Set([...(self.badges || []), "vip_role"])) : self.badges,
+      });
+    }
+  };
+  useEffect(() => {
+    // Invisível: o servidor ignora (não está na lista); manda quando Aparecer
+    if (!invisivelRef.current) enviarPerfilDaEntrada();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket]);
+
+  // Aparecer: sai do modo invisível. O servidor põe na lista e só então os outros criam conexão/card.
+  const [revelando, setRevelando] = useState(false);
+  const handleAparecer = (falarJa = false) => {
+    if (!invisivelRef.current || revelando) return;
+    setRevelando(true);
+    socket.emit("sala:revelar", { masterToken }, (res: { success: boolean; message?: string; self?: Participant; room?: RoomState }) => {
+      setRevelando(false);
+      if (!res?.success) {
+        notify(res?.message || "Não deu pra aparecer agora.", "error");
+        return;
+      }
+      // Antes da lista nova chegar: fecha as conexões só-recebe (a entrada normal recria tudo)
+      invisivelRef.current = false;
+      peerConnectionsRef.current.forEach((pc) => {
+        try { pc.close(); } catch { /* ignore */ }
+      });
+      peerConnectionsRef.current.clear();
+      peerTransceiversRef.current.clear();
+      remoteStreamsRef.current.clear();
+      remoteScreenStreamsRef.current.clear();
+      pendingCandidatesRef.current.clear();
+      makingOfferRef.current.clear();
+      ignoreOfferRef.current.clear();
+      isSettingRemoteAnswerPendingRef.current.clear();
+      offerFallbackTimersRef.current.forEach((t) => clearTimeout(t));
+      offerFallbackTimersRef.current.clear();
+      remoteAudioElementsRef.current.forEach((el) => {
+        el.pause();
+        el.srcObject = null;
+        el.remove();
+      });
+      remoteAudioElementsRef.current.clear();
+      remoteAudioTrackersRef.current.forEach((t) => t.stop());
+      remoteAudioTrackersRef.current.clear();
+      setInvisivel(false);
+      if (res.self) setSelf((prev) => ({ ...prev, ...res.self!, invisivel: false } as Participant));
+      onRevelado?.();
+      socket.emit("room:state-update", { hasAudio: false, hasVideo: false, isScreenSharing: false, isDeafened });
+      enviarPerfilDaEntrada();
+      setForceUpdate((prev) => prev + 1);
+      notify("Agora você aparece para todos na sala.", "success");
+      if (falarJa) window.setTimeout(() => handleToggleAudio(), 150);
+    });
   };
 
   // Toggle Low Resource Mode (Gamer Mode)
@@ -1624,13 +2092,63 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     socket.emit("host:action", { type: "mute-all" });
   };
 
-  const handleHostMuteUser = (targetUserId: string) => {
-    socket.emit("host:action", { type: "mute-user", targetUserId });
+  const avisarSeFalhou = (res: { success?: boolean; message?: string } | undefined) => {
+    if (res && res.success === false && res.message) notify(res.message, "error");
   };
 
-  const handleHostKickUser = (targetUserId: string) => {
-    socket.emit("host:action", { type: "kick-user", targetUserId });
+  // Mutar / Desmutar: o mesmo botão alterna conforme a pessoa já está mutada pelo Dono
+  const handleHostMuteUser = (targetUserId: string) => {
+    const alvo = room.participants.find((p) => p.id === targetUserId);
+    if (alvo && !alvoModeravel(alvo)) {
+      notify("Você não pode fazer isso com essa pessoa.", "error");
+      return;
+    }
+    socket.emit("host:action", { type: alvo?.isMutedByHost ? "unmute-user" : "mute-user", targetUserId }, avisarSeFalhou);
   };
+
+  const handleHostUnmuteUser = (targetUserId: string) => {
+    socket.emit("host:action", { type: "unmute-user", targetUserId }, avisarSeFalhou);
+  };
+
+  // Expulsar da call agora (sem prazo) — segue o poder "expulsar" do cargo
+  const handleHostKickNow = (targetUserId: string) => {
+    socket.emit("host:action", { type: "kick-user", targetUserId }, avisarSeFalhou);
+  };
+
+  // "Expulsar" abre a janela com as 3 opções: tirar da call, suspender ou banir do app
+  const [alvoPunir, setAlvoPunir] = useState<Participant | null>(null);
+  const handleHostKickUser = (targetUserId: string) => {
+    const alvo = room.participants.find((p) => p.id === targetUserId) || (selectedProfileParticipant?.id === targetUserId ? selectedProfileParticipant : null);
+    if (alvo && !alvoModeravel(alvo)) {
+      notify("Você não pode fazer isso com essa pessoa.", "error");
+      return;
+    }
+    if (alvo) setAlvoPunir(alvo);
+    else handleHostKickNow(targetUserId);
+  };
+
+  // Expulsar da call / Banir do servidor-sala / Banir do app (online ou offline: alvo.id pode ser "membro:<chave>")
+  const handlePunir = (alvo: Participant, acao: "expulsar" | "sala" | "app", minutos: number | null, motivo: string) =>
+    new Promise<{ ok: boolean; mensagem?: string }>((resolve) => {
+      const timer = window.setTimeout(() => resolve({ ok: false, mensagem: "O servidor não respondeu. Tente de novo." }), 10000);
+      const fim = (res: { success?: boolean; message?: string } | undefined, okPadrao: string) => {
+        window.clearTimeout(timer);
+        const ok = res ? res.success !== false : true;
+        if (ok) notify(res?.message || okPadrao, "success");
+        resolve({ ok, mensagem: res?.message });
+      };
+      const naSala = room.participants.some((p) => p.id === alvo.id);
+      // Cargo com poder "expulsar" (não é Dono/Co-fundador): usa o expulsar da sala, que confere o poder no servidor
+      if (acao === "expulsar" && naSala && !podeBanir) {
+        socket.emit("host:action", { type: "kick-user", targetUserId: alvo.id }, (res: any) => fim(res, `${alvo.name} foi expulso da call.`));
+        return;
+      }
+      socket.emit(
+        "host:punir",
+        { alvo: alvo.id, acao, minutos: minutos ?? null, permanente: acao !== "expulsar" && minutos === null, motivo, salaId: room.roomId, masterToken },
+        (res: { success: boolean; message?: string }) => fim(res, "Feito.")
+      );
+    });
 
   const handleHostUpdateSettings = (settings: Partial<RoomState["settings"]>) => {
     socket.emit("host:action", { type: "update-settings", settings });
@@ -1639,16 +2157,17 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const handleCloseRoomForAll = () => {
     socket.emit("host:action", { type: "close-room" }, (res: { success: boolean; message?: string }) => {
       if (res && res.success) {
+        notify("Sala encerrada com sucesso.", "info");
         onLeaveRoom();
       } else if (res && res.message) {
-        alert(res.message);
+        notify(res.message, "error");
       }
     });
   };
 
   const handleClaimHost = (passcode: string) => {
     socket.emit("host:action", { type: "claim-host", passcode }, (res: { success: boolean; message?: string }) => {
-      alert(res.message || (res.success ? "Controle Master assumido com sucesso!" : "Erro ao assumir controle"));
+      notify(res.message || (res.success ? "Controle Master assumido com sucesso!" : "Erro ao assumir controle"), res.success ? "success" : "error");
     });
   };
 
@@ -1696,6 +2215,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       },
       (res: { success: boolean; message?: string; participant?: Participant }) => {
         if (res && res.success) {
+          notify("Permissões VIP concedidas!", "success");
           if (res.participant) {
             setRoom((prev) => ({
               ...prev,
@@ -1703,7 +2223,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
             }));
           }
         } else if (res && res.message) {
-          alert(res.message);
+          notify(res.message, "error");
         }
       }
     );
@@ -1719,13 +2239,15 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       },
       (res: { success: boolean; message?: string }) => {
         if (res && res.message && !res.success) {
-          alert(res.message);
+          notify(res.message, "error");
+        } else {
+          notify("VIP revogado.", "info");
         }
       }
     );
   };
 
-  // Host Give Koki Coins directly to participant
+  // Host Give Eco Coins directly to participant
   const handleHostGiveCoins = (targetSocketId: string, amount: number) => {
     socket.emit(
       "host:give-coins",
@@ -1737,14 +2259,86 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       },
       (res: { success: boolean; message?: string; newBalance?: number }) => {
         if (res && !res.success && res.message) {
-          alert(res.message);
+          notify(res.message, "error");
+        } else if (res && res.success) {
+          notify("Moedas concedidas com sucesso!", "success");
         }
       }
     );
   };
 
+  // Dono Master dá ou tira cargo
+  // Portinha: sai do servidor (some da lista de membros e de "Minhas salas") e sai da call
+  // Barras laterais recolhidas pro lado (lembra no aparelho)
+  const [esquerdaRecolhida, setEsquerdaRecolhida] = useState(() => localStorage.getItem("eco:barraEsq") === "1");
+  const [direitaRecolhida, setDireitaRecolhida] = useState(() => localStorage.getItem("eco:barraDir") === "1");
+  const alternarEsquerda = () => setEsquerdaRecolhida((v) => { localStorage.setItem("eco:barraEsq", v ? "0" : "1"); return !v; });
+  const alternarDireita = () => setDireitaRecolhida((v) => { localStorage.setItem("eco:barraDir", v ? "0" : "1"); return !v; });
+
+  const handleSairServidor = () => {
+    const rid = room.roomId;
+    socket.emit("sala:sair", { roomId: rid }, () => {
+      esquecerSala(rid);
+      onLeaveRoom();
+    });
+  };
+
+  const handleDefinirCargo = (alvo: string, cargo: string, poderes: string[]) => {
+    socket.emit("membros:cargo", { alvo, cargo, poderes, masterToken }, (res: { success: boolean; message?: string; cargo?: string; poderes?: string[] }) => {
+      if (res?.success) {
+        notify(res.cargo ? `Cargo definido: ${res.cargo}` : "Cargo removido.", "success");
+        setMembrosVersao((v) => v + 1);
+        if (selectedProfileParticipant?.id === alvo) setSelectedProfileParticipant((prev) => (prev ? ({ ...prev, cargo: res.cargo || undefined, poderes: res.poderes || [] } as any) : null));
+      } else if (res?.message) notify(res.message, "error");
+    });
+  };
+
+  // Dono Master / Co-fundador libera (ou tira) a troca de aura do card (online ou offline "membro:<chave>")
+  const handleLiberarAura = (alvo: string, liberado: boolean) =>
+    new Promise<{ success: boolean; message?: string; auraLiberadaPor?: "dono" | "cofundador" }>((ok) => {
+      const t = setTimeout(() => ok({ success: false, message: "O servidor não respondeu." }), 8000);
+      socket.emit("membros:aura-liberar", { alvo, liberado, masterToken }, (res: any) => {
+        clearTimeout(t);
+        if (res?.success) {
+          notify(liberado ? "Aura liberada." : "Aura bloqueada e removida.", "success");
+          setMembrosVersao((v) => v + 1);
+          if (selectedProfileParticipant?.id === alvo)
+            setSelectedProfileParticipant((prev) =>
+              prev ? ({ ...prev, auraLiberada: Boolean(res.auraLiberada), auraLiberadaPor: res.auraLiberadaPor, ...(liberado ? {} : { auraCard: undefined }) } as any) : null
+            );
+        }
+        ok(res || { success: false });
+      });
+    });
+
+  // Dono Master tira um item comprado na loja de alguém (online ou offline)
+  const handleRemoverItemLoja = (alvo: string, itemId: string) => {
+    socket.emit("loja:remover-item", { alvo, itemId, masterToken }, (res: { success: boolean; message?: string }) => {
+      if (res?.success) {
+        notify("Item removido.", "success");
+        setMembrosVersao((v) => v + 1);
+      } else if (res?.message) notify(res.message, "error");
+    });
+  };
+
   // Host / Master Assign Custom Badges directly to member
+  const [membrosVersao, setMembrosVersao] = useState(0);
   const handleHostAssignBadges = (targetSocketId: string, badges: string[]) => {
+    // Membro offline ou em outra sala: muda pela chave da pessoa
+    if (targetSocketId.startsWith("membro:")) {
+      socket.emit(
+        "membros:insignias",
+        { chave: targetSocketId.slice(7), badges, masterToken },
+        (res: { success: boolean; message?: string; badges?: string[] }) => {
+          if (res?.success) {
+            notify("Insígnias atualizadas!", "success");
+            setMembrosVersao((v) => v + 1);
+            if (selectedProfileParticipant?.id === targetSocketId) setSelectedProfileParticipant((prev) => (prev ? { ...prev, badges: res.badges || [] } : null));
+          } else if (res?.message) notify(res.message, "error");
+        }
+      );
+      return;
+    }
     socket.emit(
       "host:assign-badges",
       {
@@ -1755,6 +2349,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       },
       (res: { success: boolean; message?: string; badges?: string[] }) => {
         if (res && res.success) {
+          notify("Insígnias atualizadas!", "success");
           if (res.badges) {
             setRoom((prev) => ({
               ...prev,
@@ -1769,7 +2364,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
             }
           }
         } else if (res && res.message) {
-          alert(res.message);
+          notify(res.message, "error");
         }
       }
     );
@@ -1868,6 +2463,19 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     stream: MediaStream | null;
   }
 
+  // Se o servidor diz que você está em outro canal (ex.: foi arrastado), acompanha
+  useEffect(() => {
+    const eu = room.participants.find((p) => p.id === self.id);
+    if (eu?.voiceChannelId && eu.voiceChannelId !== activeVoiceChannelId) {
+      setActiveVoiceChannelId(eu.voiceChannelId);
+    }
+  }, [room.participants, self.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Só mostra na tela quem está no MESMO canal de voz que você
+  const meuCanalDeVoz = activeVoiceChannelId || self.voiceChannelId || "voice-geral";
+  const mesmoCanalDeVoz = (p: Participant) =>
+    p.id === self.id || (p.voiceChannelId || "voice-geral") === meuCanalDeVoz;
+
   const activeScreenShares: ScreenShareItem[] = [
     ...(isScreenSharing && localScreenStreamRef.current
       ? [{ participant: self, isSelf: true, stream: localScreenStreamRef.current }]
@@ -1876,7 +2484,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       .filter(
         (p) =>
           p.id !== self.id &&
-          (p.isScreenSharing || remoteScreenStreamsRef.current.has(p.id))
+          p.isScreenSharing &&
+          mesmoCanalDeVoz(p)
       )
       .map((p) => ({
         participant: p,
@@ -1885,23 +2494,64 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       })),
   ];
 
-  // If a screen share is explicitly spotlighted (e.g. "screen-userId")
+  // When someone shares screen, the transmission occupies center large and avatars/cameras thumbnail below
   const activeSpotlightScreen = spotlightId?.startsWith("screen-")
     ? activeScreenShares.find(
         (s) => s.participant.id === spotlightId.replace("screen-", "")
       )
+    : activeScreenShares.length > 0
+    ? activeScreenShares[0]
     : null;
 
   // Active Spotlight Participant Camera (if not screen spotlight)
   const activeSpotlight =
     spotlightId && !activeSpotlightScreen
-      ? room.participants.find((p) => p.id === spotlightId) ||
+      ? room.participants.find((p) => p.id === spotlightId && mesmoCanalDeVoz(p)) ||
         (spotlightId === self.id ? self : null)
       : null;
 
-  const totalGridTiles = activeScreenShares.length + room.participants.length;
+  const displayParticipants = isMockupDemoActive
+    ? [
+        ...room.participants,
+        ...DEMO_PARTICIPANTS.filter((dp) => !room.participants.some((p) => p.id === dp.id)),
+      ]
+    : room.participants.filter(mesmoCanalDeVoz);
+
+  const totalGridTiles = activeScreenShares.length + displayParticipants.length;
 
   const isUserMaster = Boolean(isMaster);
+  // Poderes do cargo (Moderador etc.)
+  const meusPoderes: string[] = Array.isArray((self as any).poderes) ? (self as any).poderes : [];
+  const ehCofundador = Boolean(self.isCofundador && !isMaster);
+  const podeMutar = Boolean(isMaster || ehCofundador || meusPoderes.includes("mutar"));
+  const podeExpulsar = Boolean(isMaster || ehCofundador || meusPoderes.includes("expulsar"));
+  const podePorta = Boolean(isMaster || ehCofundador || meusPoderes.includes("porta"));
+  const podeBanir = Boolean(isMaster || ehCofundador);
+  // Em quem posso agir: nunca no Dono Master; o Co-fundador não age em outro Co-fundador; cargo não age em cargo
+  const alvoModeravel = (p: Participant | null | undefined) => {
+    if (!p || p.id === self.id || String(p.id).startsWith("membro:")) return false;
+    if (p.isMaster || (p as any).invisivel) return false;
+    if (isMaster) return true;
+    if (p.isCofundador) return false;
+    if (ehCofundador) return true;
+    return !(p as any).cargo;
+  };
+  // Banir (sala/app): só Dono Master e Co-fundador. Vale pra quem está offline ("membro:<chave>") também.
+  const alvoBanivel = (p: Participant | null | undefined) => {
+    if (!podeBanir || !p || p.id === self.id) return false;
+    if ((p as any).invisivel && !String(p.id).startsWith("membro:")) return false;
+    if (p.isMaster || (p as any).ehDono) return false;
+    if (String(p.id).startsWith("membro:") && p.name === self.name && String(p.tag || "") === String(self.tag || "")) return false;
+    if (isMaster) return true;
+    return !p.isCofundador;
+  };
+  /** Pode abrir a janela Punir (expulsar da call pelo cargo, ou banir) */
+  const alvoPunivel = (p: Participant | null | undefined) => Boolean((podeExpulsar && alvoModeravel(p)) || alvoBanivel(p));
+  // Amigos e conversas privadas
+  const [isAmigosOpen, setIsAmigosOpen] = useState(false);
+  const [conversaInicial, setConversaInicial] = useState<{ uid: string; nome: string } | null>(null);
+  const [amigosPendentes, setAmigosPendentes] = useState(0);
+  const podeModerar = podeMutar || podeExpulsar || isUserMaster;
   const hasVipBadge = Boolean(
     initialHasVipBadge ||
     self.vipPermissions?.hasVipBadge ||
@@ -1918,9 +2568,15 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   );
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#070b14] overflow-hidden relative">
+    <div
+      className={`h-screen w-full flex flex-col overflow-hidden relative transition-colors duration-200 ${
+        isDarkTheme
+          ? "bg-[#070b14] text-slate-100"
+          : "bg-gradient-to-br from-[#f0f6ff] via-[#e8f2fe] to-[#edf5fd] text-slate-800"
+      }`}
+    >
       {/* Floating Admission Banner for Master when users are knocking */}
-      {isUserMaster && (
+      {podePorta && (
         <FloatingAdmissionBanner
           pendingKnocks={pendingKnocks}
           onApprove={handleApproveKnock}
@@ -1931,17 +2587,28 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
       {/* Top Header */}
       <Header
-        room={room}
+        room={{ ...room, participants: displayParticipants }}
         self={self}
         isMaster={isUserMaster}
+        isCofundador={Boolean(self.isCofundador)}
         hasVipBadge={hasVipBadge}
         lowResourceMode={preferences.lowResourceMode}
         pingMs={pingMs}
         pendingKnocksCount={pendingKnocks.length}
         kokiCoins={self.kokiCoins}
+        isDarkTheme={isDarkTheme}
+        onToggleTheme={handleToggleTheme}
+        isMockupDemoActive={isMockupDemoActive}
+        onToggleMockupDemo={() => setIsMockupDemoActive(!isMockupDemoActive)}
         isChannelsOpen={isChannelsSidebarOpen}
         onToggleChannels={() => setIsChannelsSidebarOpen(!isChannelsSidebarOpen)}
         onOpenStore={() => setIsStoreOpen(true)}
+        onOpenMissoes={() => setIsMissoesOpen(true)}
+        onOpenRoleta={() => setIsRoletaOpen(true)}
+        onOpenRank={() => setIsRankOpen(true)}
+        onOpenAmigos={() => setIsAmigosOpen(true)}
+        amigosPendentes={amigosPendentes}
+        onOpenExtras={(aba) => setAbaExtras(aba)}
         onOpenInvite={() => setIsInviteOpen(true)}
         onOpenHostPanel={() => setIsHostPanelOpen(true)}
         onOpenAdmissionModal={() => setIsAdmissionOpen(true)}
@@ -1950,10 +2617,55 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         onLeaveRoom={onLeaveRoom}
       />
 
-      {/* Main Content Area: Channel Navigation Sidebar, Video Grid & Discord Drawers */}
+      {/* Aviso do Dono Master + Chuva de moedas */}
+      <AnuncioBanner socket={socket} />
+      <ChuvaMoedas socket={socket} />
+
+      {/* Modo invisível: só quem está invisível vê este aviso */}
+      {invisivel && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[70] max-w-[92vw]">
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 rounded-2xl border border-[#C4B5FD]/40 bg-[#1E2026]/95 backdrop-blur-md px-3 sm:px-4 py-2 shadow-2xl">
+            <span className="flex items-center gap-2 text-[12px] sm:text-[13px] font-semibold text-[#ECECEC]">
+              <span className="w-7 h-7 rounded-full bg-[#C4B5FD]/15 border border-[#C4B5FD]/40 flex items-center justify-center text-[#C4B5FD]">
+                <Ghost className="w-4 h-4" />
+              </span>
+              <span>
+                Você está invisível nesta sala
+                <span className="block text-[10px] sm:text-[11px] font-normal text-[#8B8F98]">Você vê e ouve todos. Ninguém vê, ouve ou sabe que você está aqui.</span>
+              </span>
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={revelando}
+                onClick={() => handleAparecer(false)}
+                className="flex items-center gap-1.5 rounded-xl bg-[#5EEAD4] hover:bg-[#2DD4BF] text-[#16171B] text-xs font-black px-3 py-1.5 cursor-pointer disabled:opacity-60"
+                title="Sair do modo invisível e entrar normalmente"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>{revelando ? "Aparecendo..." : "Aparecer"}</span>
+              </button>
+              <button
+                type="button"
+                disabled={revelando}
+                onClick={() => handleAparecer(true)}
+                className="flex items-center gap-1.5 rounded-xl border border-[#C4B5FD]/50 text-[#C4B5FD] hover:bg-[#C4B5FD]/10 text-xs font-bold px-3 py-1.5 cursor-pointer disabled:opacity-60"
+                title="Aparecer e já ligar o microfone"
+              >
+                <Mic className="w-3.5 h-3.5" />
+                <span>Aparecer e falar</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Area: Channel Navigation Sidebar, Video Grid & Drawers */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Discord Minimal Channel Navigation Sidebar */}
+        {/* Left Sidebar: Text and Voice Channels */}
         <ChannelSidebar
+          recolhida={esquerdaRecolhida}
+          onAlternarRecolhida={alternarEsquerda}
           roomName={room.roomName}
           roomId={room.roomId}
           textChannels={room.channels && room.channels.length > 0 ? room.channels : defaultTextChannels}
@@ -1963,7 +2675,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           onSelectTextChannel={handleSelectTextChannel}
           onSelectVoiceChannel={handleSelectVoiceChannel}
           self={self}
-          participants={room.participants}
+          participants={displayParticipants}
           isAudioMuted={isAudioMuted}
           isDeafened={isDeafened}
           pingMs={pingMs}
@@ -1976,9 +2688,25 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           isOpen={isChannelsSidebarOpen}
           onClose={() => setIsChannelsSidebarOpen(false)}
           isMaster={Boolean(isMaster)}
+          isDarkTheme={isDarkTheme}
+          onMoveMember={handleMoveToVoiceChannel}
         />
 
-        <main className="flex-1 p-3 overflow-y-auto flex flex-col justify-center items-center">
+        <main className="flex-1 p-3 sm:p-5 pb-28 sm:pb-32 overflow-y-auto flex flex-col justify-center items-center">
+          {/* Mockup Demo mode active banner */}
+          {isMockupDemoActive && (
+            <div className="mb-3 px-4 py-1.5 rounded-full bg-sky-500/10 border border-sky-300 text-sky-800 text-xs font-semibold flex items-center gap-2 shadow-xs animate-in fade-in">
+              <span className="w-2 h-2 rounded-full bg-sky-500 animate-ping shrink-0" />
+              <span>Mockup Desktop: layout limpo em tons de azul-claro confortável com cards e barra flutuante</span>
+              <button
+                onClick={() => setIsMockupDemoActive(false)}
+                className="ml-2 text-sky-600 hover:text-sky-900 underline text-[11px] font-bold cursor-pointer"
+              >
+                Fechar Demo
+              </button>
+            </div>
+          )}
+
           {activeSpotlightScreen ? (
             /* Spotlight Mode: Screen Share Primary View with Participant Ribbon */
             <div className="w-full h-full flex flex-col gap-3 max-w-7xl mx-auto">
@@ -1993,6 +2721,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
                   currentVoiceChannelId={activeVoiceChannelId}
                   onToggleSpotlight={() => setSpotlightId(null)}
                   onVolumeChange={handleVolumeChange}
+                  onStopScreenShare={handleToggleScreenShare}
                 />
               </div>
 
@@ -2003,34 +2732,36 @@ export const CallRoom: React.FC<CallRoomProps> = ({
                   <VideoTile
                     participant={self}
                     isSelf={true}
-                    isHostViewer={self.isHost}
+                    isHostViewer={podeModerar}
                     stream={localStreamRef.current}
                     audioLevel={localAudioLevel}
                     lowResourceMode={preferences.lowResourceMode}
+                    isDarkTheme={isDarkTheme}
                     onToggleSpotlight={() => setSpotlightId(self.id)}
                     onSelectProfile={(p) => setSelectedProfileParticipant(p)}
                   />
                 </div>
 
                 {/* Other participants' camera feeds */}
-                {room.participants
+                {displayParticipants
                   .filter((p) => p.id !== self.id)
                   .map((p) => (
                     <div key={p.id} className="w-44 h-full shrink-0">
                       <VideoTile
                         participant={p}
                         isSelf={false}
-                        isHostViewer={self.isHost}
+                        isHostViewer={podeModerar}
                         stream={remoteStreamsRef.current.get(p.id)}
                         audioLevel={p.audioLevel}
                         lowResourceMode={preferences.lowResourceMode}
                         userVolume={participantVolumes[p.id] ?? 100}
                         masterVoiceVolume={masterVoiceVolume}
                         currentVoiceChannelId={activeVoiceChannelId}
+                        isDarkTheme={isDarkTheme}
                         onMoveToVoiceChannel={isUserMaster ? handleMoveToVoiceChannel : undefined}
                         onToggleSpotlight={() => setSpotlightId(p.id)}
-                        onHostMute={handleHostMuteUser}
-                        onHostKick={handleHostKickUser}
+                        onHostMute={podeMutar ? handleHostMuteUser : undefined}
+                        onHostKick={podeExpulsar ? handleHostKickUser : undefined}
                         onSelectProfile={(part) => setSelectedProfileParticipant(part)}
                         onVolumeChange={handleVolumeChange}
                       />
@@ -2064,7 +2795,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
                 <VideoTile
                   participant={activeSpotlight}
                   isSelf={activeSpotlight.id === self.id}
-                  isHostViewer={self.isHost}
+                  isHostViewer={podeModerar}
                   stream={activeSpotlight.id === self.id ? localStreamRef.current : remoteStreamsRef.current.get(activeSpotlight.id)}
                   audioLevel={activeSpotlight.id === self.id ? localAudioLevel : 0}
                   lowResourceMode={preferences.lowResourceMode}
@@ -2072,10 +2803,11 @@ export const CallRoom: React.FC<CallRoomProps> = ({
                   userVolume={participantVolumes[activeSpotlight.id] ?? 100}
                   masterVoiceVolume={masterVoiceVolume}
                   currentVoiceChannelId={activeVoiceChannelId}
+                  isDarkTheme={isDarkTheme}
                   onMoveToVoiceChannel={isUserMaster ? handleMoveToVoiceChannel : undefined}
                   onToggleSpotlight={() => setSpotlightId(null)}
-                  onHostMute={handleHostMuteUser}
-                  onHostKick={handleHostKickUser}
+                  onHostMute={podeMutar ? handleHostMuteUser : undefined}
+                  onHostKick={podeExpulsar ? handleHostKickUser : undefined}
                   onSelectProfile={(p) => setSelectedProfileParticipant(p)}
                   onVolumeChange={handleVolumeChange}
                 />
@@ -2083,7 +2815,6 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
               {/* Mini participant ribbon below spotlight */}
               <div className="h-28 flex items-center gap-2.5 overflow-x-auto pb-1 px-1">
-                {/* Active screen shares in the ribbon */}
                 {activeScreenShares.map((s) => (
                   <div key={`ribbon-screen-${s.participant.id}`} className="w-44 h-full shrink-0">
                     <ScreenShareTile
@@ -2100,41 +2831,41 @@ export const CallRoom: React.FC<CallRoomProps> = ({
                   </div>
                 ))}
 
-                {/* Self tile if not spotlighted */}
                 {activeSpotlight.id !== self.id && (
                   <div className="w-44 h-full shrink-0">
                     <VideoTile
                       participant={self}
                       isSelf={true}
-                      isHostViewer={self.isHost}
+                      isHostViewer={podeModerar}
                       stream={localStreamRef.current}
                       audioLevel={localAudioLevel}
                       lowResourceMode={preferences.lowResourceMode}
+                      isDarkTheme={isDarkTheme}
                       onToggleSpotlight={() => setSpotlightId(self.id)}
                       onSelectProfile={(p) => setSelectedProfileParticipant(p)}
                     />
                   </div>
                 )}
 
-                {/* Other participants */}
-                {room.participants
+                {displayParticipants
                   .filter((p) => p.id !== self.id && p.id !== activeSpotlight.id)
                   .map((p) => (
                     <div key={p.id} className="w-44 h-full shrink-0">
                       <VideoTile
                         participant={p}
                         isSelf={false}
-                        isHostViewer={self.isHost}
+                        isHostViewer={podeModerar}
                         stream={remoteStreamsRef.current.get(p.id)}
                         audioLevel={p.audioLevel}
                         lowResourceMode={preferences.lowResourceMode}
                         userVolume={participantVolumes[p.id] ?? 100}
                         masterVoiceVolume={masterVoiceVolume}
                         currentVoiceChannelId={activeVoiceChannelId}
+                        isDarkTheme={isDarkTheme}
                         onMoveToVoiceChannel={isUserMaster ? handleMoveToVoiceChannel : undefined}
                         onToggleSpotlight={() => setSpotlightId(p.id)}
-                        onHostMute={handleHostMuteUser}
-                        onHostKick={handleHostKickUser}
+                        onHostMute={podeMutar ? handleHostMuteUser : undefined}
+                        onHostKick={podeExpulsar ? handleHostKickUser : undefined}
                         onSelectProfile={(part) => setSelectedProfileParticipant(part)}
                         onVolumeChange={handleVolumeChange}
                       />
@@ -2145,7 +2876,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           ) : (
             /* Standard Dynamic Grid Mode: Shows ALL screen share containers AND ALL participant camera feeds simultaneously */
             <div
-              className={`w-full h-full max-w-7xl mx-auto grid gap-3.5 items-center content-center ${
+              className={`w-full h-full max-w-7xl mx-auto grid gap-4 items-center content-center ${
                 totalGridTiles <= 1
                   ? "grid-cols-1 max-w-2xl"
                   : totalGridTiles === 2
@@ -2176,33 +2907,35 @@ export const CallRoom: React.FC<CallRoomProps> = ({
                 key={`grid-cam-${self.id}`}
                 participant={self}
                 isSelf={true}
-                isHostViewer={self.isHost}
+                isHostViewer={podeModerar}
                 stream={localStreamRef.current}
                 audioLevel={localAudioLevel}
                 lowResourceMode={preferences.lowResourceMode}
+                isDarkTheme={isDarkTheme}
                 onToggleSpotlight={() => setSpotlightId(self.id)}
                 onSelectProfile={(p) => setSelectedProfileParticipant(p)}
               />
 
               {/* Remote Participants Camera / Avatar Tiles */}
-              {room.participants
+              {displayParticipants
                 .filter((p) => p.id !== self.id)
                 .map((p) => (
                   <VideoTile
                     key={`grid-cam-${p.id}`}
                     participant={p}
                     isSelf={false}
-                    isHostViewer={self.isHost}
+                    isHostViewer={podeModerar}
                     stream={remoteStreamsRef.current.get(p.id)}
                     audioLevel={p.audioLevel}
                     lowResourceMode={preferences.lowResourceMode}
                     userVolume={participantVolumes[p.id] ?? 100}
                     masterVoiceVolume={masterVoiceVolume}
                     currentVoiceChannelId={activeVoiceChannelId}
+                    isDarkTheme={isDarkTheme}
                     onMoveToVoiceChannel={isUserMaster ? handleMoveToVoiceChannel : undefined}
                     onToggleSpotlight={() => setSpotlightId(p.id)}
-                    onHostMute={handleHostMuteUser}
-                    onHostKick={handleHostKickUser}
+                    onHostMute={podeMutar ? handleHostMuteUser : undefined}
+                    onHostKick={podeExpulsar ? handleHostKickUser : undefined}
                     onSelectProfile={(part) => setSelectedProfileParticipant(part)}
                     onVolumeChange={handleVolumeChange}
                   />
@@ -2219,26 +2952,52 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           onSelectChannel={(chId) => setActiveChannelId(chId)}
           messages={messages}
           self={self}
+          isDarkTheme={isDarkTheme}
           onClose={() => setIsChatOpen(false)}
           onSendMessage={handleSendMessage}
+          bloqueadoAte={chatBloqueadoAte}
+          onSendMedia={handleSendMedia}
+          socketId={socket.id}
+          roomId={room.roomId}
         />
 
         {/* Discord Member List Drawer */}
         {isMemberListOpen && (
           <MemberList
-            participants={room.participants}
+            participants={isMockupDemoActive ? displayParticipants : room.participants}
             selfId={self.id}
-            selfIsHost={self.isHost}
+            selfIsHost={podePorta}
             pendingKnocks={pendingKnocks}
+            isDarkTheme={isDarkTheme}
             onApproveKnock={handleApproveKnock}
             onRejectKnock={handleRejectKnock}
             onSelectParticipant={(p) => setSelectedProfileParticipant(p)}
+            onClose={() => setIsMemberListOpen(false)}
+            socket={socket}
+            roomId={room.roomId}
+            versao={membrosVersao}
+            mostrarOffline={Boolean(isMaster || ehCofundador)}
+            podePunir={(p) => alvoPunivel(p)}
+            onPunir={(p) => setAlvoPunir(p)}
+            onSairServidor={handleSairServidor}
+            recolhida={direitaRecolhida}
+            onAlternarRecolhida={alternarDireita}
+            masterToken={masterToken}
+            podeGerenciar={Boolean(isMaster || self.isCofundador)}
+            onAbrirInsignias={(p) => {
+              setTargetBadgeParticipant(p);
+              setIsGrantBadgesOpen(true);
+            }}
+            invisiveis={isMaster || self.isCofundador ? invisiveisNaSala : undefined}
+            souInvisivel={invisivel}
+            onEntrarInvisivel={onEntrarInvisivel}
           />
         )}
       </div>
 
-      {/* Bottom Control Bar */}
+      {/* Floating Bottom Control Bar */}
       <ControlBar
+        salasSlot={salasSlot}
         self={self}
         isAudioMuted={isAudioMuted}
         isVideoMuted={isVideoMuted}
@@ -2253,6 +3012,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         masterVoiceVolume={masterVoiceVolume}
         pendingKnocksCount={pendingKnocks.length}
         isMaster={Boolean(isMaster)}
+        isDarkTheme={isDarkTheme}
+        onToggleTheme={handleToggleTheme}
         onVolumeChange={setMasterVoiceVolume}
         onToggleAudio={handleToggleAudio}
         onToggleVideo={handleToggleVideo}
@@ -2277,12 +3038,32 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         <UserProfileCard
           participant={selectedProfileParticipant}
           isSelf={selectedProfileParticipant.id === self.id}
-          isHostViewer={Boolean(isMaster)}
+          isHostViewer={Boolean(isMaster || self.isCofundador)}
+          onToggleCofundador={isMaster ? (pp: Participant, ativo: boolean) => socket.emit("master:set-cofundador", { targetSocketId: pp.id, ativo, masterToken }) : undefined}
           userVolume={participantVolumes[selectedProfileParticipant.id] ?? 100}
           onVolumeChange={(newVol) => handleVolumeChange(selectedProfileParticipant.id, newVol)}
           onMoveToVoiceChannel={isUserMaster ? handleMoveToVoiceChannel : undefined}
-          onMuteParticipant={handleHostMuteUser}
-          onKickParticipant={handleHostKickUser}
+          onMuteParticipant={podeMutar && alvoModeravel(selectedProfileParticipant) ? handleHostMuteUser : undefined}
+          onKickParticipant={podeExpulsar && alvoModeravel(selectedProfileParticipant) ? handleHostKickUser : undefined}
+          onPunirParticipant={alvoPunivel(selectedProfileParticipant) ? (p) => setAlvoPunir(p) : undefined}
+          onEntrarInvisivel={(() => {
+            if (!onEntrarInvisivel || selectedProfileParticipant.id === self.id) return undefined;
+            const alvo: any = selectedProfileParticipant;
+            if (alvo.invisivel && !String(alvo.id).startsWith("membro:")) return undefined;
+            // Online nesta sala = esta sala; offline/outra sala = a sala dele (vem do servidor só pro Dono/Co-fundador)
+            const sala: string | undefined = String(alvo.id).startsWith("membro:") ? alvo.salaInvisivel : room.roomId;
+            if (!sala || (invisivel && sala === room.roomId)) return undefined;
+            return () => {
+              setSelectedProfileParticipant(null);
+              onEntrarInvisivel(sala);
+            };
+          })()}
+          socket={socket}
+          onAbrirConversa={(uid, nome) => {
+            setConversaInicial({ uid, nome });
+            setIsAmigosOpen(true);
+            setSelectedProfileParticipant(null);
+          }}
           onOpenOwnerProfileEditor={() => setIsOwnerProfileOpen(true)}
           onOpenGrantVip={(p) => {
             setTargetVipParticipant(p);
@@ -2309,7 +3090,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       )}
 
       {/* Grant / Manage VIP Modal (For Master and Host) */}
-      {(isMaster || self.isHost) && isGrantVipOpen && targetVipParticipant && (
+      {(isMaster || self.isCofundador) && isGrantVipOpen && targetVipParticipant && (
         <GrantVipModal
           isOpen={isGrantVipOpen}
           targetParticipant={targetVipParticipant}
@@ -2318,12 +3099,13 @@ export const CallRoom: React.FC<CallRoomProps> = ({
             setTargetVipParticipant(null);
           }}
           onGrantVip={handleHostGrantVip}
+          podeRemover={Boolean(isMaster)}
           onRevokeVip={handleHostRevokeVip}
         />
       )}
 
       {/* Grant / Manage Custom Badges Modal (For Master and Host) */}
-      {(isMaster || self.isHost) && isGrantBadgesOpen && targetBadgeParticipant && (
+      {(isMaster || self.isCofundador) && isGrantBadgesOpen && targetBadgeParticipant && (
         <GrantBadgesModal
           isOpen={isGrantBadgesOpen}
           targetParticipant={targetBadgeParticipant}
@@ -2332,11 +3114,28 @@ export const CallRoom: React.FC<CallRoomProps> = ({
             setTargetBadgeParticipant(null);
           }}
           onAssignBadges={handleHostAssignBadges}
+          podeRemover={Boolean(isMaster || self.isCofundador)}
+          ehDono={Boolean(isMaster)}
+          onRemoverItem={isMaster ? handleRemoverItemLoja : undefined}
+          onDefinirCargo={isMaster ? handleDefinirCargo : undefined}
+          onLiberarAura={isMaster || self.isCofundador ? handleLiberarAura : undefined}
+          quemLiberaAura={isMaster ? "dono" : "cofundador"}
+          onDarMoedas={handleHostGiveCoins}
+          onPunir={alvoPunivel(targetBadgeParticipant) ? (p) => setAlvoPunir(p) : undefined}
+          buscarCompras={
+            isMaster
+              ? (alvo) =>
+                  new Promise((ok) => {
+                    socket.emit("membros:compras", { alvo, masterToken }, (res: { success: boolean; compras?: any }) => ok(res?.success ? res.compras || {} : {}));
+                    setTimeout(() => ok({}), 6000);
+                  })
+              : undefined
+          }
         />
       )}
 
       {/* Owner Admission / Portaria Modal */}
-      {self.isHost && (
+      {podePorta && (
         <AdmissionModal
           isOpen={isAdmissionOpen}
           pendingKnocks={pendingKnocks}
@@ -2367,6 +3166,11 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           setPreferences((prev) => ({ ...prev, ...updates }));
           saveUserPreferences(updates);
         }}
+        isDarkTheme={isDarkTheme}
+        onToggleTheme={handleToggleTheme}
+        isMockupDemoActive={isMockupDemoActive}
+        onToggleMockupDemo={() => setIsMockupDemoActive(!isMockupDemoActive)}
+        micProcessor={micProcessor}
       />
 
       <HostPanelModal
@@ -2379,21 +3183,70 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         onToggleLock={handleHostToggleLock}
         onMuteAll={handleHostMuteAll}
         onMuteUser={handleHostMuteUser}
-        onKickUser={handleHostKickUser}
+        onUnmuteUser={handleHostUnmuteUser}
+        onKickUser={handleHostKickNow}
+        onPunirUser={(p) => setAlvoPunir(p)}
+        podePunir={(p) => alvoPunivel(p)}
         onUpdateSettings={handleHostUpdateSettings}
         onClaimHost={handleClaimHost}
         onApproveKnock={handleApproveKnock}
         onRejectKnock={handleRejectKnock}
         onOpenAdmissionModal={() => setIsAdmissionOpen(true)}
-        onCloseRoomForAll={self.isHost ? handleCloseRoomForAll : undefined}
+        onCloseRoomForAll={isMaster ? handleCloseRoomForAll : undefined}
+        isCofundador={Boolean(self.isCofundador)}
         onGiveCoins={handleHostGiveCoins}
         onOpenGrantBadges={(p) => {
           setTargetBadgeParticipant(p);
           setIsGrantBadgesOpen(true);
         }}
+        isMaster={Boolean(isMaster)}
+        masterToken={masterToken}
       />
 
-      {/* Koki Coins & Perks Store Modal */}
+      {isRankOpen && <RankCoinsModal socket={socket} onClose={() => setIsRankOpen(false)} />}
+
+      {/* Expulsar da call / Suspender / Banir */}
+      {alvoPunir && (
+        <PunirModal
+          alvo={alvoPunir}
+          alvoOnline={!(alvoPunir as any).isOffline}
+          podeExpulsarDaCall={Boolean(podeBanir || (podeExpulsar && alvoModeravel(alvoPunir)))}
+          podeBanir={alvoBanivel(alvoPunir)}
+          salaNome={room.roomName}
+          onPunir={handlePunir}
+          onClose={() => setAlvoPunir(null)}
+        />
+      )}
+
+      {/* Amigos + conversa privada (fica montado pra contar pedidos e mensagens não lidas) */}
+      <AmigosPainel
+        socket={socket}
+        aberto={isAmigosOpen}
+        onFechar={() => {
+          setIsAmigosOpen(false);
+          setConversaInicial(null);
+        }}
+        conversaInicial={conversaInicial}
+        onPendentes={setAmigosPendentes}
+      />
+      <RankSubiuAviso socket={socket} moedas={self.kokiCoins || 0} ativo={!isUserMaster && !self.isCofundador} onAbrirRank={() => setIsRankOpen(true)} />
+      {isMissoesOpen && <MissoesModal onClose={() => setIsMissoesOpen(false)} onGanhar={ganharMoedas} />}
+      {isRoletaOpen && (
+        <RoletaModal
+          socket={socket}
+          saldo={getKokiCoins()}
+          isMaster={Boolean(isUserMaster)}
+          onClose={() => setIsRoletaOpen(false)}
+          onGastar={gastarMoedas}
+          onGanharMoedas={ganharMoedas}
+          onGanharItem={ganharItem}
+        />
+      )}
+      {abaExtras && isUserMaster && (
+        <PainelExtrasMaster socket={socket} masterToken={masterToken} abaInicial={abaExtras} onClose={() => setAbaExtras(null)} />
+      )}
+
+      {/* Eco Coins & Perks Store Modal */}
       <StoreModal
         isOpen={isStoreOpen}
         onClose={() => setIsStoreOpen(false)}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { tagVisivel } from "../utils/tagExibida";
 import { Participant, VipPermissions } from "../types";
 import {
   ShieldAlert,
@@ -30,6 +31,7 @@ interface GrantVipModalProps {
     durationMinutes: number | null
   ) => void;
   onRevokeVip: (targetSocketId: string) => void;
+  podeRemover?: boolean;
 }
 
 const DURATION_OPTIONS = [
@@ -48,12 +50,13 @@ export const GrantVipModal: React.FC<GrantVipModalProps> = ({
   targetParticipant,
   onGrantVip,
   onRevokeVip,
+  podeRemover = true,
 }) => {
   const [canUseGifAvatar, setCanUseGifAvatar] = useState(true);
   const [canUseVideoMp4Banner, setCanUseVideoMp4Banner] = useState(true);
   const [canEditAdvancedProfile, setCanEditAdvancedProfile] = useState(true);
   const [hasVipBadge, setHasVipBadge] = useState(true);
-  const [selectedDuration, setSelectedDuration] = useState<number | null>(30);
+  const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
   const [remainingTimeText, setRemainingTimeText] = useState<string>("");
 
   useEffect(() => {
@@ -116,6 +119,16 @@ export const GrantVipModal: React.FC<GrantVipModalProps> = ({
         hasVipBadge,
       },
       selectedDuration
+    );
+    onClose();
+  };
+
+  // Um clique: libera tudo (foto/GIF, banner em vídeo, perfil avançado e insígnia) sem prazo
+  const handleLiberarTudo = () => {
+    onGrantVip(
+      targetParticipant.id,
+      { canUseGifAvatar: true, canUseVideoMp4Banner: true, canEditAdvancedProfile: true, hasVipBadge: true },
+      null
     );
     onClose();
   };
@@ -187,7 +200,7 @@ export const GrantVipModal: React.FC<GrantVipModalProps> = ({
                   <span className="font-bold text-white">{targetParticipant.name}</span>
                   {targetParticipant.tag && (
                     <span className="text-xs text-slate-400 font-mono">
-                      #{targetParticipant.tag}
+                      #{tagVisivel(targetParticipant)}
                     </span>
                   )}
                 </div>
@@ -360,7 +373,7 @@ export const GrantVipModal: React.FC<GrantVipModalProps> = ({
 
           {/* Action Buttons */}
           <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
-            {isAlreadyVip ? (
+            {isAlreadyVip && podeRemover ? (
               <button
                 type="button"
                 id="revoke-vip-btn"
@@ -376,19 +389,27 @@ export const GrantVipModal: React.FC<GrantVipModalProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                id="liberar-tudo-vip-btn"
+                onClick={handleLiberarTudo}
+                className="px-4 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-colors"
+              >
+                Liberar tudo ✨
+              </button>
+              <button
+                type="button"
                 onClick={onClose}
                 className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
               >
                 Cancelar
               </button>
-              <button
+              {(!isAlreadyVip || podeRemover) && <button
                 type="submit"
                 id="confirm-grant-vip-btn"
                 className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-purple-600/30 transition-all flex items-center gap-1.5"
               >
                 <Zap className="w-3.5 h-3.5" />
                 {isAlreadyVip ? "Atualizar Permissões VIP" : "Conceder Permissões VIP ⚡"}
-              </button>
+              </button>}
             </div>
           </div>
         </form>

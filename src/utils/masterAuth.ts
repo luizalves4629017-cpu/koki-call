@@ -1,73 +1,67 @@
-export const DEFAULT_MASTER_KEYS = [
-  "koki24122024master",
-  "koki2026master",
-  "kokidonomaster2026",
-  "adminmasterkoki",
-];
+import { apiUrl } from "./backend";
+/**
+ * Master Authentication & Owner Verification for eco
+ * Client-side token storage and server verification.
+ * NO plaintext passwords or owner master keys are exposed in the client-side code.
+ */
 
-export const MASTER_SIGNING_SALT = "koki_master_voice_platform_supreme_2026";
+const TOKEN_KEY = "eco_master_token";
+const TOKEN_KEY_LEGACY = "koki_master_token";
 
 /**
- * Checks if a provided key matches the authorized owner master key (case-insensitive, trimmed)
+ * Validates owner credentials through the secure backend API.
  */
-export function isMasterKeyValid(rawKey?: string | null): boolean {
-  if (!rawKey || typeof rawKey !== "string") return false;
-  const clean = rawKey.trim().toLowerCase();
-  if (clean.length < 4) return false;
-  return DEFAULT_MASTER_KEYS.some((k) => k.toLowerCase() === clean);
-}
-
-/**
- * Computes deterministic master token matching server HMAC or local fallback
- */
-export async function getMasterToken(rawKey: string): Promise<string> {
-  const clean = rawKey.trim().toLowerCase();
-
-  if (typeof window !== "undefined" && window.crypto && window.crypto.subtle) {
-    try {
-      const enc = new TextEncoder();
-      const keyData = enc.encode(MASTER_SIGNING_SALT);
-      const msgData = enc.encode(`owner_key:${clean}`);
-
-      const cryptoKey = await window.crypto.subtle.importKey(
-        "raw",
-        keyData,
-        { name: "HMAC", hash: "SHA-256" },
-        false,
-        ["sign"]
-      );
-      const signature = await window.crypto.subtle.sign("HMAC", cryptoKey, msgData);
-      const hashArray = Array.from(new Uint8Array(signature));
-      return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-    } catch {
-      // fallback
-    }
-  }
-
-  return getMasterTokenSync(clean);
-}
-
-/**
- * Synchronous token generation for instant local resolution
- */
-export function getMasterTokenSync(rawKey: string): string {
-  const clean = rawKey.trim().toLowerCase();
-  // Known pre-computed HMAC hash for "koki24122024master" with MASTER_SIGNING_SALT
-  if (clean === "koki24122024master") {
-    return "0bf9c4cfb565a0ec7759ad40ca0489569b917fa2b66236bcfd5f66ff2f0e4cf8";
-  }
-  return `koki_master_token_${clean}`;
-}
-
-export function saveMasterAuthLocally(token: string, rawKey?: string): void {
+export async function authenticateMasterOnServer(masterKey: string): Promise<{
+  success: boolean;
+  masterToken?: string;
+  error?: string;
+}> {
   try {
-    localStorage.setItem("koki_master_token", token);
-    if (rawKey) {
-      localStorage.setItem("koki_master_key_saved", rawKey.trim());
+    const res = await fetch(apiUrl("/api/auth/master-login"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ masterKey: masterKey.trim() }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success && data.masterToken) {
+      return { success: true, masterToken: data.masterToken };
     }
+    return { success: false, error: data.error || "Chave de dono incorreta ou não autorizada." };
+  } catch (err: any) {
+    return { success: false, error: "Falha de conexão com o servidor de autenticação." };
+  }
+}
+
+/**
+ * Checks with the server if a stored token is still valid.
+ */
+export async function verifyMasterTokenOnServer(token: string): Promise<boolean> {
+  try {
+    const res = await fetch(apiUrl("/api/auth/master-check"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ masterToken: token }),
+    });
+    const data = await res.json();
+    return Boolean(data.isMaster);
+  } catch {
+    return false;
+  }
+}
+
+export function saveMasterAuthLocally(token: string, remember: boolean = true): void {
+  try {
+    if (remember) {
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(TOKEN_KEY_LEGACY, token);
+    } else {
+      sessionStorage.setItem(TOKEN_KEY, token);
+    }
+    localStorage.setItem("eco_master_ok", "1");
+    localStorage.removeItem("koki_master_key_saved");
 
     // Automatically enforce tag #0001 and Master Identity in stored profile
-    const profileRaw = localStorage.getItem("koki_user_profile_v3");
+    const profileRaw = localStorage.getItem("eco_user_profile_v1") || localStorage.getItem("koki_user_profile_v3");
     let profileData: any = {};
     if (profileRaw) {
       try {
@@ -79,14 +73,14 @@ export function saveMasterAuthLocally(token: string, rawKey?: string): void {
 
     profileData.tag = "0001";
     if (!profileData.name || profileData.name.startsWith("Convidado") || profileData.name.trim() === "") {
-      profileData.name = "Koki u sujo";
+      profileData.name = "Luiz";
     }
-    profileData.avatarEmoji = profileData.avatarEmoji || "👑";
-    profileData.customStatus = profileData.customStatus || "👑 Dono Master do Koki";
+    profileData.customStatus = profileData.customStatus || "👑 Dono Master do eco";
     profileData.badges = Array.isArray(profileData.badges) && profileData.badges.length > 0
-      ? Array.from(new Set([...profileData.badges, "owner_supreme", "koki_creator", "nitro_owner"]))
-      : ["owner_supreme", "koki_creator", "nitro_owner"];
+      ? Array.from(new Set([...profileData.badges, "owner_supreme", "eco_creator", "vip_nitro"]))
+      : ["owner_supreme", "eco_creator", "vip_nitro"];
 
+    localStorage.setItem("eco_user_profile_v1", JSON.stringify(profileData));
     localStorage.setItem("koki_user_profile_v3", JSON.stringify(profileData));
   } catch {
     // ignore
@@ -95,11 +89,14 @@ export function saveMasterAuthLocally(token: string, rawKey?: string): void {
 
 export function clearMasterAuthLocally(): void {
   try {
-    localStorage.removeItem("koki_master_token");
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_KEY_LEGACY);
+    sessionStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem("eco_master_ok");
     localStorage.removeItem("koki_master_key_saved");
 
     // Reset profile tag away from #0001 to standard random tag
-    const profileRaw = localStorage.getItem("koki_user_profile_v3");
+    const profileRaw = localStorage.getItem("eco_user_profile_v1") || localStorage.getItem("koki_user_profile_v3");
     if (profileRaw) {
       try {
         const profileData = JSON.parse(profileRaw);
@@ -108,6 +105,7 @@ export function clearMasterAuthLocally(): void {
           if (profileData.badges) {
             profileData.badges = profileData.badges.filter((b: string) => !b.includes("owner"));
           }
+          localStorage.setItem("eco_user_profile_v1", JSON.stringify(profileData));
           localStorage.setItem("koki_user_profile_v3", JSON.stringify(profileData));
         }
       } catch {
@@ -121,24 +119,26 @@ export function clearMasterAuthLocally(): void {
 
 export function getStoredMasterInfo(): { isMaster: boolean; token: string | null; key: string | null } {
   try {
-    const token = localStorage.getItem("koki_master_token");
-    const key = localStorage.getItem("koki_master_key_saved");
-    if (isMasterKeyValid(key)) {
-      return { isMaster: true, token: token || getMasterTokenSync(key!), key };
-    }
-    if (token && typeof token === "string" && token.trim().length >= 10) {
-      // Validate that the token matches a known valid master token hash
-      const cleanToken = token.trim();
-      const isKnownToken = DEFAULT_MASTER_KEYS.some(
-        (k) => getMasterTokenSync(k) === cleanToken || cleanToken === `koki_master_token_${k.toLowerCase()}`
-      ) || cleanToken === "0bf9c4cfb565a0ec7759ad40ca0489569b917fa2b66236bcfd5f66ff2f0e4cf8";
+    const token =
+      localStorage.getItem(TOKEN_KEY) ||
+      localStorage.getItem(TOKEN_KEY_LEGACY) ||
+      sessionStorage.getItem(TOKEN_KEY);
 
-      if (isKnownToken) {
-        return { isMaster: true, token: cleanToken, key: key || "koki24122024master" };
-      }
+    if (token && typeof token === "string" && token.trim().length >= 8) {
+      return { isMaster: true, token: token.trim(), key: null };
     }
   } catch {
     // ignore
   }
   return { isMaster: false, token: null, key: null };
+}
+
+export function getMasterTokenSync(_rawKey?: string): string {
+  // Só o token assinado pelo servidor vale; senha nunca vira token no navegador
+  return getStoredMasterInfo().token || "";
+}
+
+export function isMasterKeyValid(_rawKey?: string | null): boolean {
+  // Chave salva no navegador não dá mais acesso de Dono: só o login validado pelo servidor
+  return false;
 }

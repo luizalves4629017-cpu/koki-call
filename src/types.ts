@@ -14,6 +14,7 @@ export interface Participant {
   tag?: string; // e.g. "4921"
   isHost: boolean;
   isMaster?: boolean;
+  isCofundador?: boolean;
   hasAudio: boolean;
   hasVideo: boolean;
   isScreenSharing: boolean;
@@ -32,11 +33,22 @@ export interface Participant {
   purchasedPerks?: Record<string, number>; // perkId -> activeUntil timestamp (ms)
   vipPermissions?: VipPermissions; // VIP privileges granted by the Owner
   joinedAt: number;
+  memberSince?: number; // primeiro acesso ao eco (salvo no servidor)
+  cargo?: string; // cargo dado pelo Dono; vazio = Membro
+  poderes?: string[]; // "mutar" | "expulsar" | "porta"
   audioLevel?: number; // 0 to 100 for speaking indicator
   stream?: MediaStream;
   screenStream?: MediaStream;
   userVolume?: number; // local volume adjustment for this participant (0 to 200)
   voiceChannelId?: string; // "voice-geral" or "voice-vip"
+  isVip?: boolean;
+  tagExibida?: string; // tag que aparece (Co-fundador = "0002"); a tag real continua em `tag`
+  temConta?: boolean; // entrou com conta logada (pode receber pedido de amizade)
+  invisivel?: boolean; // modo invisível (só Dono Master / Co-fundador veem isso)
+  auraLiberada?: boolean; // Dono Master/Co-fundador liberou trocar a aura do card (só o servidor define)
+  auraLiberadaPor?: "dono" | "cofundador";
+  auraCard?: import("./utils/auraCard").AuraConfig; // aura escolhida pela pessoa
+  auraLoja?: string; // cor da "Aura do card" comprada na loja (azul, rosa, verde, roxo, laranja, vermelho)
 }
 
 export interface KnockRequest {
@@ -91,6 +103,19 @@ export interface ChatMessage {
   timestamp: number;
   isSystem?: boolean;
   isSecurityWarning?: boolean;
+  attachments?: ChatAttachment[];
+}
+
+export interface ChatAttachment {
+  id: string;
+  kind: "image" | "video";
+  mime: string;
+  name: string;
+  size: number;
+  url: string;
+  width?: number;
+  height?: number;
+  spoiler?: boolean;
 }
 
 export type VideoQuality = 'low' | 'medium' | 'high';
@@ -104,6 +129,9 @@ export interface UserPreferences {
   pushToTalkKey: string;
   noiseSuppression: boolean;
   echoCancellation: boolean;
+  aiNoiseSuppression: boolean; // RNNoise (IA) no microfone
+  autoSensitivity: boolean; // noise gate automático
+  sensitivityDb: number; // limite manual do noise gate em dB (-100 a 0)
   lowResourceMode: boolean; // Disables video rendering to save CPU/GPU for gaming
   videoQuality: VideoQuality;
   volume: number;
@@ -126,19 +154,38 @@ export interface SavedUserProfile {
   rememberLogin: boolean;
 }
 
-export type StorePerkId = 'gif_avatar' | 'custom_banner' | 'custom_title' | 'vip_role';
+export type StorePerkId =
+  | 'gif_avatar'
+  | 'custom_banner'
+  | 'custom_title'
+  | 'vip_role'
+  | 'ring_nebulosa'
+  | 'ring_aurora'
+  | 'banner_nebulosa'
+  | 'aura_card'
+  | string;
 
 export interface StorePerk {
   id: StorePerkId;
   name: string;
   tagline: string;
   description: string;
-  price: number; // in Koki Coins
-  durationHours: number; // 72 hours
+  price: number; // in Eco Coins
+  originalPrice?: number;
+  discountPercent?: number;
+  durationHours: number; // default 72 hours
   iconName: string;
   themeColor: string;
   badgeLabel: string;
+  category: "all" | "avatars" | "banners" | "rings" | "titles" | "vip" | "auras";
+  previewType?: "ring" | "avatar" | "banner" | "title" | "vip" | "aura";
+  previewValue?: string;
   benefits: string[];
+  isFeatured?: boolean;
+  featuredExpiresAt?: number;
+  isActive?: boolean; // toggle visibility in store
+  isVipOnly?: boolean;
+  sortOrder?: number;
 }
 
 export interface PurchasedPerkState {

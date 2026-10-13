@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="ecoCoinRing" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5EEAD4"/>
+      <stop offset="100%" stop-color="#C4B5FD"/>
+    </linearGradient>
+    <radialGradient id="ecoCoinGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#5EEAD4" stop-opacity="0.4"/>
+      <stop offset="70%" stop-color="#C4B5FD" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#16171B" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ecoCoinCore" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#2A2D35"/>
+      <stop offset="70%" stop-color="#16171B"/>
+      <stop offset="100%" stop-color="#050507"/>
+    </radialGradient>
+    <clipPath id="frontClip">
+      <rect x="0" y="32" width="64" height="32"/>
+    </clipPath>
+  </defs>
+  <!-- Ambient soft glow -->
+  <circle cx="32" cy="32" r="22" fill="url(#ecoCoinGlow)" />
+  <!-- Back arc of ring -->
+  <g transform="rotate(-22 32 32)">
+    <ellipse cx="32" cy="32" rx="27" ry="9" fill="none" stroke="url(#ecoCoinRing)" stroke-width="2.8" opacity="0.9" />
+    <circle cx="59" cy="32" r="1.8" fill="#5EEAD4" />
+  </g>
+  <!-- Central dark celestial core -->
+  <circle cx="32" cy="32" r="13" fill="url(#ecoCoinCore)" stroke="#5EEAD4" stroke-opacity="0.4" stroke-width="1.2" />
+  <!-- Front arc of ring passing in front of core -->
+  <g transform="rotate(-22 32 32)" clip-path="url(#frontClip)">
+    <ellipse cx="32" cy="32" rx="27" ry="9" fill="none" stroke="url(#ecoCoinRing)" stroke-width="2.8" />
+  </g>
+</svg>

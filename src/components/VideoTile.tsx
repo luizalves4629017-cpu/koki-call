@@ -3,18 +3,18 @@ import {
   Mic,
   MicOff,
   VideoOff,
-  Crown,
   Volume2,
   VolumeX,
   Maximize2,
   Minimize2,
   MoreVertical,
-  UserX,
-  Volume1,
   Monitor,
-  User
+  User,
 } from "lucide-react";
 import { Participant } from "../types";
+import { AnelPerk } from "./AnelPerk";
+import { anelDoParticipante } from "../utils/perks";
+import { BlackHoleBadge } from "./BlackHoleBadge";
 
 interface VideoTileProps {
   participant: Participant;
@@ -28,6 +28,7 @@ interface VideoTileProps {
   userVolume?: number;
   masterVoiceVolume?: number;
   currentVoiceChannelId?: string;
+  isDarkTheme?: boolean;
   onToggleSpotlight?: () => void;
   onHostMute?: (userId: string) => void;
   onHostKick?: (userId: string) => void;
@@ -58,18 +59,24 @@ export const VideoTile: React.FC<VideoTileProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const screenRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const screenAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [localVolume, setLocalVolume] = useState<number>(userVolume);
-  const [showMenu, setShowMenu] = useState<boolean>(false);
-  const [showVolumeSlider, setShowVolumeSlider] = useState<boolean>(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
 
-  // VIP & Voice Channel Audio/Video Isolation
-  const isSameVoiceChannel = (participant.voiceChannelId || "voice-geral") === (currentVoiceChannelId || "voice-geral");
+  const isSameVoiceChannel =
+    (participant.voiceChannelId || "voice-geral") ===
+    (currentVoiceChannelId || "voice-geral");
 
-  const isSpeaking = isSameVoiceChannel &&
+  const isSpeaking =
+    isSameVoiceChannel &&
     (audioLevel > 15 || (participant.audioLevel && participant.audioLevel > 15)) &&
     participant.hasAudio &&
     !participant.isMutedByHost;
+
+  const isOwner = Boolean(participant.isMaster);
+  const hasHorizonteBadge = Boolean(participant.badges?.includes("horizonte"));
 
   // Handle Video Track
   useEffect(() => {
@@ -84,7 +91,7 @@ export const VideoTile: React.FC<VideoTileProps> = ({
     }
   }, [stream, participant.hasVideo, lowResourceMode]);
 
-  // Handle Screen Share Track (if specifically used standalone)
+  // Handle Screen Share Track
   useEffect(() => {
     if (screenRef.current && screenStream) {
       if (screenRef.current.srcObject !== screenStream) {
@@ -94,9 +101,7 @@ export const VideoTile: React.FC<VideoTileProps> = ({
     }
   }, [screenStream]);
 
-  const screenAudioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Handle Remote Audio Element with Master & Individual Volume + Strict Channel Isolation
+  // Handle Remote Audio Element
   useEffect(() => {
     if (!isSelf && audioRef.current && stream) {
       const audioTracks = stream.getAudioTracks();
@@ -105,53 +110,54 @@ export const VideoTile: React.FC<VideoTileProps> = ({
           audioRef.current.srcObject = stream;
         }
         if (!isSameVoiceChannel) {
-          // Strictly mute and silence audio when in different voice channels
           audioRef.current.muted = true;
           audioRef.current.volume = 0;
           audioRef.current.pause();
         } else {
           audioRef.current.muted = false;
-          const effectiveGain = (localVolume / 100) * (masterVoiceVolume / 100) * (participant.isDeafened ? 0 : 1);
+          const effectiveGain =
+            (localVolume / 100) *
+            (masterVoiceVolume / 100) *
+            (participant.isDeafened ? 0 : 1);
           audioRef.current.volume = Math.max(0, Math.min(1, effectiveGain));
           audioRef.current.play().catch(() => {});
         }
       }
     }
-  }, [stream, isSelf, localVolume, masterVoiceVolume, participant.isDeafened, isSameVoiceChannel]);
+  }, [
+    stream,
+    isSelf,
+    localVolume,
+    masterVoiceVolume,
+    participant.isDeafened,
+    isSameVoiceChannel,
+  ]);
 
-  // Handle Screen Audio if screen has audio + Strict Channel Isolation
-  useEffect(() => {
-    if (!isSelf && screenAudioRef.current && screenStream) {
-      const screenAudioTracks = screenStream.getAudioTracks();
-      if (screenAudioTracks.length > 0) {
-        if (screenAudioRef.current.srcObject !== screenStream) {
-          screenAudioRef.current.srcObject = screenStream;
-        }
-        if (!isSameVoiceChannel) {
-          screenAudioRef.current.muted = true;
-          screenAudioRef.current.volume = 0;
-          screenAudioRef.current.pause();
-        } else {
-          screenAudioRef.current.muted = false;
-          const effectiveGain = (localVolume / 100) * (masterVoiceVolume / 100) * (participant.isDeafened ? 0 : 1);
-          screenAudioRef.current.volume = Math.max(0, Math.min(1, effectiveGain));
-          screenAudioRef.current.play().catch(() => {});
-        }
-      }
-    }
-  }, [screenStream, isSelf, localVolume, masterVoiceVolume, participant.isDeafened, isSameVoiceChannel]);
+  // Só mostra o vídeo quando a câmera está realmente enviando imagem.
+  // Em pessoas remotas, a trilha de câmera existe sempre (slot fixo), mas fica
+  // "muted" enquanto a câmera está desligada; nesse caso mostra o avatar.
+  const hasLiveVideoTrack = Boolean(
+    stream &&
+      stream.getVideoTracks().some((t) => t.enabled && t.readyState === "live" && (isSelf || !t.muted))
+  );
+  const hasActiveVideo =
+    !lowResourceMode &&
+    hasLiveVideoTrack &&
+    (isSelf ? Boolean(participant.hasVideo) || hasLiveVideoTrack : participant.hasVideo !== false);
 
-  const hasActiveVideo = (participant.hasVideo || (stream && stream.getVideoTracks().some((t) => t.enabled))) && !lowResourceMode && Boolean(stream && stream.getVideoTracks().length > 0);
-  // Only display screen directly inside VideoTile if screenStream is passed AND participant has no stream/camera
-  const isDisplayingScreen = Boolean(screenStream && !stream && participant.isScreenSharing);
+  const isDisplayingScreen = Boolean(
+    screenStream && !stream && participant.isScreenSharing
+  );
 
   return (
     <div
-      className={`relative group rounded-2xl overflow-hidden bg-[#0a0f1d] border transition-all flex items-center justify-center ${
+      className={`relative group rounded-2xl overflow-hidden bg-[#1E2026] border transition-all duration-200 flex items-center justify-center select-none ${
         isSpeaking
-          ? "border-emerald-500 ring-2 ring-emerald-500/30 shadow-lg shadow-emerald-950/40"
-          : "border-[#1e293b] hover:border-[#334155]"
-      } ${isSpotlight ? "w-full h-full min-h-[400px]" : "w-full aspect-video min-h-[160px]"}`}
+          ? "border-[#5EEAD4] shadow-lg shadow-[#5EEAD4]/20 ring-1 ring-[#5EEAD4]"
+          : "border-[#2A2D35] hover:border-[#383C47]"
+      } ${
+        isSpotlight ? "w-full h-full min-h-[380px]" : "w-full aspect-video min-h-[160px]"
+      }`}
     >
       {/* Remote Audio output tags (hidden) */}
       {!isSelf && <audio ref={audioRef} autoPlay playsInline />}
@@ -159,16 +165,16 @@ export const VideoTile: React.FC<VideoTileProps> = ({
 
       {/* Screen share rendering if active */}
       {isDisplayingScreen ? (
-        <div className="w-full h-full relative bg-black flex items-center justify-center">
+        <div className="w-full h-full relative bg-[#0E0F12] flex items-center justify-center">
           <video
             ref={screenRef}
             autoPlay
             playsInline
             className="w-full h-full object-contain"
           />
-          <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-sm border border-cyan-500/40 text-cyan-300 text-xs px-2.5 py-1 rounded-md flex items-center gap-1.5 font-medium">
-            <Monitor className="w-3.5 h-3.5 animate-pulse text-cyan-400" />
-            <span>Transmissão de Tela • {participant.name}</span>
+          <div className="absolute top-3 left-3 bg-[#1E2026]/90 backdrop-blur-sm border border-[#2A2D35] text-[#ECECEC] text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 font-medium shadow-md">
+            <Monitor className="w-3.5 h-3.5 animate-pulse text-[#5EEAD4]" />
+            <span>Tela de {participant.name}</span>
           </div>
         </div>
       ) : hasActiveVideo ? (
@@ -178,25 +184,27 @@ export const VideoTile: React.FC<VideoTileProps> = ({
           autoPlay
           playsInline
           muted={isSelf}
-          className={`w-full h-full object-cover ${isSelf ? "scale-x-[-1]" : ""}`}
+          className={`w-full h-full object-cover rounded-2xl ${isSelf ? "scale-x-[-1]" : ""}`}
         />
       ) : (
-        /* Avatar & Speaking Glow when Video is OFF */
+        /* Central Avatar & Iniciais */
         <button
           onClick={() => onSelectProfile?.(participant)}
-          className="flex flex-col items-center justify-center gap-2 select-none group/avatar cursor-pointer focus:outline-none"
-          title="Clique para ver o perfil Koki"
+          className="flex flex-col items-center justify-center gap-2 select-none group/avatar cursor-pointer focus:outline-none p-4"
+          title="Clique para abrir o cartão de perfil Órbita"
         >
           <div
-            className={`relative rounded-full flex items-center justify-center text-3xl font-bold text-white shadow-xl transition-all overflow-hidden ${
-              isSpotlight ? "w-28 h-28 text-4xl" : "w-16 h-16 sm:w-20 sm:h-20 text-2xl sm:text-3xl"
+            className={`relative rounded-full flex items-center justify-center font-bold text-white shadow-xl transition-all ${
+              isSpotlight ? "w-24 h-24 text-3xl" : "w-16 h-16 sm:w-20 sm:h-20 text-2xl"
             } ${
               isSpeaking
-                ? "animate-speaking ring-4 ring-emerald-400 scale-105"
-                : "ring-2 ring-white/10 group-hover/avatar:ring-cyan-400 group-hover/avatar:scale-105"
+                ? "ring-4 ring-[#5EEAD4] scale-105"
+                : isOwner
+                ? "ring-2 ring-[#C4B5FD]"
+                : "ring-1 ring-[#2A2D35]"
             }`}
             style={{
-              backgroundColor: participant.avatarColor || "#0284c7",
+              backgroundColor: participant.avatarColor || "#2DD4BF",
             }}
           >
             {participant.avatarUrl ? (
@@ -204,25 +212,26 @@ export const VideoTile: React.FC<VideoTileProps> = ({
                 src={participant.avatarUrl}
                 alt={participant.name}
                 referrerPolicy="no-referrer"
-                className="w-full h-full object-cover"
+                className="w-full h-full rounded-full object-cover"
               />
             ) : (
-              <span>{participant.avatarEmoji || (participant.isHost ? "👑" : "🎮")}</span>
+              <span>{participant.name ? participant.name.slice(0, 1).toUpperCase() : "E"}</span>
             )}
-
-            {participant.isHost && (
-              <div className="absolute -top-1 -right-1 bg-amber-500 text-slate-950 p-1 rounded-full shadow-md z-10">
-                <Crown className="w-3.5 h-3.5 fill-current" />
-              </div>
-            )}
+            {anelDoParticipante(participant) && <AnelPerk tipo={anelDoParticipante(participant)!} />}
           </div>
 
-          <div className="flex flex-col items-center">
-            <span className="text-xs font-semibold text-slate-200 flex items-center gap-1 bg-[#0b0f19]/80 px-2.5 py-0.5 rounded-full border border-slate-800">
-              {participant.name} {isSelf && "(Você)"}
-            </span>
+          <div className="flex flex-col items-center gap-0.5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-[#ECECEC]">
+              <span>{participant.name} {isSelf && "(Você)"}</span>
+              {isOwner && (
+                <BlackHoleBadge type="singularidade" size={15} />
+              )}
+              {hasHorizonteBadge && !isOwner && (
+                <BlackHoleBadge type="horizonte" size={15} />
+              )}
+            </div>
             {participant.customStatus && (
-              <span className="text-[10px] text-slate-400 mt-0.5 max-w-[150px] truncate">
+              <span className="text-[10px] text-[#8B8F98] max-w-[150px] truncate">
                 {participant.customStatus}
               </span>
             )}
@@ -230,32 +239,28 @@ export const VideoTile: React.FC<VideoTileProps> = ({
         </button>
       )}
 
-      {/* Top Left info overlay */}
-      <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-10 pointer-events-none">
-        {participant.tag === "0001" || participant.badges?.includes("owner_supreme") ? (
-          <span className="bg-amber-500/90 text-slate-950 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
-            <Crown className="w-3 h-3 fill-current" /> MASTER
+      {/* Top Left: Selo MASTER lilás e pequeno (se for o Dono Master) */}
+      <div className="absolute top-3 left-3 flex items-center gap-1.5 z-10 pointer-events-none">
+        {isOwner && (
+          <span className="bg-[#C4B5FD]/15 border border-[#C4B5FD]/40 text-[#C4B5FD] text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+            <BlackHoleBadge type="singularidade" size={12} />
+            <span>MASTER</span>
           </span>
-        ) : participant.isHost ? (
-          <span className="bg-cyan-600/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
-            HOST
-          </span>
-        ) : null}
+        )}
         {participant.isScreenSharing && !isDisplayingScreen && (
-          <span className="bg-purple-600/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
+          <span className="bg-[#5EEAD4]/20 text-[#5EEAD4] border border-[#5EEAD4]/40 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
             <Monitor className="w-3 h-3" /> TELA
           </span>
         )}
       </div>
 
       {/* Top Right Quick Controls */}
-      <div className="absolute top-2.5 right-2.5 flex items-center gap-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-        {/* Profile Button */}
+      <div className="absolute top-3 right-3 flex items-center gap-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
         {onSelectProfile && (
           <button
             onClick={() => onSelectProfile(participant)}
-            className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-slate-300 hover:text-cyan-300 border border-slate-700/50 backdrop-blur-sm transition-all cursor-pointer"
-            title="Ver Perfil"
+            className="p-1.5 rounded-full bg-[#1E2026]/90 hover:bg-[#252830] text-[#8B8F98] hover:text-[#ECECEC] border border-[#2A2D35] transition-all cursor-pointer shadow-sm"
+            title="Ver Perfil Órbita"
           >
             <User className="w-3.5 h-3.5" />
           </button>
@@ -263,8 +268,8 @@ export const VideoTile: React.FC<VideoTileProps> = ({
 
         {onToggleSpotlight && (
           <button
-            onClick={onToggleSpotlight}
-            className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-slate-300 hover:text-white border border-slate-700/50 backdrop-blur-sm transition-all cursor-pointer"
+            onClick={() => onToggleSpotlight()}
+            className="p-1.5 rounded-full bg-[#1E2026]/90 hover:bg-[#252830] text-[#8B8F98] hover:text-[#ECECEC] border border-[#2A2D35] transition-all cursor-pointer shadow-sm"
             title={isSpotlight ? "Voltar para Grade" : "Destacar participante"}
           >
             {isSpotlight ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
@@ -275,17 +280,21 @@ export const VideoTile: React.FC<VideoTileProps> = ({
           <div className="relative">
             <button
               onClick={() => setShowVolumeSlider(!showVolumeSlider)}
-              className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-slate-300 hover:text-white border border-slate-700/50 backdrop-blur-sm transition-all cursor-pointer"
-              title="Ajustar volume individual"
+              className="p-1.5 rounded-full bg-[#1E2026]/90 hover:bg-[#252830] text-[#8B8F98] hover:text-[#ECECEC] border border-[#2A2D35] transition-all cursor-pointer shadow-sm"
+              title="Ajustar Volume do Participante"
             >
-              {localVolume === 0 ? <VolumeX className="w-3.5 h-3.5 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5" />}
+              {localVolume === 0 ? (
+                <VolumeX className="w-3.5 h-3.5 text-[#F43F5E]" />
+              ) : (
+                <Volume2 className="w-3.5 h-3.5" />
+              )}
             </button>
 
             {showVolumeSlider && (
-              <div className="absolute right-0 mt-1 p-2 bg-[#090e1a] border border-[#1e293b] rounded-lg shadow-xl z-20 w-36 flex flex-col gap-1">
-                <div className="flex justify-between text-[10px] text-slate-400">
+              <div className="absolute right-0 mt-2 p-3 bg-[#1E2026] border border-[#2A2D35] rounded-2xl shadow-xl z-30 w-36 flex flex-col gap-1">
+                <div className="flex justify-between text-[10px] text-[#8B8F98]">
                   <span>Volume</span>
-                  <span>{localVolume}%</span>
+                  <span className="font-mono text-[#5EEAD4]">{localVolume}%</span>
                 </div>
                 <input
                   type="range"
@@ -297,7 +306,7 @@ export const VideoTile: React.FC<VideoTileProps> = ({
                     setLocalVolume(v);
                     onVolumeChange?.(participant.id, v);
                   }}
-                  className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                  className="w-full accent-[#5EEAD4] cursor-pointer"
                 />
               </div>
             )}
@@ -309,26 +318,31 @@ export const VideoTile: React.FC<VideoTileProps> = ({
           <div className="relative">
             <button
               onClick={() => setShowMenu(!showMenu)}
-              className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-slate-300 hover:text-white border border-slate-700/50 backdrop-blur-sm transition-all cursor-pointer"
-              title="Ações do Dono Master"
+              className="p-1.5 rounded-full bg-[#1E2026]/90 hover:bg-[#252830] text-[#8B8F98] hover:text-[#ECECEC] border border-[#2A2D35] transition-all cursor-pointer shadow-sm"
+              title="Ações do Dono"
             >
               <MoreVertical className="w-3.5 h-3.5" />
             </button>
 
             {showMenu && (
-              <div className="absolute right-0 mt-1 py-1 bg-[#090e1a] border border-[#1e293b] rounded-lg shadow-xl z-30 w-44 text-xs flex flex-col">
+              <div className="absolute right-0 mt-1 py-1 rounded-xl shadow-xl z-30 w-44 text-xs flex flex-col bg-[#1E2026] border border-[#2A2D35] text-[#ECECEC]">
                 {onMoveToVoiceChannel && (
                   <button
                     onClick={() => {
-                      const nextChan = participant.voiceChannelId === "voice-vip" ? "voice-geral" : "voice-vip";
+                      const nextChan =
+                        participant.voiceChannelId === "voice-vip"
+                          ? "voice-geral"
+                          : "voice-vip";
                       onMoveToVoiceChannel(participant.id, nextChan);
                       setShowMenu(false);
                     }}
-                    className="px-3 py-1.5 text-left text-amber-300 hover:text-amber-200 hover:bg-amber-950/40 flex items-center gap-2 cursor-pointer font-semibold border-b border-slate-800"
+                    className="px-3 py-1.5 text-left text-[#C4B5FD] hover:bg-[#252830] flex items-center gap-2 cursor-pointer font-semibold border-b border-[#2A2D35]"
                   >
-                    <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <BlackHoleBadge type="singularidade" size={13} />
                     <span className="truncate">
-                      {participant.voiceChannelId === "voice-vip" ? "Mover para Geral" : "Mover para Call VIP"}
+                      {participant.voiceChannelId === "voice-vip"
+                        ? "Mover para Geral"
+                        : "Mover para Call VIP"}
                     </span>
                   </button>
                 )}
@@ -338,10 +352,10 @@ export const VideoTile: React.FC<VideoTileProps> = ({
                       onHostMute(participant.id);
                       setShowMenu(false);
                     }}
-                    className="px-3 py-1.5 text-left text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
+                    className="px-3 py-1.5 text-left hover:bg-[#252830] flex items-center gap-2 cursor-pointer text-[#ECECEC]"
                   >
-                    <MicOff className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Silenciar</span>
+                    <MicOff className="w-3.5 h-3.5 text-[#F43F5E]" />
+                    <span>{participant.isMutedByHost ? "Desmutar" : "Mutar na Sala"}</span>
                   </button>
                 )}
                 {onHostKick && (
@@ -350,10 +364,9 @@ export const VideoTile: React.FC<VideoTileProps> = ({
                       onHostKick(participant.id);
                       setShowMenu(false);
                     }}
-                    className="px-3 py-1.5 text-left text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 flex items-center gap-2 cursor-pointer"
+                    className="px-3 py-1.5 text-left hover:bg-[#252830] flex items-center gap-2 cursor-pointer text-[#F43F5E]"
                   >
-                    <UserX className="w-3.5 h-3.5" />
-                    <span>Expulsar</span>
+                    <span>Remover da Sala</span>
                   </button>
                 )}
               </div>
@@ -362,43 +375,17 @@ export const VideoTile: React.FC<VideoTileProps> = ({
         )}
       </div>
 
-      {/* Bottom Bar overlay: Name & Mic/Camera Status */}
-      <div className="absolute bottom-0 left-0 right-0 p-2.5 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex items-center justify-between z-10">
-        <div className="flex items-center gap-1.5 max-w-[70%] truncate">
-          <span className="text-xs font-semibold text-white truncate drop-shadow-sm">
-            {participant.name}
-          </span>
+      {/* Nome em pílula no canto inferior esquerdo */}
+      <div className="absolute bottom-3 left-3 z-10">
+        <div className="px-2.5 py-1 rounded-full bg-[#16171B]/80 backdrop-blur-sm border border-[#2A2D35] flex items-center gap-1.5 text-xs font-semibold text-[#ECECEC]">
+          <span className="truncate max-w-[120px]">{participant.name}</span>
           {isSelf && (
-            <span className="text-[10px] text-cyan-300 bg-cyan-950/80 px-1.5 py-0.2 rounded border border-cyan-800/40">
-              Você
+            <span className="text-[10px] text-[#5EEAD4] font-bold">
+              (Você)
             </span>
           )}
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          {/* Mute status badge */}
-          {(!participant.hasAudio || participant.isMutedByHost) ? (
-            <span
-              className="p-1 rounded-full bg-rose-500/80 text-white"
-              title={participant.isMutedByHost ? "Silenciado pelo host" : "Microfone mutado"}
-            >
-              <MicOff className="w-3 h-3" />
-            </span>
-          ) : isSpeaking ? (
-            <span className="p-1 rounded-full bg-emerald-500/90 text-white animate-pulse" title="Falando">
-              <Mic className="w-3 h-3" />
-            </span>
-          ) : (
-            <span className="p-1 rounded-full bg-slate-800/70 text-slate-400" title="Microfone aberto">
-              <Mic className="w-3 h-3" />
-            </span>
-          )}
-
-          {/* Camera status badge */}
-          {!participant.hasVideo && (
-            <span className="p-1 rounded-full bg-slate-800/70 text-slate-400" title="Câmera desligada">
-              <VideoOff className="w-3 h-3" />
-            </span>
+          {isOwner && (
+            <BlackHoleBadge type="singularidade" size={13} />
           )}
         </div>
       </div>

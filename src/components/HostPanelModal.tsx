@@ -1,4 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { getStoredMasterInfo } from "../utils/masterAuth";
+import { EditorLoja } from "./EditorLoja";
+import { BanidosPainel } from "./BanidosPainel";
 import {
   Crown,
   X,
@@ -20,10 +23,16 @@ import {
   Send,
   Sparkles,
   Award,
+  Mic,
+  UserPlus,
+  DoorOpen,
+  Gavel,
+  Megaphone,
 } from "lucide-react";
 import { Participant, RoomState, KnockRequest } from "../types";
 
 interface HostPanelModalProps {
+  isCofundador?: boolean;
   isOpen: boolean;
   room: RoomState;
   self: Participant;
@@ -33,7 +42,13 @@ interface HostPanelModalProps {
   onToggleLock: () => void;
   onMuteAll: () => void;
   onMuteUser: (userId: string) => void;
+  /** Tira o mute do Dono (a pessoa pode ligar o mic de novo) */
+  onUnmuteUser?: (userId: string) => void;
   onKickUser: (userId: string) => void;
+  /** Abre a janela Expulsar da call / Suspender / Banir */
+  onPunirUser?: (participant: Participant) => void;
+  /** Regras de quem pode ser punido (vale também pra offline) */
+  podePunir?: (participant: Participant) => boolean;
   onUpdateSettings: (settings: Partial<RoomState["settings"]>) => void;
   onClaimHost?: (passcode: string) => void;
   onApproveKnock?: (socketId: string) => void;
@@ -42,7 +57,42 @@ interface HostPanelModalProps {
   onCloseRoomForAll?: () => void;
   onGiveCoins?: (targetSocketId: string, amount: number) => void;
   onOpenGrantBadges?: (participant: Participant) => void;
+  isMaster?: boolean;
+  masterToken?: string | null;
 }
+
+// Fora do componente: senão são recriados a cada atualização da call e o clique se perde
+const Toggle = ({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    onClick={() => onChange(!checked)}
+    className={`relative w-10 h-6 rounded-full transition-colors shrink-0 cursor-pointer ${
+      checked ? "bg-[#5EEAD4]" : "bg-[#2A2D35]"
+    }`}
+  >
+    <span
+      className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${checked ? "left-5" : "left-1"}`}
+    />
+  </button>
+);
+
+const Avatar = ({ p, size = 40 }: { p: { name: string; avatarUrl?: string; avatarEmoji?: string; avatarColor?: string }; size?: number }) => (
+  <div
+    className="rounded-full flex items-center justify-center font-bold text-white shrink-0 overflow-hidden"
+    style={{ width: size, height: size, backgroundColor: p.avatarColor || "#2A2D35", fontSize: size * 0.32 }}
+  >
+    {p.avatarUrl ? (
+      <img src={p.avatarUrl} alt={p.name} className="w-full h-full object-cover" />
+    ) : p.avatarEmoji ? (
+      <span>{p.avatarEmoji}</span>
+    ) : (
+      <span>{p.name.slice(0, 2).toUpperCase()}</span>
+    )}
+  </div>
+);
+
 
 export const HostPanelModal: React.FC<HostPanelModalProps> = ({
   isOpen,
@@ -54,7 +104,10 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
   onToggleLock,
   onMuteAll,
   onMuteUser,
+  onUnmuteUser,
   onKickUser,
+  onPunirUser,
+  podePunir,
   onUpdateSettings,
   onClaimHost,
   onApproveKnock,
@@ -63,13 +116,60 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
   onCloseRoomForAll,
   onGiveCoins,
   onOpenGrantBadges,
+  isMaster = false,
+  masterToken = null,
+  isCofundador = false,
 }) => {
+  const ehCof = Boolean(isCofundador && !isMaster);
+  const podePainel = Boolean(isMaster || ehCof);
+  // Co-fundador só mexe nos membros: nunca no Dono Master nem em outro Co-fundador
+  const alvoLivre = (p: any) => !ehCof || p.id === self.id || (!p.isMaster && !p.isCofundador);
+  const [aba, setAba] = useState<"sala" | "loja">("sala");
+  const [avisoAtualizacao, setAvisoAtualizacao] = useState<string | null>(null);
+
+  // Membros offline desta sala (pra punir/banir quem não está na call agora)
+  const [offline, setOffline] = useState<any[]>([]);
+  useEffect(() => {
+    if (!isOpen || !socket || !podePainel || !onPunirUser) return;
+    let vivo = true;
+    socket.emit("membros:listar", { roomId: room.roomId, escopo: "sala", masterToken: masterToken || undefined }, (res: any) => {
+      if (vivo && res?.success && Array.isArray(res.membros)) setOffline(res.membros.filter((m: any) => !m.online));
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [isOpen, socket, podePainel, room.roomId, room.participants.length, masterToken]); // eslint-disable-line react-hooks/exhaustive-deps
+  const offlineComoParticipante = (m: any): Participant =>
+    ({
+      id: `membro:${m.chave}`,
+      name: m.nome,
+      tag: m.tag,
+      avatarUrl: m.avatarUrl,
+      avatarEmoji: m.avatarEmoji,
+      avatarColor: m.avatarColor,
+      badges: m.badges || [],
+      isCofundador: m.isCofundador,
+      ehDono: m.ehDono,
+      cargo: m.cargo,
+      poderes: m.poderes || [],
+      auraLiberada: m.auraLiberada,
+      auraLiberadaPor: m.auraLiberadaPor,
+      auraCard: m.auraCard,
+      auraLoja: m.auraLoja,
+      purchasedPerks: m.purchasedPerks || {},
+      hasAudio: false,
+      hasVideo: false,
+      isScreenSharing: false,
+      isHost: false,
+      isOffline: true,
+    }) as any;
+
   const [claimPin, setClaimPin] = useState("");
   const [copiedLink, setCopiedLink] = useState(false);
   const [confirmCloseRoom, setConfirmCloseRoom] = useState(false);
 
   // Koki Coins direct transfer & moderation states
-  const otherParticipants = room.participants.filter((p) => p.id !== self.id);
+  const otherParticipants = room.participants.filter((p) => p.id !== self.id && alvoLivre(p));
   const [selectedCoinTarget, setSelectedCoinTarget] = useState<string>(
     otherParticipants.length > 0 ? otherParticipants[0].id : (room.participants[0]?.id || "")
   );
@@ -117,12 +217,7 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
 
     setIsSendingCoins(true);
 
-    // Call prop handler if supplied
-    if (onGiveCoins) {
-      onGiveCoins(targetId, amount);
-    }
-
-    // Direct socket emission
+    // Envia uma única vez (antes ia pelo prop E pelo socket = moedas em dobro)
     if (socket) {
       socket.emit(
         "host:give-coins",
@@ -131,6 +226,7 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
           amount,
           action: coinMode,
           roomId: room.roomId,
+          masterToken: getStoredMasterInfo().token || undefined,
         },
         (res: { success: boolean; message?: string; newBalance?: number }) => {
           setIsSendingCoins(false);
@@ -138,8 +234,8 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
             setCoinFeedback({
               type: "success",
               message: res.message || (coinMode === "deduct"
-                ? `-${rawNum.toLocaleString()} Koki Coins removidas de ${targetName}!`
-                : `+${rawNum.toLocaleString()} Koki Coins enviadas para ${targetName}!`),
+                ? `-${rawNum.toLocaleString()} Eco Coins removidas de ${targetName}!`
+                : `+${rawNum.toLocaleString()} Eco Coins enviadas para ${targetName}!`),
             });
             setTimeout(() => setCoinFeedback(null), 4000);
           } else {
@@ -155,556 +251,476 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
       setCoinFeedback({
         type: "success",
         message: coinMode === "deduct"
-          ? `-${rawNum.toLocaleString()} Koki Coins removidas de ${targetName}!`
-          : `+${rawNum.toLocaleString()} Koki Coins enviadas para ${targetName}!`,
+          ? `-${rawNum.toLocaleString()} Eco Coins removidas de ${targetName}!`
+          : `+${rawNum.toLocaleString()} Eco Coins enviadas para ${targetName}!`,
       });
       setTimeout(() => setCoinFeedback(null), 4000);
     }
   };
 
+  const sectionTitle = "text-[13px] font-bold text-[#ECECEC] flex items-center gap-2";
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 select-none">
-      <div className="bg-[#0b101e] border border-[#22304c] rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-[#1b253b] bg-gradient-to-r from-amber-500/10 via-transparent to-transparent flex items-center justify-between">
+    <div className="fixed inset-0 z-50 select-none" onClick={onClose}>
+      {/* Fundo escurecido (a call continua visível atrás) */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-in fade-in duration-150" />
+
+      {/* Gaveta lateral */}
+      <aside
+        onClick={(e) => e.stopPropagation()}
+        className="absolute right-0 top-0 h-full w-full sm:w-[420px] bg-[#16171B] border-l border-[#2A2D35] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200"
+      >
+        {/* Cabeçalho */}
+        <div className="px-5 pt-5 pb-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
-              <Crown className="w-5 h-5 fill-current" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-white text-base flex items-center gap-2">
-                Painel Master do Dono
-              </h3>
-              <p className="text-xs text-slate-400">
-                Controle centralizado de sala e participantes
-              </p>
-            </div>
+            <h3 className="text-xl font-extrabold text-[#ECECEC] tracking-tight">{ehCof ? "Painel Co-fundador" : "Painel do Dono"}</h3>
+            <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-[#C4B5FD]/20 text-[#C4B5FD] border border-[#C4B5FD]/40 shadow-[0_0_12px_rgba(196,181,253,0.35)]">
+              PRO
+            </span>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-all"
+            className="p-2 rounded-xl text-[#8B8E98] hover:text-[#ECECEC] hover:bg-[#1E2026] transition-colors cursor-pointer"
+            title="Fechar"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto space-y-5 text-xs text-slate-300">
-          {/* If current user is not host, allow claiming with PIN */}
-          {!self.isHost ? (
-            <div className="bg-[#121a2d] border border-[#253550] rounded-xl p-4 space-y-3">
-              <div className="flex items-center gap-2 text-amber-400 font-medium">
+        {/* Abas */}
+        <div className="px-5 pb-3 shrink-0">
+          <div className="flex gap-1 bg-[#1E2026] border border-[#2A2D35] rounded-xl p-1">
+            {[
+              { id: "sala", rotulo: "Sala", mostrar: true },
+              { id: "loja", rotulo: "Loja (preços)", mostrar: isMaster },
+            ]
+              .filter((a) => a.mostrar)
+              .map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => setAba(a.id as any)}
+                  className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                    aba === a.id ? "bg-[#5EEAD4]/15 text-[#5EEAD4]" : "text-[#8B8E98] hover:text-[#ECECEC]"
+                  }`}
+                >
+                  {a.rotulo}
+                </button>
+              ))}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 pb-6 space-y-6 text-xs text-[#B5B8C0]">
+          {aba === "loja" && socket && isMaster && <EditorLoja socket={socket} masterToken={masterToken} />}
+          {aba === "sala" && (!podePainel ? (
+            <div className="bg-[#1E2026] border border-[#2A2D35] rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2 text-[#C4B5FD] font-bold text-sm">
                 <Key className="w-4 h-4" />
-                <span>Assumir como Dono / Master</span>
+                <span>Assumir como Dono</span>
               </div>
-              <p className="text-slate-400">
-                Digite a senha master configurada na criação da sala para recuperar privilégios de anfitrião.
-              </p>
+              <p className="text-[#8B8E98]">Digite a senha da sala para recuperar os controles de anfitrião.</p>
               <form onSubmit={handleClaim} className="flex gap-2">
                 <input
                   type="password"
-                  placeholder="Senha / PIN Master"
+                  placeholder="Senha / PIN"
                   value={claimPin}
                   onChange={(e) => setClaimPin(e.target.value)}
-                  className="bg-[#090e1a] border border-[#253550] rounded-lg px-3 py-2 text-white text-xs w-full focus:outline-none focus:border-amber-500"
+                  className="bg-[#16171B] border border-[#2A2D35] rounded-xl px-3 py-2.5 text-[#ECECEC] text-xs w-full focus:outline-none focus:border-[#C4B5FD]"
                 />
                 <button
                   type="submit"
                   disabled={!claimPin}
-                  className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs transition-colors shrink-0"
+                  className="bg-[#C4B5FD] hover:bg-[#B4A3FB] disabled:opacity-50 text-[#16171B] font-bold px-4 py-2 rounded-xl text-xs transition-colors shrink-0 cursor-pointer"
                 >
-                  Entrar como Dono
+                  Entrar
                 </button>
               </form>
             </div>
           ) : (
             <>
-              {/* Quick Actions Row */}
-              <div className="grid grid-cols-2 gap-3">
-                {/* Lock Room Toggle */}
-                <button
-                  onClick={onToggleLock}
-                  className={`p-3.5 rounded-xl border flex flex-col gap-1.5 text-left transition-all ${
-                    room.isLocked
-                      ? "bg-amber-950/40 border-amber-600/60 text-amber-200"
-                      : "bg-[#121a2d] border-[#253550] text-slate-300 hover:border-slate-600"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-xs flex items-center gap-1.5">
-                      {room.isLocked ? <Lock className="w-4 h-4 text-amber-400" /> : <Unlock className="w-4 h-4 text-emerald-400" />}
-                      Trancar Sala
-                    </span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${room.isLocked ? "bg-amber-500/20 text-amber-300" : "bg-slate-800 text-slate-400"}`}>
-                      {room.isLocked ? "TRANCADA" : "ABERTA"}
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-slate-400">
-                    {room.isLocked ? "Nenhum novo participante pode entrar sem sua senha." : "Qualquer pessoa com o link pode entrar."}
-                  </span>
-                </button>
-
-                {/* Mute All Button */}
-                <button
-                  onClick={onMuteAll}
-                  className="p-3.5 rounded-xl bg-[#121a2d] border border-[#253550] hover:border-rose-500/50 hover:bg-rose-950/20 text-left transition-all group flex flex-col gap-1.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-xs flex items-center gap-1.5 text-slate-200 group-hover:text-rose-300">
-                      <MicOff className="w-4 h-4 text-rose-400" />
-                      Silenciar Todos
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-slate-400">
-                    Muta o microfone de todos os convidados de uma vez só.
-                  </span>
-                </button>
+              {/* Ações rápidas */}
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  {
+                    key: "lock",
+                    label: room.isLocked ? "Trancada" : "Trancar",
+                    icon: room.isLocked ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />,
+                    active: room.isLocked,
+                    onClick: onToggleLock,
+                  },
+                  { key: "mute", label: "Mutar todos", icon: <MicOff className="w-5 h-5" />, active: false, onClick: onMuteAll },
+                  {
+                    key: "invite",
+                    label: copiedLink ? "Copiado!" : "Convidar",
+                    icon: copiedLink ? <Check className="w-5 h-5" /> : <UserPlus className="w-5 h-5" />,
+                    active: copiedLink,
+                    onClick: handleCopyLink,
+                  },
+                  {
+                    key: "door",
+                    label: "Portaria",
+                    icon: <DoorOpen className="w-5 h-5" />,
+                    active: room.settings.requireKnockApproval,
+                    badge: pendingKnocks.length,
+                    onClick: () => {
+                      if (onOpenAdmissionModal) {
+                        onClose();
+                        onOpenAdmissionModal();
+                      } else {
+                        onUpdateSettings({ requireKnockApproval: !room.settings.requireKnockApproval });
+                      }
+                    },
+                  },
+                ].map((a) => (
+                  <button
+                    key={a.key}
+                    onClick={a.onClick}
+                    className={`relative aspect-square rounded-2xl border flex flex-col items-center justify-center gap-1.5 text-[11px] font-semibold transition-all cursor-pointer active:scale-95 ${
+                      a.active
+                        ? "bg-[#C4B5FD]/20 border-[#C4B5FD]/60 text-[#ECECEC]"
+                        : "bg-[#1E2026] border-[#2A2D35] text-[#B5B8C0] hover:border-[#3A3E48] hover:text-[#ECECEC]"
+                    }`}
+                  >
+                    <span className={a.active ? "text-[#C4B5FD]" : ""}>{a.icon}</span>
+                    <span className="leading-tight text-center">{a.label}</span>
+                    {!!a.badge && a.badge > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 bg-[#F43F5E] text-white text-[10px] font-black min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center">
+                        {a.badge}
+                      </span>
+                    )}
+                  </button>
+                ))}
               </div>
 
-              {/* Portaria / Knock Approval Settings */}
-              <div className="bg-[#121a2d] border border-amber-500/30 rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-amber-400" />
-                    <div>
-                      <span className="font-semibold text-white text-xs block">
-                        Portaria: Exigir Permissão do Dono para Entrar
-                      </span>
-                      <span className="text-[11px] text-slate-400">
-                        {room.settings.requireKnockApproval
-                          ? "Convidados aguardam na sala de espera até você autorizar"
-                          : "Qualquer pessoa com o link entra imediatamente"}
-                      </span>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={room.settings.requireKnockApproval}
-                    onChange={(e) => onUpdateSettings({ requireKnockApproval: e.target.checked })}
-                    className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
-                  />
-                </div>
-
-                {pendingKnocks.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-[#1f2d47] space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
-                        <Users className="w-3.5 h-3.5" />
-                        Aguardando Sua Liberação ({pendingKnocks.length})
-                      </span>
-                      {onOpenAdmissionModal && (
+              {/* Portaria: pedidos pendentes */}
+              {pendingKnocks.length > 0 && (
+                <div className="space-y-2">
+                  <span className={sectionTitle}>
+                    Esperando para entrar
+                    <span className="text-[#8B8E98] font-semibold">{pendingKnocks.length}</span>
+                  </span>
+                  {pendingKnocks.map((knock) => (
+                    <div key={knock.socketId} className="flex items-center gap-3 bg-[#1E2026] border border-[#2A2D35] rounded-2xl p-2.5">
+                      <Avatar p={knock as any} size={32} />
+                      <span className="flex-1 font-bold text-[#ECECEC] text-xs truncate">{knock.name}</span>
+                      {onRejectKnock && (
                         <button
-                          type="button"
-                          onClick={() => {
-                            onClose();
-                            onOpenAdmissionModal();
-                          }}
-                          className="text-[10px] text-cyan-400 hover:underline cursor-pointer"
+                          onClick={() => onRejectKnock(knock.socketId)}
+                          className="px-2.5 py-1.5 rounded-lg border border-[#F43F5E]/50 text-[#FB7185] text-[11px] font-bold hover:bg-[#F43F5E]/10 cursor-pointer"
                         >
-                          Ver Portaria Completa →
+                          Recusar
                         </button>
                       )}
-                    </div>
-
-                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                      {pendingKnocks.map((knock) => (
-                        <div
-                          key={knock.socketId}
-                          className="flex items-center justify-between bg-[#0b101e] border border-[#1b253b] p-2 rounded-lg text-xs"
+                      {onApproveKnock && (
+                        <button
+                          onClick={() => onApproveKnock(knock.socketId)}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#5EEAD4] text-[#16171B] text-[11px] font-black hover:bg-[#2DD4BF] cursor-pointer"
                         >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div
-                              className="w-6 h-6 rounded-lg flex items-center justify-center font-bold text-[10px] text-white shrink-0 overflow-hidden"
-                              style={{ backgroundColor: knock.avatarColor || "#0284c7" }}
-                            >
-                              {knock.avatarUrl ? (
-                                <img src={knock.avatarUrl} alt={knock.name} className="w-full h-full object-cover" />
-                              ) : (
-                                <span>{knock.avatarEmoji || "🎮"}</span>
-                              )}
-                            </div>
-                            <span className="font-bold text-white text-xs truncate">
-                              {knock.name}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-1 shrink-0">
-                            {onRejectKnock && (
-                              <button
-                                onClick={() => onRejectKnock(knock.socketId)}
-                                className="bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-600/50 text-[10px] font-bold px-2 py-1 rounded transition-colors cursor-pointer"
-                              >
-                                Recusar
-                              </button>
-                            )}
-                            {onApproveKnock && (
-                              <button
-                                onClick={() => onApproveKnock(knock.socketId)}
-                                className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black px-2.5 py-1 rounded transition-colors cursor-pointer"
-                              >
-                                Permitir Entrada
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Room Permissions */}
-              <div className="bg-[#121a2d] border border-[#253550] rounded-xl p-4 space-y-3">
-                <span className="font-semibold text-white text-xs block">
-                  Permissões dos Convidados
-                </span>
-
-                <div className="flex items-center justify-between py-1.5 border-b border-[#1f2d47]">
-                  <div className="flex items-center gap-2">
-                    <Monitor className="w-4 h-4 text-cyan-400" />
-                    <div>
-                      <span className="font-medium text-slate-200 block">Compartilhar Tela</span>
-                      <span className="text-[10px] text-slate-400">Permitir transmissão de vídeo/janela</span>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={room.settings.allowScreenShare}
-                    onChange={(e) => onUpdateSettings({ allowScreenShare: e.target.checked })}
-                    className="w-4 h-4 accent-cyan-500 rounded cursor-pointer"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between py-1.5 border-b border-[#1f2d47]">
-                  <div className="flex items-center gap-2">
-                    <Video className="w-4 h-4 text-cyan-400" />
-                    <div>
-                      <span className="font-medium text-slate-200 block">Câmera de Vídeo</span>
-                      <span className="text-[10px] text-slate-400">Permitir webcam dos convidados</span>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={room.settings.allowVideo}
-                    onChange={(e) => onUpdateSettings({ allowVideo: e.target.checked })}
-                    className="w-4 h-4 accent-cyan-500 rounded cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              {/* Participant Moderation List */}
-              <div className="bg-[#121a2d] border border-[#253550] rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-white text-xs flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-cyan-400" />
-                    Gerenciar Participantes ({room.participants.length})
-                  </span>
-                </div>
-
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {room.participants.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center justify-between bg-[#0b101e] border border-[#1b253b] p-2.5 rounded-lg text-xs"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] text-white"
-                          style={{ backgroundColor: p.avatarColor }}
-                        >
-                          {p.name.slice(0, 2).toUpperCase()}
-                        </div>
-                        <span className="font-medium text-slate-200">
-                          {p.name} {p.id === self.id && "(Você)"}
-                        </span>
-                        {p.isHost && (
-                          <span className="text-[10px] text-amber-400 bg-amber-950/80 px-1 py-0.2 rounded border border-amber-800">
-                            Host
-                          </span>
-                        )}
-                      </div>
-
-                      {p.id !== self.id && (
-                        <div className="flex items-center gap-1">
-                          {onOpenGrantBadges && (
-                            <button
-                              onClick={() => onOpenGrantBadges(p)}
-                              className="p-1.5 rounded hover:bg-amber-500/20 text-slate-300 hover:text-amber-300 transition-colors"
-                              title="Gerenciar Insígnias do participante"
-                            >
-                              <Award className="w-3.5 h-3.5 text-amber-400" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => {
-                              setSelectedCoinTarget(p.id);
-                              setCoinFeedback(null);
-                            }}
-                            className={`p-1.5 rounded transition-colors ${
-                              selectedCoinTarget === p.id
-                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                                : "hover:bg-slate-800 text-slate-300 hover:text-amber-300"
-                            }`}
-                            title="Selecionar para enviar Koki Coins"
-                          >
-                            <Coins className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => onMuteUser(p.id)}
-                            className="p-1.5 rounded hover:bg-slate-800 text-slate-300 hover:text-amber-400 transition-colors"
-                            title="Silenciar participante"
-                          >
-                            <MicOff className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => onKickUser(p.id)}
-                            className="p-1.5 rounded hover:bg-rose-950/40 text-slate-300 hover:text-rose-400 transition-colors"
-                            title="Desconectar da sala"
-                          >
-                            <UserX className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                          Deixar entrar
+                        </button>
                       )}
                     </div>
                   ))}
                 </div>
+              )}
+
+              {/* Pessoas na sala */}
+              <div className="space-y-2.5">
+                <span className={sectionTitle}>
+                  Pessoas na sala
+                  <span className="text-[#8B8E98] font-semibold">{room.participants.length}</span>
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {room.participants.map((p) => {
+                    const micOn = p.hasAudio && !p.isMutedByHost;
+                    const isMe = p.id === self.id;
+                    return (
+                      <div key={p.id} className="bg-[#1E2026] border border-[#2A2D35] rounded-2xl p-3 flex flex-col gap-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="relative">
+                            <Avatar p={p} size={38} />
+                            <span
+                              className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center border-2 border-[#1E2026] ${
+                                micOn ? "bg-[#5EEAD4]" : "bg-[#3A3E48]"
+                              }`}
+                            >
+                              {micOn ? <Mic className="w-2 h-2 text-[#16171B]" /> : <MicOff className="w-2 h-2 text-[#B5B8C0]" />}
+                            </span>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-[#ECECEC] text-[13px] truncate flex items-center gap-1">
+                              {p.name}
+                              {p.isMaster && <Crown className="w-3 h-3 text-[#C4B5FD] shrink-0" />}
+                
+                            </div>
+                            <div className={`text-[11px] ${micOn ? "text-[#5EEAD4]" : "text-[#8B8E98]"}`}>
+                              {isMe ? "Você" : micOn ? "Mic ligado" : "Mutado"}
+                            </div>
+                          </div>
+                        </div>
+                        {!isMe && alvoLivre(p) && (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => (p.isMutedByHost && onUnmuteUser ? onUnmuteUser(p.id) : onMuteUser(p.id))}
+                              className={`flex-1 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer ${
+                                p.isMutedByHost
+                                  ? "border-[#5EEAD4]/50 text-[#5EEAD4] hover:bg-[#5EEAD4]/10"
+                                  : "border-[#2A2D35] text-[#ECECEC] hover:bg-[#252830]"
+                              }`}
+                            >
+                              {p.isMutedByHost ? "Desmutar" : "Mutar"}
+                            </button>
+                            <button
+                              onClick={() => (onPunirUser ? onPunirUser(p) : onKickUser(p.id))}
+                              className="flex-1 py-1.5 rounded-lg border border-[#F43F5E]/50 text-[#FB7185] text-[11px] font-semibold hover:bg-[#F43F5E]/10 cursor-pointer flex items-center justify-center gap-1"
+                              title="Expulsar da call, banir da sala ou do app"
+                            >
+                              <Gavel className="w-3 h-3" />
+                              Punir
+                            </button>
+                            {onOpenGrantBadges && (
+                              <button
+                                onClick={() => onOpenGrantBadges(p)}
+                                className="p-1.5 rounded-lg border border-[#2A2D35] text-[#C4B5FD] hover:bg-[#252830] cursor-pointer"
+                                title="Insígnias"
+                              >
+                                <Award className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* Send or Deduct Koki Coins (Master Moderation) */}
-              <div className={`border rounded-xl p-4 space-y-3 shadow-lg transition-all ${
-                coinMode === "deduct"
-                  ? "bg-gradient-to-br from-[#201017] to-[#0c0810] border-rose-500/40"
-                  : "bg-gradient-to-br from-[#131b2e] to-[#0c1322] border-amber-500/30"
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className={`p-1.5 rounded-lg border ${
-                      coinMode === "deduct"
-                        ? "bg-rose-500/20 text-rose-400 border-rose-500/40"
-                        : "bg-amber-500/20 text-amber-400 border-amber-500/40"
-                    }`}>
-                      <Coins className="w-4 h-4 fill-current" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-white text-xs block">
-                        Moderação de Koki Coins (Conceder ou Tirar)
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        {coinMode === "deduct"
-                          ? "Remova moedas do participante selecionado instantaneamente"
-                          : "Transfira moedas instantaneamente para qualquer membro da call"}
-                      </span>
-                    </div>
-                  </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
-                    coinMode === "deduct"
-                      ? "bg-rose-500/10 text-rose-300 border-rose-500/30"
-                      : "bg-amber-500/10 text-amber-300 border-amber-500/30"
-                  }`}>
-                    Host Master
+              {/* Offline nesta sala: punir/banir quem não está na call */}
+              {onPunirUser && offline.length > 0 && (
+                <div className="space-y-2">
+                  <span className={sectionTitle}>
+                    Offline nesta sala
+                    <span className="text-[#8B8E98] font-semibold">{offline.length}</span>
                   </span>
-                </div>
-
-                {/* Mode Selector Toggle: Adicionar vs Tirar Moedas */}
-                <div className="grid grid-cols-2 gap-1.5 bg-[#080d18] p-1 rounded-xl border border-[#1b263b]">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCoinMode("add");
-                      setCoinFeedback(null);
-                    }}
-                    className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                      coinMode === "add"
-                        ? "bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-md shadow-amber-950/40"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    <span>+ Conceder Moedas</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCoinMode("deduct");
-                      setCoinFeedback(null);
-                    }}
-                    className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                      coinMode === "deduct"
-                        ? "bg-gradient-to-r from-rose-600 to-rose-700 text-white shadow-md shadow-rose-950/40"
-                        : "text-slate-400 hover:text-rose-300"
-                    }`}
-                  >
-                    <span>- Tirar Moedas</span>
-                  </button>
-                </div>
-
-                <form onSubmit={handleManageCoins} className="space-y-3 pt-1">
-                  {/* Select Target Participant */}
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                      Participante Alvo:
-                    </label>
-                    <select
-                      value={selectedCoinTarget}
-                      onChange={(e) => {
-                        setSelectedCoinTarget(e.target.value);
-                        setCoinFeedback(null);
-                      }}
-                      className="w-full bg-[#080d1a] border border-[#22334f] text-slate-100 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-amber-400 transition-colors cursor-pointer"
-                    >
-                      {room.participants.length === 0 ? (
-                        <option value="">Nenhum participante na sala</option>
-                      ) : (
-                        room.participants.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} {p.id === self.id ? "(Você)" : ""} {p.isHost ? "👑" : ""} #{p.tag || "1024"} {p.kokiCoins !== undefined ? `(${p.kokiCoins} coins)` : ""}
-                          </option>
-                        ))
-                      )}
-                    </select>
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                    {offline.map((m) => {
+                      const p = offlineComoParticipante(m);
+                      const pode = podePunir ? podePunir(p) : alvoLivre(p) && !m.ehDono;
+                      return (
+                        <div key={m.chave} className="flex items-center gap-2.5 bg-[#1E2026] border border-[#2A2D35] rounded-2xl p-2">
+                          <Avatar p={p} size={30} />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-bold text-[#ECECEC] truncate">
+                              {m.nome} <span className="text-[#5C606A] font-normal">#{m.tag}</span>
+                            </div>
+                            <div className="text-[10px] text-[#8B8E98]">offline</div>
+                          </div>
+                          {pode && (
+                            <button
+                              onClick={() => onPunirUser(p)}
+                              className="px-2.5 py-1.5 rounded-lg border border-[#F43F5E]/50 text-[#FB7185] text-[11px] font-semibold hover:bg-[#F43F5E]/10 cursor-pointer flex items-center gap-1"
+                              title="Banir da sala ou do app"
+                            >
+                              <Gavel className="w-3 h-3" />
+                              Punir
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
+                </div>
+              )}
 
-                  {/* Coin Amount Input & Quick Preset Buttons */}
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                      {coinMode === "deduct" ? "Quantidade a Remover:" : "Quantidade a Conceder:"}
-                    </label>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1">
-                        <Coins className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${
-                          coinMode === "deduct" ? "text-rose-400" : "text-amber-400"
-                        }`} />
-                        <input
-                          type="number"
-                          min="1"
-                          max="1000000"
-                          value={coinAmount}
-                          onChange={(e) => setCoinAmount(e.target.value)}
-                          placeholder="Ex: 500"
-                          className={`w-full bg-[#080d1a] border text-xs rounded-xl pl-9 pr-3 py-2 focus:outline-none font-mono font-bold transition-colors ${
-                            coinMode === "deduct"
-                              ? "border-rose-500/40 text-rose-200 focus:border-rose-400"
-                              : "border-[#22334f] text-amber-300 focus:border-amber-400"
-                          }`}
-                        />
-                      </div>
-                      <button
-                        type="submit"
-                        disabled={isSendingCoins || !selectedCoinTarget || !coinAmount}
-                        className={`font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shrink-0 transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50 ${
-                          coinMode === "deduct"
-                            ? "bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white"
-                            : "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950"
-                        }`}
-                      >
-                        {isSendingCoins ? (
-                          <span>Processando...</span>
-                        ) : coinMode === "deduct" ? (
-                          <>
-                            <UserX className="w-3.5 h-3.5" />
-                            <span>Tirar Moedas</span>
-                          </>
-                        ) : (
-                          <>
-                            <Send className="w-3.5 h-3.5" />
-                            <span>Conceder Moedas</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    {/* Quick Preset Buttons */}
-                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                      <span className="text-[10px] text-slate-400 mr-1">Atalhos:</span>
-                      {["50", "100", "250", "500", "1000", "2500"].map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => setCoinAmount(preset)}
-                          className={`text-[10px] px-2 py-0.5 rounded-lg border transition-all cursor-pointer font-mono font-medium ${
-                            coinAmount === preset
-                              ? coinMode === "deduct"
-                                ? "bg-rose-600 text-white border-rose-400 font-bold shadow-sm"
-                                : "bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm"
-                              : "bg-[#090e1a] text-slate-300 border-[#22334f] hover:border-slate-500 hover:text-white"
-                          }`}
-                        >
-                          {coinMode === "deduct" ? `-${preset}` : `+${preset}`}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Feedback Status Alert */}
-                  {coinFeedback && (
-                    <div
-                      className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 animate-in fade-in duration-200 ${
-                        coinFeedback.type === "success"
-                          ? "bg-emerald-950/60 border-emerald-500/50 text-emerald-200"
-                          : "bg-rose-950/60 border-rose-500/50 text-rose-200"
+              {/* Eco Coins */}
+              <form onSubmit={handleManageCoins} className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className={sectionTitle}>Eco Coins</span>
+                  <div className="flex bg-[#1E2026] border border-[#2A2D35] rounded-full p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => { setCoinMode("add"); setCoinFeedback(null); }}
+                      className={`px-3 py-1 rounded-full text-[11px] font-bold cursor-pointer transition-colors ${
+                        coinMode === "add" ? "bg-[#5EEAD4] text-[#16171B]" : "text-[#8B8E98] hover:text-[#ECECEC]"
                       }`}
                     >
-                      {coinFeedback.type === "success" ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      ) : (
-                        <UserX className="w-4 h-4 text-rose-400 shrink-0" />
-                      )}
-                      <span className="font-medium text-[11px]">{coinFeedback.message}</span>
-                    </div>
-                  )}
-                </form>
-              </div>
-
-              {/* Quick Invite Link */}
-              <div className="flex items-center justify-between bg-[#080d1a] border border-[#1f2d47] p-3 rounded-xl">
-                <div className="truncate pr-2">
-                  <span className="text-[10px] text-slate-400 block">Link de Convite para Convidados</span>
-                  <span className="font-mono text-cyan-400 text-xs truncate block">
-                    {window.location.origin}/?room={room.roomId}&role=guest
-                  </span>
+                      Dar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setCoinMode("deduct"); setCoinFeedback(null); }}
+                      className={`px-3 py-1 rounded-full text-[11px] font-bold cursor-pointer transition-colors ${
+                        coinMode === "deduct" ? "bg-[#F43F5E] text-white" : "text-[#8B8E98] hover:text-[#ECECEC]"
+                      }`}
+                    >
+                      Tirar
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={handleCopyLink}
-                  className="bg-cyan-600 hover:bg-cyan-500 text-white px-3 py-1.5 rounded-lg font-medium text-xs flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
+                <select
+                  value={selectedCoinTarget}
+                  onChange={(e) => { setSelectedCoinTarget(e.target.value); setCoinFeedback(null); }}
+                  className="w-full bg-[#1E2026] border border-[#2A2D35] text-[#ECECEC] text-xs rounded-full px-4 py-2.5 focus:outline-none focus:border-[#C4B5FD] cursor-pointer"
                 >
-                  {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
-                  {copiedLink ? "Copiado!" : "Copiar"}
-                </button>
-              </div>
+                  {room.participants.length === 0 ? (
+                    <option value="">Ninguém na sala</option>
+                  ) : (
+                    room.participants.filter(alvoLivre).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}{p.id === self.id ? " (você)" : ""}{p.kokiCoins !== undefined ? ` · ${p.kokiCoins} coins` : ""}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Coins className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-[#8B8E98]" />
+                    <input
+                      type="number"
+                      min="1"
+                      max="1000000"
+                      value={coinAmount}
+                      onChange={(e) => setCoinAmount(e.target.value)}
+                      placeholder="Quantidade"
+                      className="w-full bg-[#1E2026] border border-[#2A2D35] text-[#ECECEC] text-sm rounded-full pl-10 pr-4 py-2.5 focus:outline-none focus:border-[#C4B5FD] font-semibold"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isSendingCoins || !selectedCoinTarget || !coinAmount}
+                    className={`px-5 rounded-full text-sm font-bold flex items-center gap-1.5 shrink-0 transition-all active:scale-95 cursor-pointer disabled:opacity-50 ${
+                      coinMode === "deduct" ? "bg-[#F43F5E] hover:bg-[#E11D48] text-white" : "bg-[#5EEAD4] hover:bg-[#2DD4BF] text-[#16171B]"
+                    }`}
+                  >
+                    {isSendingCoins ? "..." : coinMode === "deduct" ? "Tirar" : (<><span>Enviar</span><Send className="w-3.5 h-3.5" /></>)}
+                  </button>
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {["50", "100", "250", "500", "1000"].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setCoinAmount(preset)}
+                      className={`text-[11px] px-2.5 py-1 rounded-full border font-semibold cursor-pointer transition-colors ${
+                        coinAmount === preset
+                          ? "bg-[#C4B5FD]/20 border-[#C4B5FD]/60 text-[#ECECEC]"
+                          : "bg-transparent border-[#2A2D35] text-[#8B8E98] hover:text-[#ECECEC]"
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                {coinFeedback && (
+                  <div
+                    className={`p-2.5 rounded-xl text-[11px] font-medium flex items-center gap-2 ${
+                      coinFeedback.type === "success" ? "bg-[#5EEAD4]/10 text-[#5EEAD4]" : "bg-[#F43F5E]/10 text-[#FB7185]"
+                    }`}
+                  >
+                    {coinFeedback.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <UserX className="w-4 h-4 shrink-0" />}
+                    <span>{coinFeedback.message}</span>
+                  </div>
+                )}
+              </form>
 
-              {/* Danger Zone: End Call for Everyone (Host Only) */}
+              {/* Suspensos e banidos (Dono Master e Co-fundador) */}
+              {socket && <BanidosPainel socket={socket} masterToken={masterToken} />}
+
+              {/* Configurações */}
+              {!ehCof && <div className="space-y-2.5">
+                <span className={sectionTitle}>Configurações</span>
+                <div className="bg-[#1E2026] border border-[#2A2D35] rounded-2xl divide-y divide-[#2A2D35]">
+                  {[
+                    {
+                      icon: <ShieldCheck className="w-4 h-4 text-[#C4B5FD]" />,
+                      title: "Portaria",
+                      desc: "Quem chega espera você liberar",
+                      checked: room.settings.requireKnockApproval,
+                      onChange: (v: boolean) => onUpdateSettings({ requireKnockApproval: v }),
+                    },
+                    {
+                      icon: <Monitor className="w-4 h-4 text-[#5EEAD4]" />,
+                      title: "Compartilhar tela",
+                      desc: "Convidados podem mostrar a tela",
+                      checked: room.settings.allowScreenShare,
+                      onChange: (v: boolean) => onUpdateSettings({ allowScreenShare: v }),
+                    },
+                    {
+                      icon: <Video className="w-4 h-4 text-[#5EEAD4]" />,
+                      title: "Câmera",
+                      desc: "Convidados podem ligar a webcam",
+                      checked: room.settings.allowVideo,
+                      onChange: (v: boolean) => onUpdateSettings({ allowVideo: v }),
+                    },
+                  ].map((row) => (
+                    <div key={row.title} className="flex items-center gap-3 px-4 py-3">
+                      {row.icon}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-semibold text-[#ECECEC]">{row.title}</div>
+                        <div className="text-[11px] text-[#8B8E98]">{row.desc}</div>
+                      </div>
+                      <Toggle checked={row.checked} onChange={row.onChange} />
+                    </div>
+                  ))}
+                </div>
+              </div>}
+
+              {/* Avisar todo mundo que vai sair atualização (só Dono Master; o servidor confere) */}
+              {isMaster && socket && (
+                <div className="rounded-2xl bg-[#1E2026] border border-[#2A2D35] px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <Megaphone className="w-4 h-4 text-[#C4B5FD] shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-semibold text-[#ECECEC]">Avisar atualização</div>
+                      <div className="text-[11px] text-[#8B8E98]">Manda pra todo mundo conectado: "O Eco vai atualizar em instantes…"</div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={avisoAtualizacao === "enviando"}
+                      onClick={() => {
+                        if (!window.confirm("Avisar todo mundo conectado que o Eco vai atualizar?")) return;
+                        setAvisoAtualizacao("enviando");
+                        socket.emit("master:avisar-atualizacao", { masterToken: masterToken || undefined }, (r: any) => {
+                          setAvisoAtualizacao(r?.success ? `Aviso enviado (${r.conectados ?? "?"} conectados)` : r?.message || "Não deu pra avisar.");
+                          window.setTimeout(() => setAvisoAtualizacao(null), 5000);
+                        });
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-[#C4B5FD]/20 hover:bg-[#C4B5FD]/30 text-[#C4B5FD] border border-[#C4B5FD]/40 text-xs font-bold cursor-pointer disabled:opacity-60 shrink-0"
+                    >
+                      {avisoAtualizacao === "enviando" ? "Enviando…" : "Avisar"}
+                    </button>
+                  </div>
+                  {avisoAtualizacao && avisoAtualizacao !== "enviando" && <p className="text-[11px] text-[#5EEAD4] mt-2">{avisoAtualizacao}</p>}
+                </div>
+              )}
+
+              {/* Encerrar sala */}
               {onCloseRoomForAll && (
-                <div className="pt-3 border-t border-rose-950/60 space-y-2">
+                <div>
                   {!confirmCloseRoom ? (
                     <button
                       type="button"
                       onClick={() => setConfirmCloseRoom(true)}
-                      className="w-full bg-rose-950/40 hover:bg-rose-900/60 border border-rose-600/50 text-rose-300 py-2.5 px-3 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                      className="w-full py-3 rounded-2xl border border-[#F43F5E]/40 text-[#FB7185] text-xs font-bold hover:bg-[#F43F5E]/10 transition-colors cursor-pointer"
                     >
-                      <UserX className="w-4 h-4 text-rose-400" />
-                      <span>Encerrar Sala para Todos os Participantes</span>
+                      Encerrar sala para todos
                     </button>
                   ) : (
-                    <div className="bg-rose-950/80 border border-rose-500 rounded-xl p-3 space-y-2 text-center">
-                      <p className="text-xs font-bold text-rose-200">
-                        Tem certeza que deseja encerrar a sala e desconectar todos?
-                      </p>
+                    <div className="bg-[#F43F5E]/10 border border-[#F43F5E]/50 rounded-2xl p-3 space-y-2 text-center">
+                      <p className="text-xs font-bold text-[#FECDD3]">Encerrar a sala e desconectar todo mundo?</p>
                       <div className="flex gap-2">
                         <button
                           type="button"
                           onClick={() => setConfirmCloseRoom(false)}
-                          className="w-1/2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs py-1.5 rounded-lg transition-colors cursor-pointer"
+                          className="flex-1 bg-[#2A2D35] hover:bg-[#383C47] text-[#ECECEC] text-xs py-2 rounded-xl cursor-pointer"
                         >
                           Cancelar
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            onClose();
-                            onCloseRoomForAll();
-                          }}
-                          className="w-1/2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs py-1.5 rounded-lg transition-colors cursor-pointer"
+                          onClick={() => { onClose(); onCloseRoomForAll(); }}
+                          className="flex-1 bg-[#F43F5E] hover:bg-[#E11D48] text-white font-bold text-xs py-2 rounded-xl cursor-pointer"
                         >
-                          Sim, Encerrar
+                          Sim, encerrar
                         </button>
                       </div>
                     </div>
@@ -712,9 +728,9 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
                 </div>
               )}
             </>
-          )}
+          ))}
         </div>
-      </div>
+      </aside>
     </div>
   );
 };

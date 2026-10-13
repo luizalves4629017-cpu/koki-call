@@ -69,11 +69,22 @@ export function getDisplayMediaConstraints(presetId: ScreenSharePresetId = DEFAU
       frameRate: { ideal: preset.frameRate, max: preset.frameRate },
     } as any,
     audio: {
-      echoCancellation: false,
+      // Cancelamento de eco LIGADO no áudio da tela: o Chrome usa o som que está tocando na call
+      // como referência e tira ele do áudio capturado (sua voz não volta pra você dentro da tela).
+      echoCancellation: true,
       noiseSuppression: false,
       autoGainControl: false,
-    },
-  };
+      // Quem compartilha continua ouvindo o próprio PC normalmente
+      suppressLocalAudioPlayback: false,
+      // Chrome 141+: não captura o som que sai desta própria aba/app (o áudio da call)
+      restrictOwnAudio: true,
+    } as any,
+    // Chrome: no compartilhamento da tela inteira, o áudio do sistema vem desmarcado por padrão
+    systemAudio: "include",
+    windowAudio: "system",
+    // Não oferece a própria aba do Eco na lista (evita espelho infinito e o áudio da call)
+    selfBrowserSurface: "exclude",
+  } as any;
 }
 
 /**

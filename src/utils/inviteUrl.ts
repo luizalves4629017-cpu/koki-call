@@ -13,7 +13,7 @@ export function isLocalhost(): boolean {
 
 export function getCustomPublicBaseUrl(): string {
   if (typeof window === "undefined") return "";
-  const saved = localStorage.getItem("koki_public_app_url");
+  const saved = localStorage.getItem("eco_public_app_url") || localStorage.getItem("koki_public_app_url");
   if (saved && saved.trim().startsWith("http")) {
     return saved.trim().replace(/\/+$/, "");
   }
@@ -31,24 +31,25 @@ export function getCustomPublicBaseUrl(): string {
 export function setCustomPublicBaseUrl(url: string): void {
   if (typeof window === "undefined") return;
   if (!url || url.trim().length === 0) {
+    localStorage.removeItem("eco_public_app_url");
     localStorage.removeItem("koki_public_app_url");
   } else {
     let clean = url.trim();
     if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
       clean = `https://${clean}`;
     }
-    localStorage.setItem("koki_public_app_url", clean.replace(/\/+$/, ""));
+    localStorage.setItem("eco_public_app_url", clean.replace(/\/+$/, ""));
   }
 }
 
 export function getEffectiveInviteUrl(roomId: string, role?: string): string {
   const base = getCustomPublicBaseUrl();
-  const cleanId = (roomId || "main-lounge").trim();
-  return `${base}/?room=${encodeURIComponent(cleanId)}`;
+  const cleanId = (roomId || "").trim();
+  return cleanId ? `${base}/?room=${encodeURIComponent(cleanId)}` : base;
 }
 
 export function generateInviteMessage(roomId: string, roomName?: string): string {
   const url = getEffectiveInviteUrl(roomId);
   const title = roomName ? `para a sala "${roomName}"` : "para a chamada";
-  return `🎧 Convite ${title} no Koki Call!\n\n🔗 Link direto da sala:\n${url}\n\n🔑 Código da sala: ${roomId}\n\n✨ (Abre direto no navegador do celular ou PC - sem precisar de cadastro ou downloads!)`;
+  return `🎧 Convite ${title} no eco!\n\n🔗 Link direto da sala:\n${url}\n\n🔑 Código da sala: ${roomId}\n\n✨ (Abre direto no navegador do celular ou PC - sem precisar de cadastro ou downloads!)`;
 }

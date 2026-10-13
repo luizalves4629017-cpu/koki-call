@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Monitor,
-  Maximize2,
-  Minimize2,
   Volume2,
   VolumeX,
   Expand,
   Shrink,
+  Square,
 } from "lucide-react";
 import { Participant } from "../types";
 
@@ -18,20 +17,23 @@ interface ScreenShareTileProps {
   userVolume?: number;
   masterVoiceVolume?: number;
   currentVoiceChannelId?: string;
+  isDarkTheme?: boolean;
   onToggleSpotlight?: () => void;
   onVolumeChange?: (userId: string, volume: number) => void;
+  onStopScreenShare?: () => void;
 }
 
 export const ScreenShareTile: React.FC<ScreenShareTileProps> = ({
   participant,
   isSelf,
   screenStream,
-  isSpotlight = false,
+  isSpotlight = true,
   userVolume = 100,
   masterVoiceVolume = 100,
   currentVoiceChannelId = "voice-geral",
   onToggleSpotlight,
   onVolumeChange,
+  onStopScreenShare,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -40,8 +42,8 @@ export const ScreenShareTile: React.FC<ScreenShareTileProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [localVolume, setLocalVolume] = useState<number>(userVolume);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+  const [hasActiveVideo, setHasActiveVideo] = useState(false);
 
-  // VIP & Voice Channel Audio/Video Isolation
   const isSameVoiceChannel =
     (participant.voiceChannelId || "voice-geral") ===
     (currentVoiceChannelId || "voice-geral");
@@ -51,19 +53,70 @@ export const ScreenShareTile: React.FC<ScreenShareTileProps> = ({
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    if (screenStream) {
+    if (screenStream && screenStream.getVideoTracks().length > 0) {
+      const videoTracks = screenStream.getVideoTracks();
+      const firstTrack = videoTracks[0];
+
       if (videoEl.srcObject !== screenStream) {
         videoEl.srcObject = screenStream;
+        console.log("[tela] srcObject atribuído ao elemento de vídeo, track id:", firstTrack.id);
       }
-      videoEl.play().catch((err) => {
-        console.warn("Screen video autoplay error:", err);
+
+      const checkTrackActive = () => {
+        const live = videoTracks.some((t) => !t.muted && t.readyState === "live");
+        setHasActiveVideo(live);
+      };
+
+      checkTrackActive();
+
+      // Listen for unmuting or mute state transitions
+      videoTracks.forEach((track) => {
+        track.onunmute = () => {
+          console.log("[tela] track.onunmute recebido para trilha:", track.id);
+          checkTrackActive();
+          videoEl.play().then(() => {
+            console.log("[tela] play executado com sucesso no onunmute");
+          }).catch((err) => {
+            console.warn("[tela] erro ao executar play no onunmute:", err);
+          });
+        };
+
+        track.onmute = () => {
+          console.log("[tela] track.onmute para trilha:", track.id);
+          checkTrackActive();
+        };
+
+        track.onended = () => {
+          console.log("[tela] track.onended para trilha:", track.id);
+          checkTrackActive();
+        };
       });
+
+      // Always call play() on the video element
+      videoEl
+        .play()
+        .then(() => {
+          console.log("[tela] play executado com sucesso");
+          checkTrackActive();
+        })
+        .catch((err) => {
+          console.warn("[tela] erro ao executar play:", err);
+        });
+
+      return () => {
+        videoTracks.forEach((track) => {
+          track.onunmute = null;
+          track.onmute = null;
+          track.onended = null;
+        });
+      };
     } else {
       videoEl.srcObject = null;
+      setHasActiveVideo(false);
     }
   }, [screenStream]);
 
-  // Bind screen audio stream to audio element (for desktop / system / tab audio sharing)
+  // Bind screen audio stream to audio element
   useEffect(() => {
     const audioEl = audioRef.current;
     if (!audioEl || isSelf || !screenStream) return;
@@ -99,7 +152,6 @@ export const ScreenShareTile: React.FC<ScreenShareTileProps> = ({
     isSameVoiceChannel,
   ]);
 
-  // Toggle true DOM fullscreen for the screen share
   const handleToggleFullscreen = async () => {
     if (!containerRef.current) return;
 
@@ -109,7 +161,6 @@ export const ScreenShareTile: React.FC<ScreenShareTileProps> = ({
         setIsFullscreen(true);
       } else {
         await document.exitFullscreen();
-        setIsFullscreen(false);
       }
     } catch (err) {
       console.warn("Fullscreen toggle error:", err);
@@ -126,80 +177,94 @@ export const ScreenShareTile: React.FC<ScreenShareTileProps> = ({
     };
   }, []);
 
-  const hasAudioTrack =
-    Boolean(screenStream && screenStream.getAudioTracks().length > 0);
+  const hasAudioTrack = Boolean(screenStream && screenStream.getAudioTracks().length > 0);
 
   return (
     <div
       ref={containerRef}
-      className={`relative group rounded-2xl overflow-hidden bg-slate-950 border border-purple-500/40 shadow-lg shadow-purple-950/20 transition-all flex items-center justify-center ${
-        isSpotlight
-          ? "w-full h-full min-h-[400px]"
-          : "w-full aspect-video min-h-[160px]"
-      }`}
+      className="relative group w-full h-full min-h-[380px] rounded-2xl overflow-hidden border border-[#2A2D35] bg-[#0E0F12] shadow-2xl flex items-center justify-center select-none"
     >
-      {/* Remote screen share system/game audio */}
+      {/* Remote screen share audio */}
       {!isSelf && <audio ref={audioRef} autoPlay playsInline />}
 
-      {/* Screen video element */}
-      {screenStream ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted={isSelf}
-          className="w-full h-full object-contain bg-black"
-        />
-      ) : (
-        <div className="flex flex-col items-center justify-center gap-3 text-slate-400 p-6">
-          <Monitor className="w-12 h-12 text-purple-400 animate-pulse" />
-          <p className="text-sm font-medium text-slate-300">
-            Conectando transmissão de tela de {participant.name}...
+      {/* Screen video element: autoplay, playsInline, always muted (audio is handled in separate audio element) */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className={`w-full h-full object-contain bg-[#0E0F12] transition-opacity duration-300 ${
+          hasActiveVideo ? "opacity-100" : "opacity-0"
+        }`}
+      />
+
+      {/* Connecting overlay if video track is still pending or negotiating */}
+      {!hasActiveVideo && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0E0F12] text-[#8B8F98] p-6 z-10 pointer-events-none">
+          <Monitor className="w-12 h-12 text-[#5EEAD4] animate-pulse" />
+          <p className="text-sm font-medium text-[#ECECEC]">
+            Conectando à tela de {participant.name}...
           </p>
         </div>
       )}
 
-      {/* Top Left Status Badge */}
-      <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
-        <div className="bg-purple-950/80 backdrop-blur-md border border-purple-500/40 text-purple-200 text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 font-semibold shadow-md">
-          <Monitor className="w-4 h-4 text-purple-400 animate-pulse" />
-          <span>
-            Transmissão de Tela • {participant.name} {isSelf && "(Você)"}
-          </span>
-        </div>
+      {/* Top Left Badge: Você está compartilhando com botão Parar (se isSelf) ou Tela de [Nome] */}
+      <div className="absolute top-3 left-3 flex items-center gap-2 z-20">
+        {isSelf ? (
+          <div className="bg-[#1E2026]/90 backdrop-blur-md border border-[#5EEAD4]/40 text-[#5EEAD4] text-xs px-3 py-1.5 rounded-full flex items-center gap-2 font-semibold shadow-lg">
+            <Monitor className="w-3.5 h-3.5 animate-pulse text-[#5EEAD4]" />
+            <span>Você está compartilhando</span>
+            {onStopScreenShare && (
+              <button
+                onClick={onStopScreenShare}
+                className="ml-1 px-2 py-0.5 rounded-full bg-[#F43F5E] hover:bg-[#E11D48] text-white text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                title="Parar de compartilhar agora"
+              >
+                <Square className="w-2.5 h-2.5 fill-current" />
+                <span>Parar</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="bg-[#1E2026]/90 backdrop-blur-md border border-[#2A2D35] text-[#ECECEC] text-xs px-3 py-1.5 rounded-full flex items-center gap-2 font-semibold shadow-lg">
+            <Monitor className="w-3.5 h-3.5 text-[#5EEAD4] animate-pulse" />
+            <span>Tela de {participant.name}</span>
+          </div>
+        )}
+
         {hasAudioTrack && !isSelf && (
           <div
-            className="bg-emerald-950/80 backdrop-blur-md border border-emerald-500/40 text-emerald-300 text-[11px] px-2 py-1 rounded-md flex items-center gap-1 font-medium shadow-sm"
-            title="Áudio da tela ativo"
+            className="bg-[#1E2026]/90 backdrop-blur-md border border-emerald-500/40 text-emerald-300 text-[11px] px-2.5 py-1 rounded-full flex items-center gap-1 font-medium shadow-sm"
+            title="Áudio compartilhado ativo"
           >
             <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Áudio Compartilhado</span>
+            <span>Áudio da Tela</span>
           </div>
         )}
       </div>
 
-      {/* Top Right Quick Controls */}
-      <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 p-1 rounded-xl backdrop-blur-sm border border-slate-700/50">
-        {/* Screen audio volume slider if screen has audio */}
+      {/* Top Right Quick Controls: Volume e Tela Cheia */}
+      <div className="absolute top-3 right-3 flex items-center gap-1.5 z-20 bg-[#1E2026]/80 p-1.5 rounded-full backdrop-blur-sm border border-[#2A2D35] opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Screen audio volume slider */}
         {hasAudioTrack && !isSelf && (
           <div className="relative">
             <button
               onClick={() => setShowVolumeSlider(!showVolumeSlider)}
-              className="p-1.5 rounded-lg bg-black/60 hover:bg-black/90 text-slate-300 hover:text-white border border-slate-700/50 transition-all cursor-pointer"
+              className="p-1.5 rounded-full hover:bg-[#2A2D35] text-[#8B8F98] hover:text-[#ECECEC] transition-all cursor-pointer"
               title="Ajustar volume da transmissão"
             >
               {localVolume === 0 ? (
-                <VolumeX className="w-4 h-4 text-rose-400" />
+                <VolumeX className="w-4 h-4 text-[#F43F5E]" />
               ) : (
-                <Volume2 className="w-4 h-4 text-purple-300" />
+                <Volume2 className="w-4 h-4 text-[#5EEAD4]" />
               )}
             </button>
 
             {showVolumeSlider && (
-              <div className="absolute right-0 mt-1 p-2.5 bg-[#090e1a] border border-[#1e293b] rounded-lg shadow-xl z-20 w-36 flex flex-col gap-1">
-                <div className="flex justify-between text-[10px] text-slate-400">
+              <div className="absolute right-0 mt-2 p-3 bg-[#1E2026] border border-[#2A2D35] rounded-2xl shadow-xl z-30 w-40 flex flex-col gap-1.5">
+                <div className="flex justify-between text-[10px] text-[#8B8F98]">
                   <span>Volume da Tela</span>
-                  <span>{localVolume}%</span>
+                  <span className="font-mono text-[#5EEAD4]">{localVolume}%</span>
                 </div>
                 <input
                   type="range"
@@ -211,43 +276,20 @@ export const ScreenShareTile: React.FC<ScreenShareTileProps> = ({
                     setLocalVolume(v);
                     onVolumeChange?.(participant.id, v);
                   }}
-                  className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-400"
+                  className="w-full accent-[#5EEAD4] cursor-pointer"
                 />
               </div>
             )}
           </div>
         )}
 
-        {/* Spotlight toggle */}
-        {onToggleSpotlight && (
-          <button
-            onClick={onToggleSpotlight}
-            className="p-1.5 rounded-lg bg-black/60 hover:bg-black/90 text-slate-300 hover:text-white border border-slate-700/50 transition-all cursor-pointer"
-            title={
-              isSpotlight ? "Sair do destaque" : "Destacar tela principal"
-            }
-          >
-            {isSpotlight ? (
-              <Minimize2 className="w-4 h-4" />
-            ) : (
-              <Maximize2 className="w-4 h-4" />
-            )}
-          </button>
-        )}
-
-        {/* True Fullscreen Toggle */}
+        {/* Botão de Tela Cheia */}
         <button
           onClick={handleToggleFullscreen}
-          className="p-1.5 rounded-lg bg-black/60 hover:bg-black/90 text-slate-300 hover:text-white border border-slate-700/50 transition-all cursor-pointer"
-          title={
-            isFullscreen ? "Sair de tela cheia" : "Tela cheia da transmissão"
-          }
+          className="p-1.5 rounded-full hover:bg-[#2A2D35] text-[#8B8F98] hover:text-[#ECECEC] transition-all cursor-pointer"
+          title={isFullscreen ? "Sair de tela cheia" : "Tela cheia da transmissão"}
         >
-          {isFullscreen ? (
-            <Shrink className="w-4 h-4" />
-          ) : (
-            <Expand className="w-4 h-4" />
-          )}
+          {isFullscreen ? <Shrink className="w-4 h-4" /> : <Expand className="w-4 h-4" />}
         </button>
       </div>
     </div>

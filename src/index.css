@@ -1,51 +1,149 @@
 @import "tailwindcss";
 
 @layer base {
+  :root {
+    --bg-main: #16171B;
+    --panel-bg: #1E2026;
+    --border-color: #2A2D35;
+    --text-primary: #ECECEC;
+    --text-secondary: #8B8F98;
+    --accent-teal: #5EEAD4;
+    --accent-lavender: #C4B5FD;
+    --accent-rose: #F43F5E;
+  }
+
   body {
-    background-color: #070b14;
-    color: #e2e8f0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: #16171B;
+    color: #ECECEC;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     user-select: none;
     overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.011em;
+  }
+
+  body.theme-light {
+    background-color: #F4F5F7;
+    color: #1E2026;
   }
 }
 
-/* Custom scrollbar for dark navy theme */
+/* Custom modern scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b1120;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: #2A2D35;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #3B3F4A;
 }
 
-@keyframes speaking-pulse {
+/* Speaking pulse with eco vibrant teal #5EEAD4 */
+@keyframes speaking-pulse-teal {
   0% {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+    box-shadow: 0 0 0 0 rgba(94, 234, 212, 0.7);
   }
   70% {
-    box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+    box-shadow: 0 0 0 6px rgba(94, 234, 212, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    box-shadow: 0 0 0 0 rgba(94, 234, 212, 0);
   }
 }
 
-.animate-speaking {
-  animation: speaking-pulse 1.4s infinite cubic-bezier(0.4, 0, 0.6, 1);
+.animate-speaking-teal {
+  animation: speaking-pulse-teal 1.5s infinite cubic-bezier(0.4, 0, 0.6, 1);
 }
 
-.golden-neon-glow {
-  border-color: #FFD700;
-  box-shadow: 0 0 5px #FFD700, 0 0 10px #FFD700, 0 0 20px #FFD700, 0 0 30px #B8860B, 0 0 40px #B8860B;
+/* Gentle lavender glow for Owner / VIP items */
+.lavender-glow {
+  box-shadow: 0 0 16px -2px rgba(196, 181, 253, 0.25);
 }
+
+/* Gentle teal glow for primary action buttons */
+.teal-glow {
+  box-shadow: 0 0 20px -3px rgba(94, 234, 212, 0.3);
+}
+
+
+/* Aura do criador (perfil do Dono Master) */
+@keyframes eco-aura-girar {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+.eco-aura-girar { animation: eco-aura-girar 7s linear infinite; }
+.eco-aura-girar-rev { animation: eco-aura-girar 14s linear infinite reverse; }
+@keyframes eco-aura-particula {
+  0% { opacity: 0; transform: scale(0.4) translate(0, 0); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1) translate(var(--dx, 0px), -14px); }
+}
+.eco-aura-particula { animation: eco-aura-particula 3.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .eco-aura-girar, .eco-aura-girar-rev, .eco-aura-particula { animation: none; }
+}
+/* Aura do card da loja: só um brilho que pulsa devagar (sem giro, sem partículas) */
+@keyframes eco-aura-loja {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+.eco-aura-loja { animation: eco-aura-loja 4.5s ease-in-out infinite; }
+/* Aviso de atualização entrando por cima */
+@keyframes eco-aviso-descer { from { transform: translate(-50%, -16px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+.eco-aviso-descer { animation: eco-aviso-descer 0.35s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .eco-aura-loja, .eco-aviso-descer { animation: none; }
+}
+
+/* Fechar card de perfil: desliza pro lado dissolvendo em névoa cinza/branca */
+@keyframes eco-card-sair {
+  0%   { transform: translateX(0) scale(1); opacity: 1; filter: blur(0); }
+  100% { transform: translateX(140px) scale(0.94) rotate(2deg); opacity: 0; filter: blur(10px) grayscale(0.6); }
+}
+.eco-card-sair { animation: eco-card-sair 0.5s cubic-bezier(.5,0,.75,0) forwards; }
+@keyframes eco-fundo-sumir { to { opacity: 0; } }
+.eco-fundo-sumir { animation: eco-fundo-sumir 0.5s ease-in forwards; }
+@keyframes eco-nevoa-puff {
+  0%   { transform: translateX(0) scale(0.4); opacity: 0; }
+  30%  { opacity: 0.75; }
+  100% { transform: translateX(-90px) scale(1.8); opacity: 0; }
+}
+.eco-nevoa-puff {
+  position: absolute; width: 60%; aspect-ratio: 1; border-radius: 9999px;
+  background: radial-gradient(circle, rgba(170,170,180,0.55) 0%, rgba(120,120,130,0.25) 45%, transparent 70%);
+  filter: blur(18px); opacity: 0;
+  animation: eco-nevoa-puff 0.55s ease-out forwards;
+}
+.eco-nevoa-clara { background: radial-gradient(circle, rgba(255,255,255,0.6) 0%, rgba(220,220,230,0.2) 45%, transparent 70%); }
+@media (prefers-reduced-motion: reduce) {
+  .eco-card-sair, .eco-nevoa-puff { animation-duration: 0.01s; }
+}
+
+/* Painéis laterais (chat e membros): entram e saem deslizando pro lado, com névoa */
+@keyframes eco-painel-sair {
+  0%   { transform: translateX(0); opacity: 1; filter: blur(0); }
+  100% { transform: translateX(110%); opacity: 0; filter: blur(8px) grayscale(0.7); }
+}
+.eco-painel-sair { animation: eco-painel-sair 0.46s cubic-bezier(.5,0,.75,0) forwards; }
+@keyframes eco-painel-entrar {
+  0%   { transform: translateX(40px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+.eco-painel-entrar { animation: eco-painel-entrar 0.28s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .eco-painel-sair, .eco-painel-entrar { animation-duration: 0.01s; }
+}
+
+/* Sliders do editor de aura (faixa colorida + bolinha branca) */
+.eco-range { -webkit-appearance: none; appearance: none; height: 8px; border-radius: 9999px; outline: none; cursor: pointer; }
+.eco-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 9999px; background: #fff; border: 2px solid #16171B; box-shadow: 0 0 0 1px rgba(255,255,255,0.4); }
+.eco-range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 9999px; background: #fff; border: 2px solid #16171B; }

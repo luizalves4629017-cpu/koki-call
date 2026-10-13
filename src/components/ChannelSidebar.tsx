@@ -1,12 +1,10 @@
 import React, { useState } from "react";
+import { tagVisivel } from "../utils/tagExibida";
 import {
   Hash,
   Volume2,
   ChevronDown,
   ChevronRight,
-  Crown,
-  Sparkles,
-  ShieldCheck,
   Megaphone,
   Radio,
   Lock,
@@ -14,12 +12,13 @@ import {
   MicOff,
   Headphones,
   Settings,
-  Coins,
-  Signal,
+  GripVertical,
+  ArrowRightLeft,
   Share2,
+  ChevronLeft,
 } from "lucide-react";
 import { Participant, TextChannel } from "../types";
-import { getKokiCoins, formatCoinDisplay } from "../utils/storage";
+import { BlackHoleBadge } from "./BlackHoleBadge";
 
 export interface VoiceChannel {
   id: string;
@@ -31,6 +30,7 @@ export interface VoiceChannel {
 interface ChannelSidebarProps {
   roomName: string;
   roomId: string;
+  isLocked?: boolean;
   textChannels: TextChannel[];
   voiceChannels: VoiceChannel[];
   activeTextChannelId: string;
@@ -51,11 +51,17 @@ interface ChannelSidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
   isMaster?: boolean;
+  isDarkTheme?: boolean;
+  onMoveMember?: (targetSocketId: string, targetChannelId: string) => void;
+  /** barra recolhida pro lado (só ícones e fotos) */
+  recolhida?: boolean;
+  onAlternarRecolhida?: () => void;
 }
 
 export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   roomName,
   roomId,
+  isLocked = false,
   textChannels,
   voiceChannels,
   activeTextChannelId,
@@ -66,148 +72,254 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   participants,
   isAudioMuted,
   isDeafened,
-  pingMs = 28,
   onToggleMic,
   onToggleDeafen,
   onOpenSettings,
   onOpenSelfProfile,
-  onOpenStore,
   onOpenInvite,
   isOpen = true,
-  onClose,
   isMaster = false,
+  onMoveMember,
+  recolhida = false,
+  onAlternarRecolhida,
 }) => {
   const [textCollapsed, setTextCollapsed] = useState(false);
   const [voiceCollapsed, setVoiceCollapsed] = useState(false);
   const [lockWarning, setLockWarning] = useState<string | null>(null);
+  const [dragOverChannelId, setDragOverChannelId] = useState<string | null>(null);
+  const [moveMenuMemberId, setMoveMenuMemberId] = useState<string | null>(null);
 
   const isSpeaking = !isAudioMuted && (self.audioLevel || 0) > 15;
-  const coins = typeof self.kokiCoins === "number" ? self.kokiCoins : getKokiCoins();
+  const isSelfMaster = Boolean(isMaster || self.isMaster || self.tag === "0001");
 
   const handleVoiceChannelClick = (channel: VoiceChannel) => {
-    if (channel.isVip && !isMaster && self.voiceChannelId !== "voice-vip") {
-      setLockWarning("Canal restrito ao Dono Master");
+    if (channel.isVip && !isSelfMaster && !self.vipPermissions?.hasVipBadge && self.voiceChannelId !== "voice-vip") {
+      setLockWarning("Canal VIP restrito ao Dono e VIPs");
       setTimeout(() => setLockWarning(null), 3500);
       return;
     }
     onSelectVoiceChannel(channel.id);
   };
 
-  // Filter default 2 text channels and 2 voice channels if not provided
-  const resolvedTextChannels: TextChannel[] = textChannels.length > 0 ? textChannels : [
-    { id: "geral", name: "geral", description: "Canal principal de texto da call" },
-    { id: "anuncios", name: "anúncios", description: "Avisos importantes e novidades da comunidade" },
-  ];
+  const resolvedTextChannels: TextChannel[] =
+    textChannels.length > 0
+      ? textChannels
+      : [
+          { id: "geral", name: "geral", description: "Canal principal de texto" },
+          { id: "anuncios", name: "anúncios", description: "Avisos importantes" },
+          { id: "links-e-midia", name: "links-e-mídia", description: "Mídias e links compartilhados" },
+          { id: "comandos-bots", name: "comandos-bots", description: "Comandos e interações" },
+        ];
 
-  const resolvedVoiceChannels: VoiceChannel[] = voiceChannels.length > 0 ? voiceChannels : [
-    { id: "voice-geral", name: "Geral", isVip: false },
-    { id: "voice-vip", name: "Call VIP", isVip: true },
-  ];
+  const resolvedVoiceChannels: VoiceChannel[] =
+    voiceChannels.length > 0
+      ? voiceChannels
+      : [
+          { id: "voice-geral", name: "Geral", isVip: false },
+          { id: "voice-vip", name: "Call VIP", isVip: true },
+        ];
+
+  const initials = roomName
+    ? roomName
+        .split(" ")
+        .slice(0, 2)
+        .map((w) => w[0]?.toUpperCase() || "")
+        .join("") || "SA"
+    : "SA";
+
+  const fotinha = (p: Participant, tam: string) => (
+    <div
+      className={`${tam} rounded-full flex items-center justify-center text-[10px] font-bold text-white overflow-hidden shrink-0`}
+      style={{ backgroundColor: p.avatarColor || "#2DD4BF" }}
+    >
+      {p.avatarUrl ? (
+        <img src={p.avatarUrl} alt={p.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+      ) : (
+        <span>{p.name ? p.name.slice(0, 1).toUpperCase() : "E"}</span>
+      )}
+    </div>
+  );
+
+  if (recolhida) {
+    const naMinhaCall = participants.filter((p) => (p.voiceChannelId || "voice-geral") === (activeVoiceChannelId || "voice-geral"));
+    return (
+      <aside className="relative w-[58px] flex flex-col items-center h-full select-none shrink-0 z-20 bg-[#1E2026] border-r border-[#2A2D35] text-[#ECECEC] py-3 gap-2">
+        <div className="w-9 h-9 rounded-full bg-[#2A2D35] border border-[#3A3D46] flex items-center justify-center font-bold text-[11px]" title={roomName}>
+          {initials}
+        </div>
+        <div className="w-8 h-px bg-[#2A2D35] my-1" />
+        <button type="button" onClick={() => onSelectTextChannel(activeTextChannelId || resolvedTextChannels[0]?.id)} className="p-2 rounded-lg text-[#8B8F98] hover:text-[#ECECEC] hover:bg-[#252830] cursor-pointer" title="Chat de texto">
+          <Hash className="w-4 h-4" />
+        </button>
+        {resolvedVoiceChannels.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => handleVoiceChannelClick(c)}
+            className={`p-2 rounded-lg cursor-pointer transition-colors ${activeVoiceChannelId === c.id ? "bg-[#5EEAD4] text-[#16171B]" : "text-[#8B8F98] hover:text-[#ECECEC] hover:bg-[#252830]"}`}
+            title={c.name}
+          >
+            <Volume2 className="w-4 h-4" />
+          </button>
+        ))}
+        <div className="flex-1 w-full overflow-y-auto flex flex-col items-center gap-2 pt-1 [scrollbar-width:none]">
+          {naMinhaCall.map((p) => {
+            const falando = p.hasAudio && (p.audioLevel || 0) > 15;
+            return (
+              <div key={p.id} title={p.name} className={`rounded-full ${falando ? "ring-2 ring-[#5EEAD4]" : ""}`}>
+                {fotinha(p, "w-7 h-7")}
+              </div>
+            );
+          })}
+        </div>
+        <button type="button" onClick={onToggleMic} className={`p-1.5 rounded-lg cursor-pointer ${isAudioMuted ? "text-[#F43F5E] bg-[#F43F5E]/15" : "text-[#8B8F98] hover:text-[#ECECEC] hover:bg-[#252830]"}`} title={isAudioMuted ? "Desmutar microfone" : "Mutar microfone"}>
+          {isAudioMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+        </button>
+        <button type="button" onClick={onOpenSelfProfile} className={`rounded-full cursor-pointer ${isSpeaking ? "ring-2 ring-[#5EEAD4]" : ""}`} title="Meu perfil">
+          {fotinha(self, "w-9 h-9")}
+        </button>
+        {onAlternarRecolhida && (
+          <button type="button" onClick={onAlternarRecolhida} className="absolute top-1/2 -right-4 -translate-y-1/2 w-4 h-10 rounded-r-md bg-[#252830] border border-l-0 border-[#2A2D35] text-[#ECECEC] flex items-center justify-center cursor-pointer hover:bg-[#2c303a] z-30" title="Abrir barra">
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </aside>
+    );
+  }
 
   return (
     <aside
-      className={`w-60 sm:w-64 bg-[#080d19] border-r border-[#1a253c] flex flex-col h-full select-none shrink-0 z-20 transition-all ${
+      className={`w-60 sm:w-64 flex flex-col h-full select-none shrink-0 z-20 bg-[#1E2026] border-r border-[#2A2D35] text-[#ECECEC] transition-all ${
         isOpen ? "flex" : "hidden md:flex"
       }`}
     >
-      {/* 1. Discord Server / Room Header */}
-      <div className="h-14 px-3.5 border-b border-[#1a253c] flex items-center justify-between bg-[#0a101f] shadow-sm hover:bg-[#0e162a] transition-colors cursor-pointer group">
+      {/* 1. CABEÇALHO DA LATERAL: Iniciais em círculo cinza, nome da sala, Aberta/Trancada e X na call em cinza pequeno */}
+      <div className="h-14 px-3.5 flex items-center justify-between border-b border-[#2A2D35] bg-[#1E2026]">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-600 to-cyan-500 flex items-center justify-center font-black text-white text-xs shadow-md shadow-indigo-950/50 shrink-0">
-            {roomName ? roomName.substring(0, 2).toUpperCase() : "KC"}
+          {/* Círculo cinza com iniciais */}
+          <div className="w-8 h-8 rounded-full bg-[#2A2D35] border border-[#3A3D46] flex items-center justify-center font-bold text-xs text-[#ECECEC] shrink-0">
+            {initials}
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-1">
-              <span className="font-bold text-white text-xs sm:text-sm truncate">
-                {roomName || "Koki Call"}
-              </span>
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            </div>
-            <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
-              {participants.length} online
+            <span className="font-bold text-xs sm:text-sm text-[#ECECEC] truncate block">
+              {roomName || "eco"}
             </span>
+            <div className="flex items-center gap-1.5 text-[10px] text-[#8B8F98]">
+              <span>{isLocked ? "Trancada" : "Aberta"}</span>
+              <span>•</span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                {participants.length} na chamada
+              </span>
+            </div>
           </div>
         </div>
 
+        <div className="flex items-center gap-0.5 shrink-0">
         {onOpenInvite && (
           <button
             onClick={(e) => {
               e.stopPropagation();
               onOpenInvite();
             }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-[#1a2742] transition-colors cursor-pointer"
-            title="Convidar amigos para a call"
+            className="p-1.5 rounded-lg text-[#8B8F98] hover:text-[#5EEAD4] hover:bg-[#2A2D35] transition-colors cursor-pointer"
+            title="Convidar amigos para a sala"
           >
             <Share2 className="w-3.5 h-3.5" />
           </button>
         )}
+        {onAlternarRecolhida && (
+          <button
+            onClick={onAlternarRecolhida}
+            className="p-1.5 rounded-lg text-[#8B8F98] hover:text-[#ECECEC] hover:bg-[#2A2D35] transition-colors cursor-pointer"
+            title="Recolher barra"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+        )}
+        </div>
       </div>
 
-      {/* Warning banner for restricted channels */}
+      {/* Alerta temporário de canal trancado */}
       {lockWarning && (
-        <div className="mx-2 mt-2 p-2 rounded-xl bg-amber-950/90 border border-amber-500/60 text-amber-200 text-xs font-bold flex items-center gap-2 animate-in slide-in-from-top-2 duration-150 shadow-lg">
-          <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+        <div className="mx-2 mt-2 p-2 rounded-xl bg-[#C4B5FD]/10 border border-[#C4B5FD]/30 text-[#C4B5FD] text-xs font-semibold flex items-center gap-2 shadow-sm animate-in fade-in">
+          <Lock className="w-3.5 h-3.5 text-[#C4B5FD] shrink-0" />
           <span className="leading-tight">{lockWarning}</span>
         </div>
       )}
 
-      {/* 2. Channel List (Scrollable Discord Navigation) */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-4 scrollbar-thin scrollbar-thumb-slate-800">
-        {/* TEXT CHANNELS CATEGORY */}
+      {/* 2. LISTA DE CANAIS (Texto e Voz) */}
+      <div className="flex-1 overflow-y-auto p-2.5 space-y-4">
+        {/* CANAIS DE TEXTO */}
         <div>
           <button
             type="button"
             onClick={() => setTextCollapsed(!textCollapsed)}
-            className="w-full flex items-center justify-between px-1.5 py-1 text-[11px] font-bold text-slate-400 hover:text-slate-200 tracking-wider uppercase transition-colors cursor-pointer group"
+            className="w-full flex items-center justify-between px-1.5 py-1 text-[10px] font-bold text-[#8B8F98] hover:text-[#ECECEC] tracking-wider uppercase transition-colors cursor-pointer group"
           >
             <div className="flex items-center gap-1">
               {textCollapsed ? (
-                <ChevronRight className="w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-transform" />
+                <ChevronRight className="w-3 h-3 text-[#8B8F98]" />
               ) : (
-                <ChevronDown className="w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-transform" />
+                <ChevronDown className="w-3 h-3 text-[#8B8F98]" />
               )}
               <span>Canais de Texto</span>
             </div>
-            <span className="text-[10px] text-slate-500 group-hover:text-slate-400 font-mono">
+            <span className="text-[10px] font-mono text-[#8B8F98]">
               ({resolvedTextChannels.length})
             </span>
           </button>
 
           {!textCollapsed && (
-            <div className="space-y-0.5 mt-1">
+            <div className="space-y-1 mt-1">
               {resolvedTextChannels.map((channel) => {
                 const isActive = activeTextChannelId === channel.id;
-                const isAnnouncements = channel.id === "anuncios" || channel.name.toLowerCase().includes("anúncio") || channel.name.toLowerCase().includes("anuncio");
+                const isAnnouncements =
+                  channel.id === "anuncios" ||
+                  channel.name.toLowerCase().includes("anúncio") ||
+                  channel.name.toLowerCase().includes("anuncio");
 
                 return (
                   <button
                     key={channel.id}
                     type="button"
                     onClick={() => onSelectTextChannel(channel.id)}
-                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all group cursor-pointer ${
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all group cursor-pointer relative ${
                       isActive
-                        ? "bg-[#18233c] text-white font-bold shadow-sm border border-cyan-500/30"
-                        : "text-slate-400 hover:text-slate-200 hover:bg-[#11192b]"
+                        ? "bg-[#2A2D35] text-[#ECECEC] font-semibold"
+                        : "text-[#8B8F98] hover:text-[#ECECEC] hover:bg-[#252830]"
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    {/* Barrinha verde-água à esquerda no canal ativo */}
+                    {isActive && (
+                      <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-[#5EEAD4]" />
+                    )}
+
+                    <div className="flex items-center gap-2 min-w-0 pl-1">
                       {isAnnouncements ? (
-                        <Megaphone className={`w-3.5 h-3.5 shrink-0 ${isActive ? "text-amber-400" : "text-slate-400 group-hover:text-amber-300"}`} />
+                        <Megaphone
+                          className={`w-3.5 h-3.5 shrink-0 ${
+                            isActive ? "text-[#C4B5FD]" : "text-[#8B8F98] group-hover:text-[#ECECEC]"
+                          }`}
+                        />
                       ) : (
-                        <Hash className={`w-4 h-4 shrink-0 ${isActive ? "text-cyan-400" : "text-slate-500 group-hover:text-slate-300"}`} />
+                        <Hash
+                          className={`w-3.5 h-3.5 shrink-0 ${
+                            isActive ? "text-[#5EEAD4]" : "text-[#8B8F98] group-hover:text-[#ECECEC]"
+                          }`}
+                        />
                       )}
                       <span className="truncate">{channel.name}</span>
                     </div>
 
                     {isAnnouncements && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#C4B5FD]/15 text-[#C4B5FD] border border-[#C4B5FD]/30">
                         Avisos
                       </span>
                     )}
 
                     {Boolean(channel.unreadCount && channel.unreadCount > 0) && (
-                      <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400" />
+                      <span className="w-2 h-2 rounded-full bg-[#5EEAD4] shadow-xs" />
                     )}
                   </button>
                 );
@@ -216,104 +328,154 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
           )}
         </div>
 
-        {/* VOICE CHANNELS CATEGORY */}
+        {/* CANAIS DE VOZ */}
         <div>
           <button
             type="button"
             onClick={() => setVoiceCollapsed(!voiceCollapsed)}
-            className="w-full flex items-center justify-between px-1.5 py-1 text-[11px] font-bold text-slate-400 hover:text-slate-200 tracking-wider uppercase transition-colors cursor-pointer group"
+            className="w-full flex items-center justify-between px-1.5 py-1 text-[10px] font-bold text-[#8B8F98] hover:text-[#ECECEC] tracking-wider uppercase transition-colors cursor-pointer group"
           >
             <div className="flex items-center gap-1">
               {voiceCollapsed ? (
-                <ChevronRight className="w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-transform" />
+                <ChevronRight className="w-3 h-3 text-[#8B8F98]" />
               ) : (
-                <ChevronDown className="w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-transform" />
+                <ChevronDown className="w-3 h-3 text-[#8B8F98]" />
               )}
               <span>Canais de Voz</span>
             </div>
-            <span className="text-[10px] text-slate-500 group-hover:text-slate-400 font-mono">
+            <span className="text-[10px] font-mono text-[#8B8F98]">
               ({resolvedVoiceChannels.length})
             </span>
           </button>
 
           {!voiceCollapsed && (
-            <div className="space-y-1 mt-1">
+            <div className="space-y-1.5 mt-1">
               {resolvedVoiceChannels.map((channel) => {
                 const isActiveVoice = activeVoiceChannelId === channel.id;
-                // Channel users filtered strictly by their voiceChannelId
                 const channelParticipants = participants.filter((p) => {
-                  const pChannel = p.voiceChannelId || "voice-geral";
-                  return pChannel === channel.id;
+                  const targetChannel = p.voiceChannelId || "voice-geral";
+                  return targetChannel === channel.id;
                 });
+                const isDragOver = dragOverChannelId === channel.id;
 
                 return (
-                  <div key={channel.id} className="space-y-1">
+                  <div
+                    key={channel.id}
+                    className={`rounded-xl transition-all ${
+                      isDragOver
+                        ? "ring-2 ring-[#5EEAD4] bg-[#5EEAD4]/10"
+                        : ""
+                    }`}
+                    onDragOver={(e) => {
+                      if (isSelfMaster) {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                        setDragOverChannelId(channel.id);
+                      }
+                    }}
+                    onDragLeave={() => {
+                      if (isSelfMaster) {
+                        setDragOverChannelId(null);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      if (isSelfMaster) {
+                        e.preventDefault();
+                        const memberId = e.dataTransfer.getData("text/plain");
+                        if (memberId && onMoveMember) {
+                          onMoveMember(memberId, channel.id);
+                        }
+                        setDragOverChannelId(null);
+                      }
+                    }}
+                  >
                     <button
                       type="button"
                       onClick={() => handleVoiceChannelClick(channel)}
-                      className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-semibold transition-all group cursor-pointer ${
+                      className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-medium transition-all group cursor-pointer relative ${
                         isActiveVoice
-                          ? channel.isVip
-                            ? "bg-gradient-to-r from-amber-950/80 to-[#2b2012] text-amber-300 border border-amber-500/50 shadow-sm"
-                            : "bg-gradient-to-r from-emerald-950/80 to-[#12242b] text-emerald-300 border border-emerald-500/40 shadow-sm"
-                          : channel.isVip
-                          ? "text-amber-300/80 hover:text-amber-200 hover:bg-[#1a1520] border border-amber-500/20"
-                          : "text-slate-400 hover:text-slate-200 hover:bg-[#11192b]"
+                          ? "bg-[#2A2D35] text-[#ECECEC] font-semibold"
+                          : "text-[#8B8F98] hover:text-[#ECECEC] hover:bg-[#252830]"
                       }`}
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Volume2 className={`w-4 h-4 shrink-0 ${
-                          isActiveVoice
-                            ? channel.isVip ? "text-amber-400 animate-pulse" : "text-emerald-400 animate-pulse"
-                            : channel.isVip ? "text-amber-400/70" : "text-slate-500 group-hover:text-slate-300"
-                        }`} />
+                      {/* Barrinha verde-água à esquerda no canal de voz ativo */}
+                      {isActiveVoice && (
+                        <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-[#5EEAD4]" />
+                      )}
+
+                      <div className="flex items-center gap-2 min-w-0 pl-1">
+                        <Volume2
+                          className={`w-4 h-4 shrink-0 ${
+                            isActiveVoice
+                              ? channel.isVip
+                                ? "text-[#C4B5FD] animate-pulse"
+                                : "text-[#5EEAD4] animate-pulse"
+                              : channel.isVip
+                              ? "text-[#C4B5FD]"
+                              : "text-[#8B8F98] group-hover:text-[#ECECEC]"
+                          }`}
+                        />
                         <span className="truncate">{channel.name}</span>
                       </div>
 
                       <div className="flex items-center gap-1.5">
                         {channel.isVip && (
-                          <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs">
-                            <Lock className="w-2.5 h-2.5 text-amber-400" />
+                          <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#C4B5FD]/15 text-[#C4B5FD] border border-[#C4B5FD]/30">
+                            <Lock className="w-2.5 h-2.5 text-[#C4B5FD]" />
                             <span>VIP</span>
                           </span>
                         )}
                         {channelParticipants.length > 0 && (
-                          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold border ${
-                            channel.isVip
-                              ? "text-amber-300 bg-amber-950/90 border-amber-700/60"
-                              : "text-emerald-400 bg-emerald-950/90 border-emerald-800/60"
-                          }`}>
+                          <span className="text-[10px] font-mono px-2 py-0.2 rounded-full font-bold bg-[#16171B] text-[#ECECEC] border border-[#2A2D35]">
                             {channelParticipants.length}
                           </span>
                         )}
                       </div>
                     </button>
 
-                    {/* Connected Users List strictly for this voice channel */}
+                    {/* Membros conectados no canal de voz */}
                     {channelParticipants.length > 0 && (
-                      <div className="pl-4 pr-1 py-1 space-y-1">
+                      <div className="pl-3 pr-1 py-1 space-y-1">
                         {channelParticipants.map((p) => {
-                          const isPartSpeaking = p.id === self.id ? isSpeaking : ((p.audioLevel || 0) > 15 && !p.hasAudio === false);
+                          const isPartSpeaking =
+                            p.id === self.id
+                              ? isSpeaking
+                              : (p.audioLevel || 0) > 15 && p.hasAudio !== false;
                           const isMe = p.id === self.id;
-                          const isMuted = isMe ? isAudioMuted : (p.isMutedByHost || !p.hasAudio);
+                          const isMuted = isMe
+                            ? isAudioMuted
+                            : p.isMutedByHost || !p.hasAudio;
+                          const canMoveThisMember = Boolean(isSelfMaster && !isMe);
+                          const isMemberMaster = Boolean(p.isMaster || p.tag === "0001");
 
                           return (
                             <div
                               key={p.id}
-                              className={`flex items-center justify-between px-2 py-1 rounded-lg text-[11px] transition-colors group cursor-default ${
+                              draggable={canMoveThisMember}
+                              onDragStart={(e) => {
+                                if (canMoveThisMember) {
+                                  e.dataTransfer.setData("text/plain", p.id);
+                                  e.dataTransfer.effectAllowed = "move";
+                                }
+                              }}
+                              className={`relative group/member flex items-center justify-between px-2 py-1.5 rounded-xl text-[11px] transition-all ${
+                                canMoveThisMember ? "cursor-grab active:cursor-grabbing hover:bg-[#252830]" : "cursor-default"
+                              } ${
                                 isMe
-                                  ? "bg-cyan-950/40 text-cyan-200 border border-cyan-800/30"
-                                  : "bg-[#0c1322]/80 hover:bg-[#141f36] text-slate-300"
+                                  ? "bg-[#252830]/80 text-[#ECECEC] border border-[#2A2D35]"
+                                  : "bg-[#16171B]/50 hover:bg-[#252830] text-[#8B8F98] hover:text-[#ECECEC]"
                               }`}
+                              title={canMoveThisMember ? "Arraste para mover para outro canal" : undefined}
                             >
-                              <div className="flex items-center gap-2 min-w-0">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                {canMoveThisMember && (
+                                  <GripVertical className="w-3 h-3 text-[#8B8F98] opacity-0 group-hover/member:opacity-100 transition-opacity shrink-0" />
+                                )}
                                 <div
-                                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-all ${
-                                    isPartSpeaking
-                                      ? "ring-2 ring-emerald-400 shadow-sm shadow-emerald-500/50"
-                                      : ""
+                                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-all text-white ${
+                                    isPartSpeaking ? "ring-2 ring-[#5EEAD4]" : ""
                                   }`}
-                                  style={{ backgroundColor: p.avatarColor || "#0284c7" }}
+                                  style={{ backgroundColor: p.avatarColor || "#2DD4BF" }}
                                 >
                                   {p.avatarUrl ? (
                                     <img
@@ -323,24 +485,24 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                                       className="w-full h-full rounded-full object-cover"
                                     />
                                   ) : (
-                                    <span>{p.avatarEmoji || (p.isHost ? "👑" : "🎮")}</span>
+                                    <span>{p.name ? p.name.slice(0, 1).toUpperCase() : "E"}</span>
                                   )}
                                 </div>
-                                <span className={`truncate ${isMe ? "font-bold text-white" : ""}`}>
+                                <span className={`truncate ${isMemberMaster ? "text-[#C4B5FD] font-semibold" : ""}`}>
                                   {p.name} {isMe ? "(Você)" : ""}
                                 </span>
                               </div>
 
                               <div className="flex items-center gap-1 shrink-0">
-                                {p.isHost && (
-                                  <Crown className="w-3 h-3 text-amber-400 shrink-0" />
+                                {isMemberMaster && (
+                                  <BlackHoleBadge type="singularidade" size={13} />
                                 )}
                                 {isMuted ? (
-                                  <MicOff className="w-3 h-3 text-rose-400" />
+                                  <MicOff className="w-3 h-3 text-[#F43F5E]" />
                                 ) : isPartSpeaking ? (
-                                  <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
+                                  <Radio className="w-3 h-3 text-[#5EEAD4] animate-pulse" />
                                 ) : (
-                                  <Mic className="w-3 h-3 text-slate-500 opacity-60" />
+                                  <Mic className="w-3 h-3 text-[#8B8F98] opacity-60" />
                                 )}
                               </div>
                             </div>
@@ -356,91 +518,67 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
         </div>
       </div>
 
-      {/* 3. Live Voice Connection Status Banner */}
-      <div className="px-3 py-2 bg-[#060a12] border-t border-[#1a253c] flex items-center justify-between text-[11px]">
-        <div className="flex items-center gap-2 min-w-0">
-          <Signal className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-          <div className="truncate">
-            <span className="font-bold text-emerald-400 block text-[11px] leading-tight">
-              Voz Conectada
-            </span>
-            <span className="text-[10px] text-slate-400 font-mono">
-              WebRTC • {pingMs}ms
-            </span>
-          </div>
-        </div>
-
-        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700/50">
-          HD Audio
-        </span>
-      </div>
-
-      {/* 4. Bottom Discord Self Profile Bar */}
-      <div className="h-14 bg-[#070b14] border-t border-[#1a253c] px-2.5 flex items-center justify-between">
-        {/* Clickable Profile Area */}
+      {/* 3. PAINEL DO USUÁRIO EMBAIXO: avatar, nome e tag com ícones mic, fone e engrenagem perfeitamente alinhados */}
+      <div className="h-14 border-t border-[#2A2D35] px-3 flex items-center justify-between bg-[#1E2026] shrink-0">
         <button
           type="button"
           onClick={onOpenSelfProfile}
-          className="flex items-center gap-2 p-1 rounded-xl hover:bg-[#121b2d] transition-all text-left min-w-0 max-w-[130px] sm:max-w-[140px] cursor-pointer group"
-          title="Ver ou editar seu perfil do Discord"
+          className="flex items-center gap-2 p-1 rounded-xl hover:bg-[#252830] transition-colors text-left min-w-0 max-w-[130px] sm:max-w-[140px] cursor-pointer group"
+          title="Ver e editar meu perfil Órbita"
         >
           <div className="relative shrink-0">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shadow-md transition-all ${
-                isSpeaking
-                  ? "ring-2 ring-emerald-400 ring-offset-1 ring-offset-[#070b14]"
-                  : "ring-1 ring-white/10"
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white transition-all overflow-hidden ${
+                isSpeaking ? "ring-2 ring-[#5EEAD4]" : "border border-[#2A2D35]"
               }`}
-              style={{ backgroundColor: self.avatarColor || "#0284c7" }}
+              style={{ backgroundColor: self.avatarColor || "#2DD4BF" }}
             >
               {self.avatarUrl ? (
                 <img
                   src={self.avatarUrl}
                   alt={self.name}
                   referrerPolicy="no-referrer"
-                  className="w-full h-full rounded-full object-cover"
+                  className="w-full h-full object-cover"
                 />
               ) : (
-                <span>{self.avatarEmoji || (self.isHost ? "👑" : "🎮")}</span>
+                <span>{self.name ? self.name.slice(0, 1).toUpperCase() : "E"}</span>
               )}
             </div>
+
+            {/* Status Indicator */}
             <div
-              className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#070b14] ${
-                isDeafened
-                  ? "bg-rose-600"
-                  : isAudioMuted
-                  ? "bg-amber-500"
-                  : "bg-emerald-500"
+              className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#1E2026] ${
+                isDeafened ? "bg-[#F43F5E]" : isAudioMuted ? "bg-[#F43F5E]" : "bg-emerald-400"
               }`}
             />
           </div>
 
           <div className="truncate min-w-0">
             <div className="flex items-center gap-1">
-              <span className="font-bold text-white text-xs truncate group-hover:text-cyan-300 transition-colors">
+              <span className={`font-bold text-xs truncate transition-colors ${isSelfMaster ? "text-[#C4B5FD]" : "text-[#ECECEC] group-hover:text-[#5EEAD4]"}`}>
                 {self.name}
               </span>
-              {self.isHost && (
-                <Crown className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+              {isSelfMaster && (
+                <BlackHoleBadge type="singularidade" size={13} />
               )}
             </div>
-            <span className="text-[10px] text-slate-400 font-mono block truncate">
-              #{self.tag || "1024"}
+            <span className="text-[10px] text-[#8B8F98] font-mono block truncate">
+              #{tagVisivel(self, "0001")}
             </span>
           </div>
         </button>
 
-        {/* Action Controls: Mic, Deafen, Settings, Store */}
-        <div className="flex items-center gap-0.5 shrink-0">
+        {/* Três botões de controle alinhados: mic, fone e engrenagem */}
+        <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
             onClick={onToggleMic}
             className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
               isAudioMuted
-                ? "text-rose-400 hover:bg-rose-950/60 bg-rose-950/30"
-                : "text-slate-400 hover:text-white hover:bg-[#152035]"
+                ? "text-[#F43F5E] bg-[#F43F5E]/15 hover:bg-[#F43F5E]/25"
+                : "text-[#8B8F98] hover:text-[#ECECEC] hover:bg-[#252830]"
             }`}
-            title={isAudioMuted ? "Desmutar Microfone (0)" : "Mutar Microfone (0)"}
+            title={isAudioMuted ? "Desmutar microfone" : "Mutar microfone"}
           >
             {isAudioMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
           </button>
@@ -450,10 +588,10 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
             onClick={onToggleDeafen}
             className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
               isDeafened
-                ? "text-rose-400 hover:bg-rose-950/60 bg-rose-950/30"
-                : "text-slate-400 hover:text-white hover:bg-[#152035]"
+                ? "text-[#F43F5E] bg-[#F43F5E]/15 hover:bg-[#F43F5E]/25"
+                : "text-[#8B8F98] hover:text-[#ECECEC] hover:bg-[#252830]"
             }`}
-            title={isDeafened ? "Desativar Ensurdecer" : "Ensurdecer Áudio"}
+            title={isDeafened ? "Desativar ensurdecer" : "Ensurdecer áudio"}
           >
             <Headphones className="w-4 h-4" />
           </button>
@@ -461,8 +599,8 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
           <button
             type="button"
             onClick={onOpenSettings}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-[#152035] transition-colors cursor-pointer"
-            title="Configurações de Áudio e Vídeo"
+            className="p-1.5 rounded-lg text-[#8B8F98] hover:text-[#ECECEC] hover:bg-[#252830] transition-colors cursor-pointer"
+            title="Configurações (Modo Gamer, Tema, Dispositivos)"
           >
             <Settings className="w-4 h-4" />
           </button>

@@ -1,33 +1,165 @@
 import { SavedUserProfile, UserPreferences, StorePerk, StorePerkId } from "../types";
+import { aplicarAjustes } from "./lojaAjustes";
+import { ehLinkBlobServidor } from "./backend";
 
-const PROFILE_KEY = "koki_user_profile_v3";
-const HOST_TOKENS_KEY = "koki_host_tokens_v3";
-const PREFERENCES_KEY = "koki_user_preferences_v3";
+const PROFILE_KEY = "eco_user_profile_v1";
+const PROFILE_KEY_LEGACY = "koki_user_profile_v3";
+const HOST_TOKENS_KEY = "eco_host_tokens_v1";
+const PREFERENCES_KEY = "eco_user_preferences_v1";
+const ECO_COINS_KEY = "eco_user_coins_v1";
 const KOKI_COINS_KEY = "koki_user_coins_v1";
-const PURCHASED_PERKS_KEY = "koki_purchased_perks_v1";
-const LAST_DAILY_CLAIM_KEY = "koki_last_daily_claim_v1";
+const PURCHASED_PERKS_KEY = "eco_purchased_perks_v1";
+const LAST_DAILY_CLAIM_KEY = "eco_last_daily_claim_v1";
 
 export const PERK_DURATION_MS = 72 * 60 * 60 * 1000; // 72 hours in milliseconds
 export const DEFAULT_INITIAL_COINS = 2000;
 export const MASTER_COINS = 999999;
-export const DAILY_BONUS_AMOUNT = 50; // Fixed drop / claim amount: 50 Koki Coins per click
+export const DAILY_BONUS_AMOUNT = 50; // Fixed drop / claim amount: 50 Eco Coins per click
 export const DAILY_BONUS_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-export const STORE_PERKS: StorePerk[] = [
+const STORE_ITEMS_CUSTOM_KEY = "eco_custom_store_items_v1";
+const STORE_PRICE_AUDIT_KEY = "eco_store_price_audit_v1";
+const STORE_REWARD_SETTINGS_KEY = "eco_store_reward_settings_v1";
+
+export interface StoreRewardSettings {
+  coinsPerHour: number;
+  dailyBonusAmount: number;
+}
+
+export const DEFAULT_REWARD_SETTINGS: StoreRewardSettings = {
+  coinsPerHour: 100,
+  dailyBonusAmount: 50,
+};
+
+export const INITIAL_STORE_ITEMS: StorePerk[] = [
   {
-    id: "gif_avatar",
-    name: "Avatar Animado em GIF",
-    tagline: "Destaque seu perfil com foto animada",
-    description: "Permite fazer upload de fotos de perfil animadas em formato GIF ou escolher da galeria de presets premium.",
-    price: 600,
+    id: "ring_nebulosa",
+    name: "Anel Nebulosa",
+    tagline: "Destaque da semana com anéis orbitais quádruplos",
+    description: "Anel celestial degradê ciano e lilás com micro-satélites orbitando seu avatar.",
+    price: 300,
     durationHours: 72,
     iconName: "Sparkles",
-    themeColor: "from-pink-500 to-rose-600",
-    badgeLabel: "GIF VIP",
+    themeColor: "from-teal-400 to-violet-500",
+    badgeLabel: "DESTAQUE",
+    category: "rings",
+    previewType: "ring",
+    previewValue: "nebulosa",
+    isFeatured: true,
+    featuredExpiresAt: Date.now() + 2 * 24 * 3600 * 1000 + 14 * 3600 * 1000,
+    isActive: true,
+    sortOrder: 1,
+    benefits: [
+      "Anel orbital quádruplo neon verde-água e lilás",
+      "Micro-satélites orbitando suavemente seu avatar",
+      "Visível no seu card de perfil e na lista de membros",
+      "Duração de 72 horas por compra",
+    ],
+  },
+  {
+    id: "gif_avatar",
+    name: "Avatar animado",
+    tagline: "Upload de fotos e GIFs animados para perfil",
+    description: "Permite usar GIFs animados ou fotos personalizadas em movimento no perfil e na call.",
+    price: 150,
+    durationHours: 72,
+    iconName: "Sparkles",
+    themeColor: "from-teal-400 to-emerald-600",
+    badgeLabel: "72h",
+    category: "avatars",
+    previewType: "avatar",
+    isActive: true,
+    sortOrder: 2,
     benefits: [
       "Upload ilimitado de GIFs animados para avatar",
-      "Acesso a presets exclusivos de alta qualidade",
-      "Animação contínua nos chats e chamadas de voz",
+      "Acesso a galeria de presets cósmicos exclusivos",
+      "Animação contínua nas chamadas de voz e canais",
+      "Duração de 72 horas por compra",
+    ],
+  },
+  {
+    id: "vip_role",
+    name: "Cargo VIP",
+    tagline: "Cargo VIP com emblema lilás e prestígio",
+    description: "Receba o cargo VIP com borda lilás suave, canal VIP liberado e prioridade de áudio.",
+    price: 500,
+    durationHours: 72,
+    iconName: "Crown",
+    themeColor: "from-violet-400 to-purple-600",
+    badgeLabel: "72h",
+    category: "vip",
+    previewType: "vip",
+    isActive: true,
+    isVipOnly: false,
+    sortOrder: 3,
+    benefits: [
+      "Emblema VIP lilás exclusivo no perfil e na call",
+      "Acesso direto à Call VIP trancada",
+      "Borda sutil iluminada nos cards e lista de membros",
+      "Duração de 72 horas por compra",
+    ],
+  },
+  {
+    id: "banner_nebulosa",
+    name: "Banner Nebulosa",
+    tagline: "Banner cinematográfico em degrade espacial",
+    description: "Capa do perfil em loop cósmico de estrelas e nebulosa em alta definição.",
+    price: 200,
+    durationHours: 72,
+    iconName: "Film",
+    themeColor: "from-violet-500 to-cyan-500",
+    badgeLabel: "72h",
+    category: "banners",
+    previewType: "banner",
+    isActive: true,
+    sortOrder: 4,
+    benefits: [
+      "Capa dinâmica com nebulosa espacial",
+      "Transição suave de degradê no topo do perfil",
+      "Compatível com dispositivos móveis e desktop",
+      "Duração de 72 horas por compra",
+    ],
+  },
+  {
+    id: "ring_aurora",
+    name: "Anel Aurora",
+    tagline: "Anel orbital com brilho suave e satélites",
+    description: "Anel de órbita em tons de aurora boreal verde-água brilhante ao redor do avatar.",
+    price: 250,
+    durationHours: 72,
+    iconName: "Sparkles",
+    themeColor: "from-emerald-400 to-teal-500",
+    badgeLabel: "72h",
+    category: "rings",
+    previewType: "ring",
+    previewValue: "aurora",
+    isActive: true,
+    sortOrder: 5,
+    benefits: [
+      "Anel orbital vibrante no estilo Aurora",
+      "Brilho suave pulsante nas chamadas",
+      "Combina perfeitamente com qualquer avatar",
+      "Duração de 72 horas por compra",
+    ],
+  },
+  {
+    id: "custom_title",
+    name: "Título personalizado",
+    tagline: "Tag de status e título único",
+    description: "Adicione uma tag personalizada exclusiva exibida ao lado do seu nome no perfil.",
+    price: 100,
+    durationHours: 72,
+    iconName: "Award",
+    themeColor: "from-teal-500 to-cyan-600",
+    badgeLabel: "72h",
+    category: "titles",
+    previewType: "title",
+    isActive: true,
+    sortOrder: 6,
+    benefits: [
+      "Badge com título exclusivo ao lado do seu nome",
+      "Exibição destacada na lista de participantes",
+      "Cores customizadas para seu título",
       "Duração de 72 horas por compra",
     ],
   },
@@ -35,76 +167,149 @@ export const STORE_PERKS: StorePerk[] = [
     id: "custom_banner",
     name: "Banner Personalizado (GIF/MP4)",
     tagline: "Banners dinâmicos em vídeo e GIF",
-    description: "Desbloqueia a personalização de capa com loops em vídeo MP4, WebM ou GIFs cinematográficos no seu Perfil.",
+    description: "Desbloqueia a personalização de capa com loops em vídeo MP4, WebM ou GIFs no perfil.",
     price: 900,
     durationHours: 72,
     iconName: "Film",
     themeColor: "from-violet-500 to-purple-700",
-    badgeLabel: "VÍDEO BANNER",
+    badgeLabel: "72h",
+    category: "banners",
+    previewType: "banner",
+    isActive: true,
+    sortOrder: 7,
     benefits: [
       "Upload de banners animados em MP4 ou GIF",
-      "Presets cinematográficos de galáxias e synthwave",
-      "Efeito dinâmico no card de perfil ao clicar no seu nome",
+      "Presets cinematográficos de galáxias e neon",
+      "Efeito dinâmico no card de perfil Órbita",
       "Duração de 72 horas por compra",
     ],
   },
   {
-    id: "custom_title",
-    name: "Título de Perfil Personalizado",
-    tagline: "Tag de status e título único",
-    description: "Adicione um título customizado exclusivo exibido ao lado do seu nome em chamadas, canais e cartões de membro.",
+    id: "aura_card",
+    name: "Aura do card",
+    tagline: "Brilho suave em volta do seu card de perfil",
+    description: "Um brilho que pulsa devagar na borda do seu card. Escolha a cor: Azul, Rosa, Verde, Roxo, Laranja ou Vermelho.",
     price: 400,
     durationHours: 72,
-    iconName: "Award",
-    themeColor: "from-cyan-500 to-blue-600",
-    badgeLabel: "TÍTULO CUSTOM",
+    iconName: "Sparkles",
+    themeColor: "from-sky-400 to-pink-500",
+    badgeLabel: "72h",
+    category: "auras",
+    previewType: "aura",
+    isActive: true,
+    sortOrder: 8,
     benefits: [
-      "Badge com título exclusivo (ex: [PRO GAMER], [STREAMER])",
-      "Exibição destacada na lista de participantes",
-      "Cores neon de destaque para o seu título",
-      "Duração de 72 horas por compra",
-    ],
-  },
-  {
-    id: "vip_role",
-    name: "VIP Badge & Role",
-    tagline: "Cargo VIP com emblema dourado e privilégios",
-    description: "Receba o cargo VIP com borda dourada, emblema brilhante, prioridade de áudio e status de membro prestigiado.",
-    price: 1200,
-    durationHours: 72,
-    iconName: "Crown",
-    themeColor: "from-amber-400 to-yellow-600",
-    badgeLabel: "CARGO VIP",
-    benefits: [
-      "Emblema VIP dourado exclusivo no perfil e na call",
-      "Borda neon iluminada nos cards e lista de membros",
-      "Prioridade máxima na transmissão e qualidade de áudio",
+      "Brilho suave pulsando na borda do seu card",
+      "6 cores pra escolher no botão Mudar aura",
+      "Aparece pra todo mundo, até com você offline",
       "Duração de 72 horas por compra",
     ],
   },
 ];
 
+export function getStoreItems(): StorePerk[] {
+  try {
+    const raw = localStorage.getItem(STORE_ITEMS_CUSTOM_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Itens novos da loja (ex.: Aura do card) aparecem mesmo pra quem tem a lista antiga salva
+        const ids = new Set(parsed.map((i: any) => i?.id));
+        return aplicarAjustes([...parsed, ...INITIAL_STORE_ITEMS.filter((i) => !ids.has(i.id))]);
+      }
+    }
+  } catch (e) {
+    console.warn("Could not load custom store items:", e);
+  }
+  // Preços definidos pelo Dono Master no servidor valem para todo mundo
+  return aplicarAjustes(INITIAL_STORE_ITEMS);
+}
+
+export function saveStoreItems(items: StorePerk[]): void {
+  try {
+    localStorage.setItem(STORE_ITEMS_CUSTOM_KEY, JSON.stringify(items));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("eco_store_items_updated", { detail: { items } }));
+    }
+  } catch (e) {
+    console.warn("Could not save store items:", e);
+  }
+}
+
+export function getStoreRewardSettings(): StoreRewardSettings {
+  try {
+    const raw = localStorage.getItem(STORE_REWARD_SETTINGS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return { ...DEFAULT_REWARD_SETTINGS, ...parsed };
+    }
+  } catch {}
+  return DEFAULT_REWARD_SETTINGS;
+}
+
+export function saveStoreRewardSettings(settings: StoreRewardSettings): void {
+  try {
+    localStorage.setItem(STORE_REWARD_SETTINGS_KEY, JSON.stringify(settings));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("eco_reward_settings_updated", { detail: { settings } }));
+    }
+  } catch {}
+}
+
+export interface StorePriceAuditItem {
+  id: string;
+  itemId: string;
+  itemName: string;
+  oldPrice: number;
+  newPrice: number;
+  timestamp: number;
+}
+
+export function getStorePriceAuditLogs(): StorePriceAuditItem[] {
+  try {
+    const raw = localStorage.getItem(STORE_PRICE_AUDIT_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+export function addStorePriceAuditLog(entry: Omit<StorePriceAuditItem, "id" | "timestamp">): void {
+  try {
+    const logs = getStorePriceAuditLogs();
+    const item: StorePriceAuditItem = {
+      ...entry,
+      id: Math.random().toString(36).slice(2, 8),
+      timestamp: Date.now(),
+    };
+    logs.unshift(item);
+    localStorage.setItem(STORE_PRICE_AUDIT_KEY, JSON.stringify(logs.slice(0, 50)));
+  } catch {}
+}
+
+export const STORE_PERKS: StorePerk[] = INITIAL_STORE_ITEMS;
+
 export const MASTER_DEFAULT_TAG = "0001";
-export const MASTER_DEFAULT_USERNAME = "Koki u sujo";
+export const MASTER_DEFAULT_USERNAME = "Luiz";
 export const RESERVED_MASTER_TAGS = ["0001", "01", "1", "0000", "00", "001"];
 
-export const DEFAULT_AVATARS = ["👑", "🎮", "🦊", "⚡", "🎧", "🚀", "🐱", "🤖", "🔥", "🎯", "👾", "💎"];
-
 export const DEFAULT_AVATAR_COLORS = [
-  "#38bdf8", // Sky blue
-  "#818cf8", // Indigo
-  "#a855f7", // Purple
-  "#ec4899", // Pink
-  "#f43f5e", // Rose
-  "#f97316", // Orange
-  "#eab308", // Yellow
-  "#10b981", // Emerald
-  "#14b8a6", // Teal
-  "#06b6d4"  // Cyan
+  "#2DD4BF", // Teal
+  "#818CF8", // Indigo
+  "#A78BFA", // Lavender
+  "#F472B6", // Pink
+  "#FB7185", // Rose
+  "#38BDF8", // Sky
+  "#34D399", // Emerald
+  "#60A5FA", // Blue
+  "#C084FC", // Violet
+  "#FBBF24"  // Amber
 ];
 
 export const DEFAULT_BANNER_COLORS = [
-  "#0f172a", "#1e1b4b", "#022c22", "#164e63", "#311042", "#3b0764", "#431407", "#1e293b"
+  "#16171B", "#1E2026", "#1e1b4b", "#0f172a", "#164e63", "#2A2D35"
 ];
 
 /**
@@ -134,23 +339,13 @@ export function isMasterIdentity(name?: string | null, isMasterAuth?: boolean): 
   if (typeof isMasterAuth === "boolean") {
     return isMasterAuth;
   }
-
+  // Só vale depois que o servidor aceitou a senha do Dono (entrada escondida).
+  // Mesmo que alguém mexa no navegador, o servidor confere o token em toda ação de Dono.
   if (typeof window !== "undefined" && window.localStorage) {
     try {
-      const savedKey = localStorage.getItem("koki_master_key_saved");
-      const savedToken = localStorage.getItem("koki_master_token");
-      if (savedKey && savedKey.trim().toLowerCase() === "koki24122024master") {
-        return true;
-      }
-      if (savedToken && typeof savedToken === "string" && savedToken.length >= 10) {
-        const cleanToken = savedToken.trim();
-        if (
-          cleanToken === "0bf9c4cfb565a0ec7759ad40ca0489569b917fa2b66236bcfd5f66ff2f0e4cf8" ||
-          cleanToken.startsWith("koki_master_token_")
-        ) {
-          return true;
-        }
-      }
+      const ok = localStorage.getItem("eco_master_ok") === "1";
+      const token = localStorage.getItem("eco_master_token") || "";
+      return ok && /^[a-f0-9]{64}$/.test(token.trim());
     } catch {
       // ignore
     }
@@ -177,12 +372,28 @@ export function resolveUserTag(name?: string | null, isMasterAuth?: boolean, cur
   return generateStandardUserTag();
 }
 
-export function formatCoinDisplay(amount?: number | null, isMasterOrHost?: boolean): string {
-  if (isMasterOrHost || isMasterIdentity()) {
+const MEMBER_SINCE_KEY = "eco_member_since_v1";
+
+/** Data do primeiro acesso ao eco neste aparelho (criada uma vez e nunca muda). */
+export function getMemberSince(): number {
+  try {
+    const raw = Number(localStorage.getItem(MEMBER_SINCE_KEY));
+    if (Number.isFinite(raw) && raw > 1600000000000 && raw <= Date.now()) return raw;
+    const agora = Date.now();
+    localStorage.setItem(MEMBER_SINCE_KEY, String(agora));
+    return agora;
+  } catch {
+    return Date.now();
+  }
+}
+
+/** ∞ só para o Dono Master. Dono de sala e qualquer outro mostram o saldo real. */
+export function formatCoinDisplay(amount?: number | null, isMaster?: boolean): string {
+  if (isMaster) {
     return "∞";
   }
   if (typeof amount === "number") {
-    if (amount >= 999999 || !isFinite(amount)) return "∞";
+    if (!isFinite(amount)) return "0";
     return amount.toLocaleString();
   }
   return "0";
@@ -194,35 +405,43 @@ export function getKokiCoins(): number {
     return MASTER_COINS;
   }
   try {
-    const raw = localStorage.getItem(KOKI_COINS_KEY);
+    const raw = localStorage.getItem(ECO_COINS_KEY) || localStorage.getItem(KOKI_COINS_KEY);
     if (raw !== null) {
       const num = parseInt(raw, 10);
       if (!isNaN(num)) return Math.max(0, num);
     }
   } catch (e) {
-    console.warn("Could not load Koki Coins:", e);
+    console.warn("Could not load Eco Coins:", e);
   }
   // Initialize with default coins
   const initial = DEFAULT_INITIAL_COINS;
   try {
-    localStorage.setItem(KOKI_COINS_KEY, initial.toString());
+    localStorage.setItem(ECO_COINS_KEY, initial.toString());
   } catch {}
   return initial;
 }
+
+export const getEcoCoins = getKokiCoins;
 
 export function setKokiCoins(amount: number): number {
   const isMaster = isMasterIdentity();
   const safeAmount = isMaster ? MASTER_COINS : Math.max(0, Math.floor(amount));
   try {
+    localStorage.setItem(ECO_COINS_KEY, safeAmount.toString());
     localStorage.setItem(KOKI_COINS_KEY, safeAmount.toString());
     if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("eco_coins_updated", { detail: { coins: safeAmount } }));
       window.dispatchEvent(new CustomEvent("koki_coins_updated", { detail: { coins: safeAmount } }));
     }
   } catch (e) {
-    console.warn("Could not save Koki Coins:", e);
+    console.warn("Could not save Eco Coins:", e);
   }
   return safeAmount;
 }
+
+export const setEcoCoins = setKokiCoins;
+export const addEcoCoins = addKokiCoins;
+export const deductEcoCoins = deductKokiCoins;
 
 export function addKokiCoins(amount: number): number {
   if (isMasterIdentity()) {
@@ -332,27 +551,30 @@ export function getPerkRemainingTime(activeUntil?: number | null): {
 /**
  * Purchases a store perk: deducts Koki Coins and extends or sets activeUntil for 72 hours
  */
-export function purchaseStorePerk(perkId: StorePerkId): {
+export function purchaseStorePerk(perkId: StorePerkId, opcoes?: { semCusto?: boolean }): {
   success: boolean;
   error?: string;
   newBalance: number;
   activeUntil: number;
   perk: StorePerk;
 } {
-  const perk = STORE_PERKS.find((p) => p.id === perkId);
+  const currentItems = getStoreItems();
+  const perk = currentItems.find((p) => p.id === perkId) || STORE_PERKS.find((p) => p.id === perkId);
   if (!perk) {
-    return { success: false, error: "Item não encontrado na loja.", newBalance: getKokiCoins(), activeUntil: 0, perk: STORE_PERKS[0] };
+    return { success: false, error: "Item não encontrado na loja.", newBalance: getKokiCoins(), activeUntil: 0, perk: currentItems[0] || STORE_PERKS[0] };
   }
 
   const isMaster = isMasterIdentity();
+  // Co-fundador compra de graça (moedas infinitas), igual ao Dono: não perde moedas nem falta saldo
+  const semCusto = isMaster || Boolean(opcoes?.semCusto);
   const currentCoins = getKokiCoins();
 
-  // If not master, verify sufficient balance and deduct coins
-  if (!isMaster) {
+  // If not master, verify sufficient balance and deduct coins based on persisted data price
+  if (!semCusto) {
     if (currentCoins < perk.price) {
       return {
         success: false,
-        error: `Saldo insuficiente! Você tem ${currentCoins} Koki Coins, mas o item custa ${perk.price} Koki Coins.`,
+        error: `Saldo insuficiente! Você tem ${currentCoins} Eco Coins, mas o item custa ${perk.price} Eco Coins.`,
         newBalance: currentCoins,
         activeUntil: 0,
         perk,
@@ -361,16 +583,17 @@ export function purchaseStorePerk(perkId: StorePerkId): {
   }
 
   // Deduct coins only for non-master accounts
-  const remainingCoins = isMaster ? MASTER_COINS : currentCoins - perk.price;
-  if (!isMaster) {
+  const remainingCoins = isMaster ? MASTER_COINS : semCusto ? currentCoins : currentCoins - perk.price;
+  if (!semCusto) {
     setKokiCoins(remainingCoins);
   }
 
-  // Extend or add 72 hours
+  // Extend or add perk duration
   const currentPerks = getPurchasedPerks();
   const currentUntil = currentPerks[perkId] || 0;
   const baseTime = currentUntil > Date.now() ? currentUntil : Date.now();
-  const newActiveUntil = baseTime + PERK_DURATION_MS;
+  const durationMs = (perk.durationHours || 72) * 3600 * 1000;
+  const newActiveUntil = baseTime + durationMs;
 
   currentPerks[perkId] = newActiveUntil;
   savePurchasedPerks(currentPerks);
@@ -515,7 +738,7 @@ export function getSavedUserProfile(): SavedUserProfile {
   const perks = getPurchasedPerks();
 
   try {
-    const raw = localStorage.getItem(PROFILE_KEY);
+    const raw = localStorage.getItem(PROFILE_KEY) || localStorage.getItem(PROFILE_KEY_LEGACY);
     if (raw) {
       const parsed = JSON.parse(raw);
       const name = parsed.name || (isMaster ? MASTER_DEFAULT_USERNAME : "");
@@ -526,11 +749,11 @@ export function getSavedUserProfile(): SavedUserProfile {
       if (isMaster) {
         badges = Array.isArray(parsed.badges) && parsed.badges.length > 0
           ? parsed.badges
-          : ["owner_supreme", "koki_creator", "nitro_owner"];
+          : ["singularidade", "horizonte"];
       } else {
         // Non-master users must NEVER have owner badges or default pioneer badge
         badges = Array.isArray(parsed.badges)
-          ? parsed.badges.filter((b: string) => !b.includes("owner") && b !== "koki_creator" && b !== "nitro_owner" && b !== "pioneer_member" && b !== "host_room")
+          ? parsed.badges.filter((b: string) => !b.includes("owner") && b !== "singularidade" && b !== "koki_creator" && b !== "nitro_owner" && b !== "pioneer_member" && b !== "host_room")
           : [];
         if (tag === "0001" || isReservedMasterTag(tag)) {
           tag = generateStandardUserTag();
@@ -540,13 +763,13 @@ export function getSavedUserProfile(): SavedUserProfile {
       return {
         name,
         tag,
-        avatarEmoji: parsed.avatarEmoji || (isMaster ? "👑" : "🎮"),
+        avatarEmoji: parsed.avatarEmoji || (isMaster ? "👑" : ""),
         avatarColor: parsed.avatarColor || DEFAULT_AVATAR_COLORS[0],
-        avatarUrl: isMaster ? parsed.avatarUrl : (isPerkActive("gif_avatar", perks) ? parsed.avatarUrl : undefined),
+        avatarUrl: isMaster ? parsed.avatarUrl : (isPerkActive("gif_avatar", perks) || isPerkActive("vip_role", perks) || parsed.vipPermissions ? parsed.avatarUrl : undefined),
         bannerColor: parsed.bannerColor || DEFAULT_BANNER_COLORS[0],
-        bannerUrl: isMaster ? parsed.bannerUrl : (isPerkActive("custom_banner", perks) ? parsed.bannerUrl : undefined),
-        customStatus: parsed.customStatus || (isMaster ? "👑 Dono Master do Koki" : "🟢 Conectado ao Koki"),
-        bio: parsed.bio || (isMaster ? "Criador e moderador oficial do Koki Call." : "Participante do Koki Call"),
+        bannerUrl: isMaster ? parsed.bannerUrl : (isPerkActive("custom_banner", perks) || isPerkActive("vip_role", perks) || parsed.vipPermissions ? parsed.bannerUrl : undefined),
+        customStatus: parsed.customStatus || (isMaster ? "👑 Dono Master do eco" : "🟢 Conectado ao eco"),
+        bio: parsed.bio || (isMaster ? "Criador e moderador oficial do eco." : "Voz, vídeo e tela com seus amigos."),
         customTitle: parsed.customTitle || undefined,
         kokiCoins: typeof parsed.kokiCoins === "number" ? parsed.kokiCoins : coins,
         purchasedPerks: parsed.purchasedPerks || perks,
@@ -562,15 +785,15 @@ export function getSavedUserProfile(): SavedUserProfile {
   return {
     name: isMaster ? MASTER_DEFAULT_USERNAME : "",
     tag: isMaster ? MASTER_DEFAULT_TAG : generateStandardUserTag(),
-    avatarEmoji: isMaster ? "👑" : "🎮",
+    avatarEmoji: isMaster ? "👑" : "",
     avatarColor: DEFAULT_AVATAR_COLORS[0],
     bannerColor: DEFAULT_BANNER_COLORS[0],
-    customStatus: isMaster ? "👑 Dono Master do Koki" : "🟢 Conectado ao Koki",
-    bio: isMaster ? "Criador e moderador oficial do Koki Call." : "Chamadas de voz, vídeo e canais seguros.",
+    customStatus: isMaster ? "👑 Dono Master do eco" : "🟢 Conectado ao eco",
+    bio: isMaster ? "Criador e moderador oficial do eco." : "Voz, vídeo e tela com seus amigos.",
     customTitle: undefined,
     kokiCoins: coins,
     purchasedPerks: perks,
-    badges: isMaster ? ["owner_supreme", "koki_creator", "nitro_owner"] : [],
+    badges: isMaster ? ["singularidade", "horizonte"] : [],
     rememberLogin: true,
   };
 }
@@ -584,9 +807,9 @@ export function saveUserProfile(profile: Partial<SavedUserProfile>): void {
 
     let cleanBadges = profile.badges !== undefined ? profile.badges : current.badges;
     if (!isMaster && Array.isArray(cleanBadges)) {
-      cleanBadges = cleanBadges.filter((b) => !b.includes("owner") && b !== "koki_creator" && b !== "nitro_owner" && b !== "pioneer_member" && b !== "host_room");
+      cleanBadges = cleanBadges.filter((b) => !b.includes("owner") && b !== "singularidade" && b !== "koki_creator" && b !== "nitro_owner" && b !== "pioneer_member" && b !== "host_room");
     } else if (isMaster && (!cleanBadges || cleanBadges.length === 0)) {
-      cleanBadges = ["owner_supreme", "koki_creator", "nitro_owner"];
+      cleanBadges = ["singularidade", "horizonte"];
     }
 
     const updated: SavedUserProfile = {
@@ -596,6 +819,11 @@ export function saveUserProfile(profile: Partial<SavedUserProfile>): void {
       tag: resolvedTag,
       badges: cleanBadges || [],
     };
+
+    // Link /api/m/... é só a cópia no servidor do data: que já está aqui: nunca troca o original salvo
+    // (o link some se o servidor reiniciar).
+    if (ehLinkBlobServidor(updated.avatarUrl) && current.avatarUrl && !ehLinkBlobServidor(current.avatarUrl)) updated.avatarUrl = current.avatarUrl;
+    if (ehLinkBlobServidor(updated.bannerUrl) && current.bannerUrl && !ehLinkBlobServidor(current.bannerUrl)) updated.bannerUrl = current.bannerUrl;
 
     if (isMaster) {
       updated.tag = MASTER_DEFAULT_TAG;
@@ -611,7 +839,9 @@ export function saveUserProfile(profile: Partial<SavedUserProfile>): void {
     }
 
     localStorage.setItem(PROFILE_KEY, JSON.stringify(updated));
+    localStorage.setItem(PROFILE_KEY_LEGACY, JSON.stringify(updated));
     if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("eco_profile_updated", { detail: { profile: updated } }));
       window.dispatchEvent(new CustomEvent("koki_profile_updated", { detail: { profile: updated } }));
     }
   } catch (e) {
@@ -633,6 +863,12 @@ export function getUserPreferences(): UserPreferences {
         pushToTalkKey: parsed.pushToTalkKey || "Space",
         noiseSuppression: parsed.noiseSuppression !== false,
         echoCancellation: parsed.echoCancellation !== false,
+        aiNoiseSuppression: parsed.aiNoiseSuppression !== false,
+        autoSensitivity: parsed.autoSensitivity !== false,
+        sensitivityDb:
+          typeof parsed.sensitivityDb === "number" && isFinite(parsed.sensitivityDb)
+            ? Math.max(-100, Math.min(0, parsed.sensitivityDb))
+            : -50,
         lowResourceMode: Boolean(parsed.lowResourceMode),
         videoQuality: parsed.videoQuality || "medium",
         volume: typeof parsed.volume === "number" ? parsed.volume : 100,
@@ -651,6 +887,9 @@ export function getUserPreferences(): UserPreferences {
     pushToTalkKey: "Space",
     noiseSuppression: true,
     echoCancellation: true,
+    aiNoiseSuppression: true,
+    autoSensitivity: true,
+    sensitivityDb: -50,
     lowResourceMode: false,
     videoQuality: "medium",
     volume: 100,

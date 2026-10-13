@@ -65,6 +65,16 @@ export function openExternalSafe(url: string): void {
   }
 
   if (typeof window !== "undefined") {
-    window.open(url, "_blank", "noopener,noreferrer");
+    try {
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch {
+      // safe fallback
+    }
   }
 }

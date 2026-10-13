@@ -39,7 +39,7 @@ export const SecurityAuditModal: React.FC<SecurityAuditModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-white text-sm flex items-center gap-1.5">
-                Koki Shield • Proteção & Segurança Ativa
+                eco Shield • Proteção & Segurança Ativa
               </h3>
               <p className="text-[11px] text-slate-400">
                 Auditoria de segurança, integridade de conexão e controle de acesso

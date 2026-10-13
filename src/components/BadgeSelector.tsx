@@ -1,3 +1,4 @@
+import { BadgeIcon } from "./BadgeIcon";
 import React from "react";
 import { ALL_BADGES, UserBadge, getAvailableBadges } from "../data/badges";
 import { Sparkles, Check, Crown, Zap, Shield, Gem } from "lucide-react";
@@ -8,6 +9,8 @@ interface BadgeSelectorProps {
   isHost: boolean;
   hasVip: boolean;
   maxSelectable?: number;
+  /** Para quem não é Dono: só as insígnias que o Dono liberou */
+  allowedBadgeIds?: string[];
 }
 
 export const BadgeSelector: React.FC<BadgeSelectorProps> = ({
@@ -16,8 +19,11 @@ export const BadgeSelector: React.FC<BadgeSelectorProps> = ({
   isHost,
   hasVip,
   maxSelectable = 6,
+  allowedBadgeIds,
 }) => {
-  const availableBadges = getAvailableBadges(isHost, hasVip);
+  const availableBadges = isHost
+    ? getAvailableBadges(isHost, hasVip)
+    : ALL_BADGES.filter((b) => b.id !== "singularidade" && (allowedBadgeIds || []).includes(b.id));
 
   const handleToggleBadge = (badgeId: string) => {
     if (selectedBadgeIds.includes(badgeId)) {
@@ -70,7 +76,7 @@ export const BadgeSelector: React.FC<BadgeSelectorProps> = ({
                   }`}
                 >
                   <div className="flex items-center gap-2 overflow-hidden">
-                    <span className="text-base">{badge.icon}</span>
+                    <span className="text-base"><BadgeIcon icon={badge.icon} alt={badge.name} /></span>
                     <div className="truncate">
                       <p className={`font-bold text-xs truncate ${isSelected ? badge.textColor : "text-slate-200"}`}>
                         {badge.name}
@@ -109,7 +115,7 @@ export const BadgeSelector: React.FC<BadgeSelectorProps> = ({
                   }`}
                 >
                   <div className="flex items-center gap-2 overflow-hidden">
-                    <span className="text-base">{badge.icon}</span>
+                    <span className="text-base"><BadgeIcon icon={badge.icon} alt={badge.name} /></span>
                     <div className="truncate">
                       <p className={`font-bold text-xs truncate ${isSelected ? badge.textColor : "text-slate-200"}`}>
                         {badge.name}
@@ -146,7 +152,7 @@ export const BadgeSelector: React.FC<BadgeSelectorProps> = ({
                 }`}
               >
                 <div className="flex items-center gap-2 overflow-hidden">
-                  <span className="text-base">{badge.icon}</span>
+                  <span className="text-base"><BadgeIcon icon={badge.icon} alt={badge.name} /></span>
                   <div className="truncate">
                     <p className={`font-bold text-xs truncate ${isSelected ? badge.textColor : "text-slate-200"}`}>
                       {badge.name}

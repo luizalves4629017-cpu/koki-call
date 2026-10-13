@@ -1,3 +1,4 @@
+import { BadgeIcon } from "./BadgeIcon";
 import React, { useState } from "react";
 import { ALL_BADGES, getBadgeById, UserBadge } from "../data/badges";
 import { Sparkles, Crown, Shield, Zap, Gem } from "lucide-react";
@@ -57,7 +58,7 @@ export const BadgeList: React.FC<BadgeListProps> = ({
             badge.glow ? "ring-1 ring-amber-400/40 shadow-amber-500/10" : ""
           }`}
         >
-          <span className={iconSizes[size]}>{badge.icon}</span>
+          <span className={iconSizes[size]}><BadgeIcon icon={badge.icon} alt={badge.name} /></span>
           {showLabels && (
             <span className="font-semibold tracking-wide truncate max-w-[120px]">
               {badge.name}
@@ -76,7 +77,7 @@ export const BadgeList: React.FC<BadgeListProps> = ({
           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none w-52">
             <div className="bg-slate-900/95 backdrop-blur-md text-white text-xs rounded-xl p-2.5 border border-slate-700 shadow-2xl text-center w-full">
               <div className="flex items-center justify-center gap-1.5 font-bold mb-1">
-                <span>{badge.icon}</span>
+                <span><BadgeIcon icon={badge.icon} alt={badge.name} /></span>
                 <span className={badge.textColor}>{badge.name}</span>
               </div>
               <p className="text-slate-300 text-[11px] leading-relaxed">

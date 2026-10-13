@@ -1,35 +1,27 @@
+import { definirSocketConta, lembrarSala, aoMudarConta, provavelmenteLogado, getMinhasSalas } from "./utils/conta";
+import { BanidoTela, InfoBan } from "./components/BanidoTela";
+import { getMemberSince, getSavedUserProfile, resolveUserTag, MASTER_DEFAULT_TAG } from "./utils/storage";
+import { SalasDock, AdicionarSalaModal } from "./components/SalasDock";
+import { MasterLoginModal } from "./components/MasterLoginModal";
 import React, { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
+import { AvisoAtualizacao } from "./components/AvisoAtualizacao";
+import { setAjustesLoja } from "./utils/lojaAjustes";
 import { RoomState, Participant } from "./types";
 import { Lobby } from "./components/Lobby";
 import { CallRoom } from "./components/CallRoom";
 import { saveHostToken, getHostToken, isMasterIdentity } from "./utils/storage";
 import { getStoredMasterInfo, isMasterKeyValid, getMasterTokenSync, clearMasterAuthLocally } from "./utils/masterAuth";
 import { playVoiceJoinChime } from "./utils/audioChimes";
+import { sanitizeRoomId, generateUniqueRoomId } from "./utils/roomId";
 
-// Resolve default backend Socket.IO connection URL explicitly
-const BACKEND_SOCKET_URL =
-  ((import.meta as any).env && (import.meta as any).env.VITE_BACKEND_URL) ||
-  (typeof window !== "undefined" && window.location && window.location.origin && !window.location.origin.includes("file://")
-    ? window.location.origin
-    : "https://koki-call.onrender.com");
+import { BACKEND_URL, apiUrl } from "./utils/backend";
+
+// Backend (socket.io + /api): VITE_BACKEND_URL no build, senão o mesmo domínio da página
+const BACKEND_SOCKET_URL = BACKEND_URL;
 
 const cleanRoomParam = (rawRoom?: string | null): string => {
-  if (!rawRoom || typeof rawRoom !== "string") return "main-lounge";
-  let clean = rawRoom.trim();
-  if (clean.includes("?room=") || clean.includes("&room=")) {
-    const match = clean.match(/[?&]room=([^&?#\s]+)/i);
-    if (match && match[1]) {
-      clean = decodeURIComponent(match[1]).trim();
-    }
-  }
-  clean = clean.replace(/^[/?#&]+/, "");
-  if (clean.toLowerCase().startsWith("room=")) {
-    clean = clean.slice(5);
-  }
-  clean = clean.split("?")[0].split("&")[0].split("#")[0].trim();
-  clean = clean.replace(/^[\/\s]+|[\/\s]+$/g, "").trim().replace(/\s+/g, "-").toLowerCase();
-  return clean || "main-lounge";
+  return sanitizeRoomId(rawRoom);
 };
 
 const getInitialRoomId = (): string => {
@@ -37,10 +29,10 @@ const getInitialRoomId = (): string => {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get("room");
     if (roomParam && roomParam.trim().length > 0) {
-      return cleanRoomParam(roomParam);
+      return sanitizeRoomId(roomParam);
     }
   }
-  return "main-lounge";
+  return "";
 };
 
 interface LastJoinSession {
@@ -54,6 +46,8 @@ interface LastJoinSession {
   masterToken?: string;
   hostSecretToken?: string;
   profile: any;
+  /** Modo invisível (só Dono Master / Co-fundador; o servidor confere) */
+  invisivel?: boolean;
 }
 
 export default function App() {
@@ -69,6 +63,9 @@ export default function App() {
 
   // Active call session tracking for automatic reconnection when backend restarts
   const lastJoinSessionRef = useRef<LastJoinSession | null>(null);
+  // Modo invisível: entrada atual foi invisível? + contador que remonta a call a cada entrada nova
+  const [entradaInvisivel, setEntradaInvisivel] = useState<boolean>(false);
+  const [sessaoCall, setSessaoCall] = useState<number>(0);
   const inCallRef = useRef<boolean>(false);
   // WebRTC HTML <audio autoplay> ref for instant remote peer audio playback
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -91,6 +88,40 @@ export default function App() {
       window.removeEventListener("keydown", unlockAudio);
     };
   }, []);
+
+  // Theme state: defaults to true (Dark Mode suave / slate descansativo para a vista)
+  const [isDarkTheme, setIsDarkTheme] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem("koki_theme");
+      if (stored === "light_blue" || stored === "light") return false;
+      return true;
+    } catch {
+      return true;
+    }
+  });
+
+  const handleToggleTheme = () => {
+    setIsDarkTheme((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("koki_theme", next ? "dark" : "light_blue");
+        if (next) {
+          document.body.classList.add("theme-dark");
+        } else {
+          document.body.classList.remove("theme-dark");
+        }
+      } catch {}
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (isDarkTheme) {
+      document.body.classList.add("theme-dark");
+    } else {
+      document.body.classList.remove("theme-dark");
+    }
+  }, [isDarkTheme]);
 
   // Master Machine & Hardware Authorization State
   const initialMaster = getStoredMasterInfo();
@@ -140,7 +171,7 @@ export default function App() {
       // 2. Server-side validation check (non-blocking verification)
       if (candidateToken) {
         try {
-          const res = await fetch("/api/auth/master-check", {
+          const res = await fetch(apiUrl("/api/auth/master-check"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ masterToken: candidateToken }),
@@ -193,12 +224,102 @@ export default function App() {
     clearMasterAuthLocally();
   };
 
+  // ---------- Conta logada: salas salvas estilo servidores do Discord ----------
+  const [logado, setLogado] = useState<boolean>(() => provavelmenteLogado());
+  const [nomeConta, setNomeConta] = useState<string>("");
+  const [isAdicionarOpen, setIsAdicionarOpen] = useState(false);
+  const [isMasterLoginOpen, setIsMasterLoginOpen] = useState(false);
+  const autoAbriuRef = useRef(false);
+  const logoClicksRef = useRef<{ count: number; last: number }>({ count: 0, last: 0 });
+
+  useEffect(
+    () =>
+      aoMudarConta((c) => {
+        setLogado(Boolean(c));
+        setNomeConta(c?.nome || "");
+      }),
+    []
+  );
+
+  const handleLogoClick = () => {
+    const now = Date.now();
+    const c = logoClicksRef.current;
+    c.count = now - c.last < 800 ? c.count + 1 : 1;
+    c.last = now;
+    if (c.count >= 5) {
+      c.count = 0;
+      setIsMasterLoginOpen(true);
+    }
+  };
+
+  /** Perfil salvo do aparelho, pra entrar sem formulário. */
+  const perfilParaEntrar = () => {
+    const p = getSavedUserProfile();
+    const souMaster = Boolean(isMaster && masterToken);
+    const nome = (p.name || "").trim() || nomeConta.split(" ")[0] || `Convidado ${Math.floor(100 + Math.random() * 900)}`;
+    const tag = souMaster ? MASTER_DEFAULT_TAG : resolveUserTag(nome, false, p.tag);
+    return {
+      nome,
+      profile: {
+        avatarEmoji: souMaster ? "👑" : "",
+        avatarColor: p.avatarColor,
+        avatarUrl: p.avatarUrl,
+        bannerColor: p.bannerColor,
+        bannerUrl: p.bannerUrl,
+        customStatus: p.customStatus || (souMaster ? "👑 Dono Master do eco" : "🟢 Conectado ao eco"),
+        bio: p.bio || (souMaster ? "Criador e moderador oficial do eco." : "Voz, vídeo e tela com seus amigos."),
+        tag,
+        badges: p.badges || [],
+      },
+    };
+  };
+
+  const sairDaSalaAtualSemVoltar = () => {
+    if (socket && inCall) socket.emit("room:leave");
+    lastJoinSessionRef.current = null;
+  };
+
+  const abrirSalaSalva = (roomId: string, senha?: string, invisivel = false) => {
+    if (!invisivel && inCall && currentRoom?.roomId === roomId && !entradaInvisivel) return;
+    sairDaSalaAtualSemVoltar();
+    const { nome, profile } = perfilParaEntrar();
+    handleJoinRoom({ roomId, name: nome, passcode: senha, profile, invisivel });
+  };
+
+  // Só Dono Master e Co-fundador veem as opções de entrar invisível (o servidor confere de novo)
+  const podeInvisivel = Boolean((isMaster && masterToken) || selfParticipant?.isCofundador);
+  const entrarInvisivel = (roomId: string) => {
+    const id = cleanRoomParam(roomId);
+    if (!id) return;
+    abrirSalaSalva(id, undefined, true);
+  };
+  const aoRevelar = () => {
+    setEntradaInvisivel(false);
+    if (lastJoinSessionRef.current) lastJoinSessionRef.current.invisivel = false;
+  };
+
+  const criarSalaNova = (nomeSala: string, codigo: string, senha: string) => {
+    sairDaSalaAtualSemVoltar();
+    const { nome, profile } = perfilParaEntrar();
+    handleCreateRoom({
+      roomName: nomeSala,
+      roomId: codigo || generateUniqueRoomId("eco"),
+      hostName: nome,
+      hostPasscode: senha,
+      lowBandwidthDefault: false,
+      profile,
+    });
+  };
+
+
   // Initialize Socket.IO connection and query params with Render URL & automatic reconnection
   useEffect(() => {
-    // If backend is on the same host (e.g. preview proxy / express), socket.io connects smoothly
-    // Fallback explicitly to https://koki-call.onrender.com or custom VITE_BACKEND_URL
+    // Backend no mesmo domínio (Render) ou em outro (VITE_BACKEND_URL, ex.: Railway).
+    // WebSocket direto (sem long-polling: polling gastava muita banda com cabeçalhos HTTP e reenvios);
+    // se a rede bloquear WebSocket, tryAllTransports cai pro polling sozinho.
     const socketInstance = io(BACKEND_SOCKET_URL, {
       transports: ["websocket", "polling"],
+      tryAllTransports: true,
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: Infinity,
@@ -208,6 +329,14 @@ export default function App() {
     });
 
     setSocket(socketInstance);
+    // Login salvo (Firebase) usa o mesmo socket
+    definirSocketConta(socketInstance, BACKEND_SOCKET_URL);
+
+    // Preços da loja definidos pelo Dono Master (valem para todo mundo, atualizam na hora)
+    const carregarLoja = () =>
+      socketInstance.emit("loja:config", {}, (res: any) => res?.ajustes && setAjustesLoja(res.ajustes));
+    socketInstance.on("connect", carregarLoja);
+    socketInstance.on("loja:config-atualizada", (d: any) => setAjustesLoja(d?.ajustes || {}));
 
     // Read room ID and role from query string (e.g. ?room=xyz)
     const params = new URLSearchParams(window.location.search);
@@ -243,11 +372,11 @@ export default function App() {
 
     // Listen for connection lifecycle and automatic room re-entry
     const handleConnect = () => {
-      console.log("[Koki Call] Socket connected to backend:", socketInstance.id);
+      console.log("[eco] Socket connected to backend:", socketInstance.id);
       // If user was actively in a call before connection dropped / server restart, automatically re-join
       if (inCallRef.current && lastJoinSessionRef.current) {
         const session = lastJoinSessionRef.current;
-        console.log("[Koki Call] Reconnecting to room after backend restart:", session.roomId);
+        console.log("[eco] Reconnecting to room after backend restart:", session.roomId);
         socketInstance.emit("room:join", session, (res: {
           success: boolean;
           needsApproval?: boolean;
@@ -273,7 +402,7 @@ export default function App() {
     };
 
     const handleDisconnect = (reason: string) => {
-      console.warn("[Koki Call] Socket disconnected from backend:", reason);
+      console.warn("[eco] Socket disconnected from backend:", reason);
     };
 
     const handleRoomJoined = (data: {
@@ -452,10 +581,12 @@ export default function App() {
   }) => {
     setErrorMsg(null);
     setApprovalError(null);
+    setEntradaInvisivel(false);
+    setSessaoCall((n) => n + 1);
 
     const safeRoomId = params.roomId.trim()
       ? params.roomId.trim().toLowerCase().replace(/\s+/g, "-")
-      : (urlRoomId && urlRoomId.trim() ? urlRoomId.trim().toLowerCase() : "main-lounge");
+      : (urlRoomId && urlRoomId.trim() ? urlRoomId.trim().toLowerCase() : generateUniqueRoomId("eco"));
 
     const isMasterUser = Boolean(isMaster || params.profile.tag === "0001" || isMasterIdentity(params.hostName, isMaster));
     const effectiveSocketId = socket?.id || `temp-host-${Date.now()}`;
@@ -472,14 +603,15 @@ export default function App() {
       isDeafened: false,
       isMutedByHost: false,
       joinedAt: Date.now(),
+      memberSince: getMemberSince(),
       avatarEmoji: params.profile.avatarEmoji,
       avatarColor: params.profile.avatarColor,
       avatarUrl: params.profile.avatarUrl,
       bannerColor: params.profile.bannerColor,
       bannerUrl: params.profile.bannerUrl,
-      customStatus: params.profile.customStatus,
-      bio: params.profile.bio,
-      badges: params.profile.badges || (isMasterUser ? ["owner_supreme", "creator_shield"] : []),
+      customStatus: params.profile.customStatus || (isMasterUser ? "👑 Dono Master do eco" : "🟢 Conectado na Call"),
+      bio: params.profile.bio || (isMasterUser ? "Criador e moderador oficial do eco." : "Participante da Chamada"),
+      badges: params.profile.badges || (isMasterUser ? ["singularidade", "horizonte"] : []),
       kokiCoins: isMasterUser ? 999999 : 50,
     };
 
@@ -492,7 +624,7 @@ export default function App() {
       channels: [
         { id: "geral", name: "geral", description: "Canal de texto principal para todos os membros da sala" },
         { id: "links-midia", name: "links-e-mídia", description: "Compartilhamento de links, vídeos e imagens" },
-        { id: "comandos-koki", name: "comandos-koki", description: "Comandos da sala, bots e interações" },
+        { id: "comandos-eco", name: "comandos-eco", description: "Comandos da sala, bots e interações" },
       ],
       participants: [optimisticSelf],
       settings: {
@@ -533,6 +665,7 @@ export default function App() {
           hostName: params.hostName,
           hostPasscode: params.hostPasscode,
           masterToken: masterToken || undefined,
+          hostSecretToken: getHostToken(safeRoomId),
           profile: params.profile,
           settings: {
             lowBandwidthDefault: params.lowBandwidthDefault,
@@ -553,10 +686,17 @@ export default function App() {
             }
             if (res.room) {
               setCurrentRoom(res.room);
+              lembrarSala(res.room.roomId, res.room.roomName);
             }
             if (res.self) {
               setSelfParticipant(res.self);
             }
+          } else if (res && !res.success) {
+            // Ex.: código já é de outra sala fixa
+            setInCall(false);
+            lastJoinSessionRef.current = null;
+            window.history.pushState({}, "", "/");
+            setApprovalError(res.message || "Não foi possível criar a sala.");
           }
         }
       );
@@ -590,16 +730,21 @@ export default function App() {
       tag: string;
       badges?: string[];
     };
+    invisivel?: boolean;
   }) => {
     setErrorMsg(null);
     setApprovalError(null);
+    const invisivel = Boolean(params.invisivel);
+    setEntradaInvisivel(invisivel);
+    setSessaoCall((n) => n + 1);
 
     const username = (params.name || "").trim() || `Convidado ${Math.floor(100 + Math.random() * 900)}`;
-    const safeRoomId = cleanRoomParam(params.roomId || urlRoomId || "main-lounge");
+    const safeRoomId = cleanRoomParam(params.roomId || urlRoomId || generateUniqueRoomId("eco"));
     const isMasterUser = Boolean(isMaster && (params.profile?.tag === "0001" || isMasterIdentity(username, isMaster)));
-    const isGuestRole = !isMasterUser;
-    // If joining explicitly as guest, never send host secret token to ensure role isolation
-    const existingHostToken = isGuestRole ? undefined : getHostToken(safeRoomId);
+    // Quem criou a sala (tem o token salvo) volta como dono; o resto entra como convidado
+    const savedHostToken = getHostToken(safeRoomId);
+    const isGuestRole = !isMasterUser && !savedHostToken;
+    const existingHostToken = isGuestRole ? undefined : savedHostToken;
 
     // Update URL query string with clean room ID
     const newUrl = `/?room=${encodeURIComponent(safeRoomId)}`;
@@ -619,15 +764,16 @@ export default function App() {
       isScreenSharing: false,
       isDeafened: false,
       isMutedByHost: false,
-      avatarColor: params.profile?.avatarColor || "#0284c7",
-      avatarEmoji: params.profile?.avatarEmoji || (isMasterUser ? "👑" : "🎮"),
+      avatarColor: params.profile?.avatarColor || "#2A2D35",
+      avatarEmoji: params.profile?.avatarEmoji || (isMasterUser ? "👑" : ""),
       avatarUrl: params.profile?.avatarUrl,
-      bannerColor: params.profile?.bannerColor || "#0f172a",
+      bannerColor: params.profile?.bannerColor || "#1E2026",
       bannerUrl: params.profile?.bannerUrl,
-      customStatus: params.profile?.customStatus || (isMasterUser ? "👑 Dono Master do Koki" : "🟢 Conectado na Call"),
-      bio: params.profile?.bio || (isMasterUser ? "Criador e moderador oficial do Koki Call." : "Participante da Chamada"),
-      badges: params.profile?.badges || (isMasterUser ? ["owner_supreme", "koki_creator", "nitro_owner"] : []),
+      customStatus: params.profile?.customStatus || (isMasterUser ? "👑 Dono Master do eco" : "🟢 Conectado na Call"),
+      bio: params.profile?.bio || (isMasterUser ? "Criador e moderador oficial do eco." : "Participante da Chamada"),
+      badges: params.profile?.badges || (isMasterUser ? ["singularidade", "horizonte"] : []),
       joinedAt: Date.now(),
+      memberSince: getMemberSince(),
       voiceChannelId: "voice-geral",
     };
 
@@ -640,9 +786,10 @@ export default function App() {
       channels: [
         { id: "geral", name: "geral", description: "Canal de texto principal para todos os membros da sala" },
         { id: "links-midia", name: "links-e-mídia", description: "Compartilhamento de links, vídeos e imagens" },
-        { id: "comandos-koki", name: "comandos-koki", description: "Comandos da sala, bots e interações" },
+        { id: "comandos-eco", name: "comandos-eco", description: "Comandos da sala, bots e interações" },
       ],
-      participants: [optimisticParticipant],
+      // Invisível: não se coloca na lista nem por um instante
+      participants: invisivel ? [] : [optimisticParticipant],
       settings: {
         lowBandwidthDefault: false,
         allowScreenShare: true,
@@ -670,6 +817,7 @@ export default function App() {
       masterToken: masterToken || undefined,
       hostSecretToken: existingHostToken,
       profile: params.profile,
+      ...(invisivel ? { invisivel: true } : {}),
     };
 
     // Store in ref for seamless automatic reconnect if backend restarts
@@ -705,9 +853,11 @@ export default function App() {
               setCurrentRoom(res.room);
               setSelfParticipant(res.self);
               setInCall(true);
+              lembrarSala(res.room.roomId, res.room.roomName);
             }
           } else if (res && !res.success) {
             setInCall(false);
+            setEntradaInvisivel(false);
             lastJoinSessionRef.current = null;
             setErrorMsg(res?.message || "Não foi possível entrar na chamada.");
           }
@@ -733,8 +883,28 @@ export default function App() {
   };
 
   // Handle Leaving Call
+  // Suspenso/banido: o servidor avisa (ao entrar na sala, na conta, ou na hora da punição)
+  const [infoBan, setInfoBan] = useState<InfoBan | null>(null);
+  useEffect(() => {
+    if (!socket) return;
+    const bloqueado = (d: InfoBan) => {
+      setInfoBan(d);
+      lastJoinSessionRef.current = null;
+      setInCall(false);
+      setCurrentRoom(null);
+      setSelfParticipant(null);
+      setIsWaitingApproval(false);
+      setErrorMsg(null);
+    };
+    socket.on("ban:bloqueado", bloqueado);
+    return () => {
+      socket.off("ban:bloqueado", bloqueado);
+    };
+  }, [socket]);
+
   const handleLeaveRoom = () => {
     lastJoinSessionRef.current = null;
+    setEntradaInvisivel(false);
     if (socket) {
       socket.emit("room:leave");
     }
@@ -742,13 +912,22 @@ export default function App() {
     setCurrentRoom(null);
     setSelfParticipant(null);
     setIsWaitingApproval(false);
-    setUrlRoomId("main-lounge");
+    setUrlRoomId("");
     setUrlRole("");
     setErrorMsg(null);
     setApprovalError(null);
-    // Reset query param
-    window.history.pushState({}, "", "/?room=main-lounge");
+    // Reset query param to clean root
+    window.history.pushState({}, "", "/");
   };
+
+  // Com login: abre direto o convite do link ou a última sala salva (igual o Discord abrindo no último servidor)
+  useEffect(() => {
+    if (!logado || !socket || inCall || isWaitingApproval || autoAbriuRef.current) return;
+    autoAbriuRef.current = true;
+    const alvo = urlRoomId || getMinhasSalas()[0]?.roomId;
+    if (alvo) abrirSalaSalva(alvo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logado, socket]);
 
   // Calculate whether participant has an assigned VIP badge or VIP permissions
   const hasVipBadge = Boolean(
@@ -766,7 +945,14 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-[#070b14] text-slate-100 font-sans antialiased select-none">
+    <div
+      className={`min-h-screen font-sans antialiased select-none transition-colors duration-200 ${
+        isDarkTheme ? "bg-[#070b14] text-slate-100" : "bg-[#f0f6ff] text-slate-800"
+      }`}
+    >
+      {/* Aviso "Nova atualização do Eco" (pra todo mundo, no lobby e na call) */}
+      <AvisoAtualizacao socket={socket} baseUrl={BACKEND_SOCKET_URL} />
+
       {/* Global Error Banner */}
       {errorMsg && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-rose-950/90 border border-rose-500/80 text-rose-200 px-4 py-2 rounded-xl text-xs flex items-center gap-3 shadow-2xl backdrop-blur-md animate-in fade-in">
@@ -780,6 +966,8 @@ export default function App() {
         </div>
       )}
 
+      {infoBan && <BanidoTela info={infoBan} onFechar={() => setInfoBan(null)} />}
+
       {/* Global WebRTC HTML <audio autoplay> element for instant remote peer audio playback */}
       <audio
         ref={audioRef}
@@ -789,9 +977,76 @@ export default function App() {
         style={{ display: "none" }}
       />
 
-      {inCall && socket && currentRoom && selfParticipant ? (
+      {logado && !isWaitingApproval ? (
+        <div className="flex h-screen w-screen overflow-hidden">
+          {inCall && socket && currentRoom && selfParticipant ? (
+            <div className="flex-1 min-w-0 h-screen relative">
+              <CallRoom
+                key={`${currentRoom.roomId}:${sessaoCall}`}
+                socket={socket}
+                entrouInvisivel={entradaInvisivel}
+                onEntrarInvisivel={podeInvisivel ? entrarInvisivel : undefined}
+                onRevelado={aoRevelar}
+                initialRoom={currentRoom}
+                initialSelf={selfParticipant}
+                isMaster={isMaster}
+                hasVipBadge={hasVipBadge}
+                masterToken={masterToken}
+                onLeaveRoom={handleLeaveRoom}
+                audioRef={audioRef}
+                salasSlot={
+                  <SalasDock
+                    salaAtivaId={currentRoom.roomId}
+                    onAbrirSala={(id) => abrirSalaSalva(id)}
+                    onEntrarInvisivel={podeInvisivel ? entrarInvisivel : undefined}
+                    onAdicionar={() => setIsAdicionarOpen(true)}
+                  />
+                }
+              />
+            </div>
+          ) : (
+            // Tela inicial com login: a mesma do eco (fundo cósmico, Minhas salas, Criar sala)
+            <div className="flex-1 min-w-0 h-screen overflow-y-auto">
+              <Lobby
+                initialRoomId={urlRoomId}
+                initialRole={urlRole}
+                isMaster={isMaster}
+                masterToken={masterToken}
+                machineInfo={machineInfo}
+                isWaitingApproval={isWaitingApproval}
+                approvalError={approvalError}
+                isDarkTheme={isDarkTheme}
+                onToggleTheme={handleToggleTheme}
+                onCancelApproval={handleCancelApproval}
+                onCreateRoom={handleCreateRoom}
+                onJoinRoom={handleJoinRoom}
+                onMasterLogin={handleMasterLoginSuccess}
+                onMasterLogout={handleMasterLogout}
+              />
+            </div>
+          )}
+          <AdicionarSalaModal
+            aberto={isAdicionarOpen}
+            onFechar={() => setIsAdicionarOpen(false)}
+            onCriar={criarSalaNova}
+            onEntrar={(codigo, senha) => abrirSalaSalva(cleanRoomParam(codigo), senha)}
+            nomeUsuario={perfilParaEntrar().nome}
+          />
+          <MasterLoginModal
+            isOpen={isMasterLoginOpen}
+            isMaster={Boolean(isMaster && masterToken)}
+            onClose={() => setIsMasterLoginOpen(false)}
+            onLoginSuccess={handleMasterLoginSuccess}
+            onLogout={handleMasterLogout}
+          />
+        </div>
+      ) : inCall && socket && currentRoom && selfParticipant ? (
         <CallRoom
+          key={`${currentRoom.roomId}:${sessaoCall}`}
           socket={socket}
+          entrouInvisivel={entradaInvisivel}
+          onEntrarInvisivel={podeInvisivel ? entrarInvisivel : undefined}
+          onRevelado={aoRevelar}
           initialRoom={currentRoom}
           initialSelf={selfParticipant}
           isMaster={isMaster}
@@ -809,6 +1064,8 @@ export default function App() {
           machineInfo={machineInfo}
           isWaitingApproval={isWaitingApproval}
           approvalError={approvalError}
+          isDarkTheme={isDarkTheme}
+          onToggleTheme={handleToggleTheme}
           onCancelApproval={handleCancelApproval}
           onCreateRoom={handleCreateRoom}
           onJoinRoom={handleJoinRoom}

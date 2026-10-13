@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { Participant } from "../types";
 import {
-  DEFAULT_AVATARS,
   DEFAULT_AVATAR_COLORS,
   DEFAULT_BANNER_COLORS,
   OWNER_GIF_AVATAR_PRESETS,
@@ -67,13 +66,24 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
   onSave,
 }) => {
   const isHost = self.isHost;
-  const isSelfMaster = Boolean(isMaster || isMasterIdentity(self.name, self.tag));
-  const hasVip = Boolean(self.vipPermissions);
+  const isSelfMaster = Boolean(isMaster || (self as any).isMaster === true);
+  const hasVip = Boolean(self.vipPermissions && Object.values(self.vipPermissions as any).some(Boolean));
   const perks = getPurchasedPerks();
+  // Insígnias que a pessoa já recebeu do Dono (não dá pra se dar insígnia sozinho)
+  const grantedBadgeIds: string[] = (() => {
+    const atuais = Array.isArray(self.badges) ? self.badges : [];
+    let salvas: string[] = [];
+    try { salvas = JSON.parse(localStorage.getItem("eco_insignias_recebidas") || "[]"); } catch {}
+    const todas = Array.from(new Set([...(Array.isArray(salvas) ? salvas : []), ...atuais]));
+    try { localStorage.setItem("eco_insignias_recebidas", JSON.stringify(todas)); } catch {}
+    return todas;
+  })();
 
-  const hasGifAvatarPerk = isSelfMaster || isPerkActive("gif_avatar", perks) || Boolean(self.vipPermissions?.canUseGifAvatar);
-  const hasBannerMediaPerk = isSelfMaster || isPerkActive("custom_banner", perks) || Boolean(self.vipPermissions?.canUseVideoMp4Banner);
-  const hasCustomTitlePerk = isSelfMaster || isPerkActive("custom_title", perks);
+  const adv = Boolean(self.vipPermissions?.canEditAdvancedProfile) || isPerkActive("vip_role", perks) || (self.badges || []).some((b) => b === "nitro_owner" || b === "vip_granted");
+  const hasGifAvatarPerk = isSelfMaster || adv || isPerkActive("gif_avatar", perks) || Boolean(self.vipPermissions?.canUseGifAvatar);
+  // Banner: só VIP Nitro (ou Co-fundador / item Banner da loja). O VIP normal troca só a foto.
+  const hasBannerMediaPerk = isSelfMaster || Boolean((self as any).isCofundador) || (self.badges || []).includes("nitro_owner") || isPerkActive("custom_banner", perks);
+  const hasCustomTitlePerk = isSelfMaster || adv || isPerkActive("custom_title", perks);
   const hasVipRolePerk = isSelfMaster || isPerkActive("vip_role", perks) || hasVip;
 
   const canUseMedia = hasGifAvatarPerk || hasBannerMediaPerk || isSelfMaster || hasVip;
@@ -81,17 +91,17 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
   const [name, setName] = useState(self.name);
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(self.avatarUrl);
   const [bannerUrl, setBannerUrl] = useState<string | undefined>(self.bannerUrl);
-  const [avatarEmoji, setAvatarEmoji] = useState(self.avatarEmoji || (isSelfMaster ? "👑" : "🎮"));
+  const [avatarEmoji, setAvatarEmoji] = useState(self.avatarEmoji || (isSelfMaster ? "👑" : ""));
   const [avatarColor, setAvatarColor] = useState(self.avatarColor || DEFAULT_AVATAR_COLORS[0]);
   const [bannerColor, setBannerColor] = useState(self.bannerColor || DEFAULT_BANNER_COLORS[0]);
   const [customStatus, setCustomStatus] = useState(self.customStatus || (isSelfMaster ? "👑 Dono Master da Call" : "🟢 Conectado na Call"));
-  const [bio, setBio] = useState(self.bio || (isSelfMaster ? "Criador e moderador oficial desta sala." : "Participante do Koki Call"));
+  const [bio, setBio] = useState(self.bio || (isSelfMaster ? "Criador e moderador oficial do eco." : "Participante do eco"));
   const [customTitle, setCustomTitle] = useState(self.customTitle || "");
   const [badges, setBadges] = useState<string[]>(
     self.badges && self.badges.length > 0
       ? self.badges
       : isSelfMaster
-      ? ["owner_supreme", "koki_creator", "nitro_owner"]
+      ? ["singularidade", "horizonte"]
       : []
   );
   const [isProcessingImg, setIsProcessingImg] = useState(false);
@@ -114,7 +124,8 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (file && file.size > 6 * 1024 * 1024) { setErrorMsg("Arquivo grande demais (máx. 6 MB). Tente um GIF ou vídeo menor."); return; }
+    if (!file || !hasGifAvatarPerk) return;
 
     setErrorMsg(null);
     setIsProcessingImg(true);
@@ -131,7 +142,8 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
 
   const handleBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (file && file.size > 6 * 1024 * 1024) { setErrorMsg("Arquivo grande demais (máx. 6 MB). Tente um GIF ou vídeo menor."); return; }
+    if (!file || !hasBannerMediaPerk) return;
 
     setErrorMsg(null);
     setIsProcessingImg(true);
@@ -168,16 +180,16 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
 
     const updates = {
       name: name.trim(),
-      avatarUrl,
-      bannerUrl,
+      avatarUrl: hasGifAvatarPerk ? avatarUrl : undefined,
+      bannerUrl: hasBannerMediaPerk ? bannerUrl : undefined,
       avatarEmoji,
       avatarColor,
       bannerColor,
       customStatus: customStatus.trim(),
       bio: bio.trim(),
       tag: finalTag,
-      customTitle: customTitle.trim() || undefined,
-      badges,
+      customTitle: hasCustomTitlePerk ? (customTitle.trim() || undefined) : undefined,
+      badges: isSelfMaster ? badges : badges.filter((b) => grantedBadgeIds.includes(b)),
     };
 
     saveUserProfile({
@@ -209,14 +221,16 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-white text-sm flex items-center gap-1.5">
-                Editar Perfil do Dono (Master)
+                {isSelfMaster ? "Editar Perfil do Dono (Master)" : "Editar meu perfil"}
+                {isSelfMaster && (
                 <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 bg-amber-950 text-amber-300 rounded border border-amber-700 font-bold flex items-center gap-1">
                   <Film className="w-3 h-3 text-amber-400" />
                   Vídeos MP4 & GIFs Liberados
                 </span>
+                )}
               </h3>
               <p className="text-[11px] text-slate-400">
-                Upload de vídeo MP4 para o banner, GIFs animados e foto do Dono
+                {isSelfMaster ? "Upload de vídeo MP4 para o banner, GIFs animados e foto do Dono" : "Nome, cor, status e bio. Foto, GIF e banner vêm de itens da Loja."}
               </p>
             </div>
           </div>
@@ -274,6 +288,12 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
               </div>
 
               {/* Top Banner Control Buttons */}
+              {!hasBannerMediaPerk ? (
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-1 text-[10px] text-[#9CA3AF] bg-[#16171B]/90 border border-[#2A2D35] rounded-lg px-2 py-1">
+                  <Lock className="w-3 h-3 text-[#C4B5FD]" />
+                  <span>Banner: item da Loja</span>
+                </div>
+              ) : (
               <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
                 <button
                   type="button"
@@ -306,10 +326,11 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
                   </button>
                 )}
               </div>
+              )}
             </div>
 
             {/* Banner Media Preset & URL Selector Drawer */}
-            {showBannerMediaPicker && (
+            {hasBannerMediaPerk && showBannerMediaPicker && (
               <div className="p-3 bg-[#0a1020] border-b border-[#1b253b] space-y-2.5 animate-in fade-in">
                 {/* Tabs: MP4 Video loops vs GIFs */}
                 <div className="flex items-center justify-between border-b border-[#1b253b] pb-2">
@@ -438,7 +459,7 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
                   {!avatarUrl && avatarEmoji}
 
                   {/* Upload Overlay Button */}
-                  <button
+                  {hasGifAvatarPerk && <button
                     type="button"
                     onClick={() => avatarInputRef.current?.click()}
                     disabled={isProcessingImg}
@@ -446,16 +467,24 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
                   >
                     <Camera className="w-4 h-4 mb-0.5 text-cyan-300" />
                     <span>Mudar</span>
-                  </button>
+                  </button>}
                 </div>
 
                 {/* Dono Crown Badge */}
+                {isSelfMaster && (
                 <div className="absolute -top-1 -right-1 bg-amber-500 text-slate-950 p-1 rounded-full shadow-md">
                   <Crown className="w-3.5 h-3.5 fill-current" />
                 </div>
+                )}
               </div>
 
               {/* Photo & GIF Avatar Actions */}
+              {!hasGifAvatarPerk ? (
+                <div className="flex items-center gap-1.5 mb-1 text-[10px] text-[#9CA3AF] bg-[#16171B] border border-[#2A2D35] rounded-lg px-2.5 py-1.5">
+                  <Lock className="w-3 h-3 text-[#C4B5FD]" />
+                  <span>Foto e GIF de perfil: item da Loja</span>
+                </div>
+              ) : (
               <div className="flex items-center gap-1.5 mb-1">
                 {/* Animated GIF Button */}
                 <button
@@ -488,10 +517,11 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
                   </button>
                 )}
               </div>
+              )}
             </div>
 
             {/* Avatar GIF Preset & URL Selector Drawer */}
-            {showGifAvatarPicker && (
+            {hasGifAvatarPerk && showGifAvatarPicker && (
               <div className="p-3 bg-[#0a1020] border-t border-[#1b253b] space-y-2.5 animate-in fade-in">
                 <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1">
                   <Sparkles className="w-3 h-3 text-amber-400" />
@@ -664,39 +694,29 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
             </div>
           </div>
 
-          {/* Optional Icon/Color selector if no photo or GIF is used */}
+          {/* Optional Color selector if no photo or GIF is used */}
           {!avatarUrl && (
-            <div className="bg-[#090f1d] border border-[#1b253b] rounded-xl p-3 space-y-2">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                Ou escolha Ícone e Cor de Fundo:
+            <div className="bg-[#1E2026] border border-[#2A2D35] rounded-xl p-3 space-y-2">
+              <span className="text-[11px] font-bold text-[#8B8F98] uppercase tracking-wider block">
+                Cor de Fundo do Avatar (Iniciais):
               </span>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {DEFAULT_AVATARS.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    onClick={() => setAvatarEmoji(emoji)}
-                    className={`w-7 h-7 rounded-lg text-sm flex items-center justify-center transition-all cursor-pointer ${
-                      avatarEmoji === emoji
-                        ? "bg-amber-900/80 border border-amber-400 scale-110"
-                        : "bg-[#141e30] hover:bg-[#1f2d47]"
-                    }`}
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-2 items-center">
                 {DEFAULT_AVATAR_COLORS.map((col) => (
                   <button
                     key={col}
                     type="button"
-                    onClick={() => setAvatarColor(col)}
-                    className={`w-5 h-5 rounded-full transition-transform cursor-pointer ${
-                      avatarColor === col ? "ring-2 ring-white scale-110" : ""
+                    onClick={() => {
+                      setAvatarColor(col);
+                      setAvatarEmoji("");
+                    }}
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white transition-all cursor-pointer ${
+                      avatarColor === col ? "ring-2 ring-[#5EEAD4] scale-110 shadow-md" : "opacity-80 hover:opacity-100"
                     }`}
                     style={{ backgroundColor: col }}
-                  />
+                    title={col}
+                  >
+                    {name ? name.slice(0, 1).toUpperCase() : "E"}
+                  </button>
                 ))}
               </div>
             </div>
@@ -710,6 +730,7 @@ export const EditOwnerProfileModal: React.FC<EditOwnerProfileModalProps> = ({
               isHost={isSelfMaster}
               hasVip={hasVip}
               maxSelectable={6}
+              allowedBadgeIds={grantedBadgeIds}
             />
           </div>
 

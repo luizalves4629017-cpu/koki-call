@@ -75,7 +75,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
           </div>
         </div>
 
-        {/* Cinematic "Koki" Name Reveal */}
+        {/* Cinematic "eco" Name Reveal */}
         <div className="mt-6 overflow-hidden">
           <h1
             className={`text-5xl sm:text-6xl font-black tracking-tight text-white transition-all duration-700 ${
@@ -84,8 +84,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
                 : "translate-y-0 opacity-100 tracking-tight"
             }`}
           >
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-cyan-400">
-              Koki
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-[#5EEAD4] to-[#C4B5FD]">
+              eco
             </span>
           </h1>
         </div>
@@ -98,9 +98,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
               : "opacity-0 translate-y-4"
           }`}
         >
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-950/80 border border-cyan-500/30 text-cyan-300 text-xs font-semibold shadow-lg shadow-cyan-950/50">
-            <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Koki Shield • Proteção & Baixa Latência</span>
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1E2026] border border-[#2A2D35] text-[#5EEAD4] text-xs font-semibold shadow-lg">
+            <ShieldCheck className="w-3.5 h-3.5 text-[#5EEAD4]" />
+            <span>eco Shield • Proteção & Baixa Latência</span>
           </div>
         </div>
       </div>

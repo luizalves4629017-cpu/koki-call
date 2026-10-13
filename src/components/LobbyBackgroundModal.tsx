@@ -200,10 +200,10 @@ export const LobbyBackgroundModal: React.FC<LobbyBackgroundModalProps> = ({
 
               {/* Sample card inside to demonstrate legibility */}
               <div className="relative z-10 bg-[#0b101e]/90 border border-[#202f48] rounded-xl p-3 max-w-xs w-full text-center shadow-xl backdrop-blur-xs">
-                <div className="w-6 h-6 rounded-md bg-cyan-500/20 text-cyan-300 mx-auto flex items-center justify-center font-bold text-xs mb-1">
-                  K
+                <div className="w-6 h-6 rounded-md bg-[#5EEAD4]/20 text-[#5EEAD4] mx-auto flex items-center justify-center font-bold text-xs mb-1">
+                  e
                 </div>
-                <div className="text-xs font-bold text-white">Koki Call Lobby</div>
+                <div className="text-xs font-bold text-white">eco Lobby</div>
                 <div className="text-[10px] text-slate-300">
                   {config.type === "video"
                     ? "🎥 Vídeo MP4 em Loop Ativo"
