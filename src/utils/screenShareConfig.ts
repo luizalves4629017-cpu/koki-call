@@ -87,7 +87,11 @@ export function getDisplayMediaConstraints(presetId: ScreenSharePresetId = DEFAU
   const excluiProprio = navegadorExcluiProprioAudio();
   // Cancelamento de eco no áudio da tela: automático, ou forçado pelo painel de diagnóstico (Ctrl+Shift+D)
   const aecPref = lerTelaAec();
-  const aecTela = aecPref === "on" ? true : aecPref === "off" ? false : !excluiProprio;
+  // Automático = DESLIGADO em todo lugar. Antes, no app Windows (Electron/Chromium antigo) o automático
+  // ligava o cancelamento de eco na trilha da tela, e isso deixava o MICROFONE em silêncio (-88 dB).
+  // O app novo (Electron 44) já tira o som do próprio Eco da captura, igual ao Chrome 141+.
+  void excluiProprio;
+  const aecTela = aecPref === "on";
   return {
     video: {
       width: { ideal: preset.width, max: preset.width },

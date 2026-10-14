@@ -80,6 +80,7 @@ export const AudioDiagnostico: React.FC<{ onFechar: () => void }> = ({ onFechar 
             trilha: {estado.mic.enabled ? "ligada" : "MUTADA"} · {estado.mic.readyState}
             {ia && (
               <>
+                <br />mic cru (pico): {typeof ia.rawPeakDb === "number" ? <N db={Math.round(ia.rawPeakDb)} /> : "?"}
                 <br />entrada (antes do gate): <N db={Math.round(ia.levelDb)} />
                 <br />gate: {ia.gateOpen ? "aberto" : "fechado"} · limite {Math.round(ia.thresholdDb)} dB · ganho +{(ia.makeupDb || 0).toFixed(1)} dB
                 <br />IA: {ia.aiOn ? "ligada" : "desligada"} · áudio {ia.ctxState} · AGC navegador: {String(ia.rawSettings?.autoGainControl ?? "?")} · eco: {String(ia.rawSettings?.echoCancellation ?? "?")}
@@ -90,6 +91,16 @@ export const AudioDiagnostico: React.FC<{ onFechar: () => void }> = ({ onFechar 
           <div className="text-[#F43F5E]">sem microfone</div>
         )}
       </div>
+
+      {estado?.micVigia && (estado.micVigia.log.length > 0 || estado.micVigia.semEco) && (
+        <div className="mb-2">
+          <div className="text-[#C4B5FD] font-sans font-semibold mb-0.5">Vigia do microfone</div>
+          {estado.micVigia.semEco && <div className="text-[#FBBF24]">mic sem cancelamento de eco (trocado pelo vigia)</div>}
+          {estado.micVigia.log.map((l: any, i: number) => (
+            <div key={i} className="text-[#8B8F98]">{l.hora} · {l.msg}</div>
+          ))}
+        </div>
+      )}
 
       {estado?.telaAudio && (
         <div className="mb-2">
@@ -108,7 +119,7 @@ export const AudioDiagnostico: React.FC<{ onFechar: () => void }> = ({ onFechar 
               onClick={() => trocarAec(v)}
               className={`px-2 py-0.5 rounded-full border cursor-pointer ${aec?.pref === v ? "border-[#5EEAD4] text-[#5EEAD4]" : "border-[#2A2D35] text-[#8B8F98]"}`}
             >
-              {v === "auto" ? "Automático" : v === "on" ? "Ligado" : "Desligado"}
+              {v === "auto" ? "Automático (desligado)" : v === "on" ? "Ligado" : "Desligado"}
             </button>
           ))}
         </div>

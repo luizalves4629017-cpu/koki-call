@@ -57,6 +57,9 @@ export class MicProcessor {
   private rnnoise: RnnoiseWorkletNode | null;
   private gate: AudioWorkletNode;
   private dest: MediaStreamAudioDestinationNode;
+  // Medidor do microfone CRU (antes da IA e do gate), usado pelo vigia de "microfone mudo"
+  private rawAnalyser: AnalyserNode | null = null;
+  private rawBuf: Float32Array | null = null;
   private aiOn = false;
   private wired = false;
   private closed = false;
@@ -86,6 +89,13 @@ export class MicProcessor {
     this.dest = parts.dest;
     this.aiAvailable = !!parts.rnnoise;
     this.track = parts.dest.stream.getAudioTracks()[0];
+    try {
+      const an = parts.ctx.createAnalyser();
+      an.fftSize = 16384; // ~340 ms de janela a 48 kHz
+      parts.source.connect(an);
+      this.rawAnalyser = an;
+      this.rawBuf = new Float32Array(an.fftSize);
+    } catch { /* sem medidor cru: o vigia fica desligado */ }
 
     this.gate.port.onmessage = (e: MessageEvent) => {
       const d = e.data as MicLevelInfo;
@@ -233,11 +243,36 @@ export class MicProcessor {
       trackEnabled: this.track.enabled,
       aiOn: this.aiOn,
       levelDb: this.lastInfo.levelDb,
+      rawPeakDb: this.rawPeakDb(),
       thresholdDb: this.lastInfo.thresholdDb,
       gateOpen: this.lastInfo.open,
       makeupDb: (this.lastInfo as any).makeupDb ?? 0,
       gateGain: (this.lastInfo as any).gain ?? null,
     };
+  }
+
+  /**
+   * Pico do microfone CRU (antes da IA/gate) na última janela (~340 ms), em dBFS.
+   * Microfone de verdade sempre tem algum ruído de fundo (> -80 dB); "silêncio digital" (≈ -100)
+   * quer dizer que o Windows/Chromium parou de entregar áudio. null = sem medidor.
+   */
+  rawPeakDb(): number | null {
+    if (this.closed || !this.rawAnalyser || !this.rawBuf) return null;
+    try {
+      this.rawAnalyser.getFloatTimeDomainData(this.rawBuf as any);
+      let pico = 0;
+      for (let i = 0; i < this.rawBuf.length; i++) {
+        const v = Math.abs(this.rawBuf[i]);
+        if (v > pico) pico = v;
+      }
+      return pico > 0 ? Math.max(MIC_DB_MIN, 20 * Math.log10(pico)) : MIC_DB_MIN;
+    } catch {
+      return null;
+    }
+  }
+
+  get contextState(): AudioContextState {
+    return this.ctx.state;
   }
 
   get aiActive() {
@@ -266,6 +301,7 @@ export class MicProcessor {
     window.removeEventListener("keydown", this.resumeOnGesture, true);
     try { this.gate.port.onmessage = null; } catch { /* ignore */ }
     try { this.source.disconnect(); } catch { /* ignore */ }
+    this.rawAnalyser = null;
     try { this.mono.disconnect(); } catch { /* ignore */ }
     try { this.rnnoise?.disconnect(); this.rnnoise?.destroy(); } catch { /* ignore */ }
     try { this.gate.disconnect(); } catch { /* ignore */ }

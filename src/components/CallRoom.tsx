@@ -451,9 +451,11 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     sensitivityDb: preferences.sensitivityDb,
   };
 
+  // Vigia do microfone mudo: depois que ele precisou pegar o mic SEM cancelamento de eco, continua assim nesta sessão
+  const micSemEcoRef = useRef(false);
   // Restrições do navegador (continuam ligadas por baixo da IA)
   const buildMicConstraints = (withDevice = true): MediaTrackConstraints => ({
-    echoCancellation: preferences.echoCancellation,
+    echoCancellation: micSemEcoRef.current ? false : preferences.echoCancellation,
     noiseSuppression: preferences.noiseSuppression,
     // AGC do navegador DESLIGADO: no Windows ele abaixa o volume do microfone do sistema aos poucos
     // (principalmente com som do jogo/vídeo vazando no mic ao compartilhar a tela). O ganho de
@@ -487,14 +489,25 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   // sem o usuário ter pedido (mute, ensurdecer, volume 0 no slider).
   // ---------------------------------------------------------------------------
   const reconstruindoMicRef = useRef(false);
-  const reconstruirMic = async (motivo: string) => {
-    if (reconstruindoMicRef.current || invisivelRef.current) return;
+  const reconstruirMic = async (motivo: string, opts?: { semEco?: boolean }): Promise<boolean> => {
+    if (reconstruindoMicRef.current || invisivelRef.current) return false;
     reconstruindoMicRef.current = true;
     console.warn(`[audio-guard] refazendo o microfone (${motivo})`);
     try {
-      const micStream = await navigator.mediaDevices.getUserMedia({ audio: buildMicConstraints(true), video: false });
+      const restricoes = buildMicConstraints(true);
+      if (opts?.semEco) restricoes.echoCancellation = false;
+      let micStream: MediaStream;
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: restricoes, video: false });
+      } catch (e: any) {
+        // Dispositivo escolhido sumiu: tenta o microfone padrão com as mesmas opções
+        if (e?.name !== "OverconstrainedError" && e?.name !== "NotFoundError") throw e;
+        const semDisp = { ...restricoes };
+        delete (semDisp as any).deviceId;
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: semDisp, video: false });
+      }
       const raw = micStream.getAudioTracks()[0];
-      if (!raw) return;
+      if (!raw) return false;
       const antigo = micProcessorRef.current;
       const { track, proc } = await createProcessedMic(raw);
       micProcessorRef.current = proc;
@@ -510,8 +523,10 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       track.enabled = !isAudioMutedRef.current && !selfRef.current.isMutedByHost;
       syncLocalTracksToAllPeers();
       if (audioTrackerRef.current) audioTrackerRef.current.start(stream);
+      return true;
     } catch (e) {
       console.warn("[audio-guard] não consegui refazer o microfone:", e);
+      return false;
     } finally {
       reconstruindoMicRef.current = false;
     }
@@ -551,6 +566,81 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const garantirAudioVivoRef = useRef(garantirAudioVivo);
   garantirAudioVivoRef.current = garantirAudioVivo;
 
+  // ---------------------------------------------------------------------------
+  // VIGIA DO MICROFONE MUDO (visto no app Windows: a trilha fica "live", mas o Windows/Chromium
+  // passa a entregar silêncio digital assim que a captura do som do sistema começa).
+  // Enquanto compartilha a tela, com o mic ligado pelo usuário: se o pico do mic CRU (antes da IA e
+  // do gate) ficar abaixo de -80 dB por ~3 s, pega o microfone de novo (getUserMedia) e troca a trilha
+  // em todas as conexões (replaceTrack). 1ª tentativa: mesmas opções; depois: sem cancelamento de eco.
+  // ---------------------------------------------------------------------------
+  const vigiaLogRef = useRef<Array<{ hora: string; msg: string }>>([]);
+  const vigiaRef = useRef<{ mudoDesde: number | null; tentativas: number; carenciaAte: number; sessaoTela: string | null; ocupado: boolean }>(
+    { mudoDesde: null, tentativas: 0, carenciaAte: 0, sessaoTela: null, ocupado: false }
+  );
+  const logVigia = (msg: string) => {
+    const hora = new Date().toLocaleTimeString("pt-BR", { hour12: false });
+    vigiaLogRef.current = [...vigiaLogRef.current, { hora, msg }].slice(-8);
+    console.warn(`[mic-vigia] ${msg}`);
+  };
+  const vigiarMic = () => {
+    const v = vigiaRef.current;
+    const tela = localScreenStreamRef.current;
+    if (!tela || invisivelRef.current) {
+      v.mudoDesde = null;
+      v.sessaoTela = null;
+      return;
+    }
+    // Nova sessão de compartilhamento: zera as tentativas e dá 1 s pro áudio do sistema começar
+    if (v.sessaoTela !== tela.id) {
+      v.sessaoTela = tela.id;
+      v.tentativas = 0;
+      v.mudoDesde = null;
+      v.carenciaAte = Date.now() + 1000;
+    }
+    const mic = localStreamRef.current?.getAudioTracks()[0] || null;
+    const proc = micProcessorRef.current;
+    const ligadoPeloUsuario = !isAudioMutedRef.current && !selfRef.current.isMutedByHost;
+    if (!mic || mic.readyState !== "live" || !ligadoPeloUsuario || !proc || v.ocupado || Date.now() < v.carenciaAte) {
+      v.mudoDesde = null;
+      return;
+    }
+    if (proc.contextState !== "running") { v.mudoDesde = null; return; }
+    const pico = proc.rawPeakDb();
+    if (pico === null) return;
+    if (pico >= -80) {
+      if (v.mudoDesde !== null && v.tentativas > 0) logVigia(`microfone voltou (${Math.round(pico)} dB)`);
+      v.mudoDesde = null;
+      return;
+    }
+    const agora = Date.now();
+    if (v.mudoDesde === null) { v.mudoDesde = agora; return; }
+    if (agora - v.mudoDesde < 3000) return;
+    if (v.tentativas >= 3) {
+      if (v.tentativas === 3) { logVigia("mic continua mudo após 3 tentativas; parei de tentar neste compartilhamento"); v.tentativas++; }
+      return;
+    }
+    v.tentativas++;
+    const semEco = v.tentativas >= 2;
+    v.ocupado = true;
+    v.mudoDesde = null;
+    logVigia(`mic cru mudo (${Math.round(pico)} dB) por 3 s → pegando o microfone de novo${semEco ? " SEM cancelamento de eco" : ""} (tentativa ${v.tentativas})`);
+    reconstruirMic("vigia: microfone mudo durante o compartilhamento", { semEco })
+      .then((ok) => {
+        if (ok && semEco) micSemEcoRef.current = true;
+        logVigia(ok ? `microfone trocado em todas as conexões${semEco ? " (sem cancelamento de eco)" : ""}` : "falhou ao pegar o microfone de novo");
+      })
+      .finally(() => {
+        v.ocupado = false;
+        v.carenciaAte = Date.now() + 1500;
+      });
+  };
+  const vigiarMicRef = useRef(vigiarMic);
+  vigiarMicRef.current = vigiarMic;
+  useEffect(() => {
+    const id = window.setInterval(() => vigiarMicRef.current(), 300);
+    return () => window.clearInterval(id);
+  }, []);
+
   // Verificação contínua leve (a cada 3 s) + estado exposto para diagnóstico/teste: window.__ecoAudio.estado()
   useEffect(() => {
     const id = window.setInterval(() => garantirAudioVivoRef.current("intervalo"), 3000);
@@ -561,7 +651,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         if (v) {
           salvarTelaAec(v);
           const t = localScreenStreamRef.current?.getAudioTracks()[0];
-          if (t && v !== "auto") t.applyConstraints({ echoCancellation: v === "on" } as any).catch(() => {});
+          // Automático = desligado
+          if (t) t.applyConstraints({ echoCancellation: v === "on" } as any).catch(() => {});
         }
         return { pref: lerTelaAec(), atual: (localScreenStreamRef.current?.getAudioTracks()[0]?.getSettings() as any)?.echoCancellation ?? null };
       },
@@ -584,6 +675,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           nomes: Object.fromEntries((roomRef.current?.participants || []).map((p: any) => [p.id, p.name])),
           mic: mic ? { id: mic.id, enabled: mic.enabled, readyState: mic.readyState, label: mic.label } : null,
           micIA: micProcessorRef.current ? micProcessorRef.current.diagnostico() : null,
+          micVigia: { log: vigiaLogRef.current, tentativas: vigiaRef.current.tentativas, semEco: micSemEcoRef.current },
           telaAudio: scr ? { id: scr.id, enabled: scr.enabled, readyState: scr.readyState, settings: scr.getSettings?.() } : null,
           senders,
           remotos,
@@ -2080,11 +2172,11 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           screenAudioTrack.enabled = true;
           const cfg: any = screenAudioTrack.getSettings ? screenAudioTrack.getSettings() : {};
           console.log("[tela] áudio da tela:", cfg);
-          // Pedimos áudio limpo achando que o navegador tira o som do Eco; se não tirou, liga o cancelamento de eco
-          if (lerTelaAec() === "off") {
-            if (cfg && cfg.echoCancellation === true) screenAudioTrack.applyConstraints({ echoCancellation: false } as any).catch(() => {});
-          } else if (cfg && cfg.restrictOwnAudio !== true && cfg.echoCancellation === false) {
-            screenAudioTrack.applyConstraints({ echoCancellation: true } as any).catch(() => {});
+          // Cancelamento de eco no áudio da tela: só quando o usuário escolheu "Ligado" no diagnóstico.
+          // Automático = Desligado (no app Windows/Chromium antigo o AEC na trilha da tela calava o microfone).
+          const querAec = lerTelaAec() === "on";
+          if (cfg && typeof cfg.echoCancellation === "boolean" && cfg.echoCancellation !== querAec) {
+            screenAudioTrack.applyConstraints({ echoCancellation: querAec } as any).catch(() => {});
           }
         }
 
