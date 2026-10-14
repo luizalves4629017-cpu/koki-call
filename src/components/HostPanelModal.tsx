@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { getStoredMasterInfo } from "../utils/masterAuth";
 import { EditorLoja } from "./EditorLoja";
 import { BanidosPainel } from "./BanidosPainel";
+import { ConteudoExtrasMaster } from "./PainelExtrasMaster";
 import {
   Crown,
   X,
@@ -124,7 +125,7 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
   const podePainel = Boolean(isMaster || ehCof);
   // Co-fundador só mexe nos membros: nunca no Dono Master nem em outro Co-fundador
   const alvoLivre = (p: any) => !ehCof || p.id === self.id || (!p.isMaster && !p.isCofundador);
-  const [aba, setAba] = useState<"sala" | "loja">("sala");
+  const [aba, setAba] = useState<"sala" | "loja" | "raiox" | "anuncio" | "chuva">("sala");
   const [avisoAtualizacao, setAvisoAtualizacao] = useState<string | null>(null);
 
   // Membros offline desta sala (pra punir/banir quem não está na call agora)
@@ -273,7 +274,7 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
         {/* Cabeçalho */}
         <div className="px-5 pt-5 pb-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <h3 className="text-xl font-extrabold text-[#ECECEC] tracking-tight">{ehCof ? "Painel Co-fundador" : "Painel do Dono"}</h3>
+            <h3 className="text-xl font-extrabold text-[#ECECEC] tracking-tight">{ehCof ? "Painel Co-fundador" : isMaster ? "Painel Master" : "Painel do Dono"}</h3>
             <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-[#C4B5FD]/20 text-[#C4B5FD] border border-[#C4B5FD]/40 shadow-[0_0_12px_rgba(196,181,253,0.35)]">
               PRO
             </span>
@@ -292,7 +293,10 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
           <div className="flex gap-1 bg-[#1E2026] border border-[#2A2D35] rounded-xl p-1">
             {[
               { id: "sala", rotulo: "Sala", mostrar: true },
-              { id: "loja", rotulo: "Loja (preços)", mostrar: isMaster },
+              { id: "loja", rotulo: "Loja", mostrar: isMaster },
+              { id: "raiox", rotulo: "Raio-X", mostrar: isMaster && !!socket },
+              { id: "anuncio", rotulo: "Anúncio", mostrar: isMaster && !!socket },
+              { id: "chuva", rotulo: "Chuva", mostrar: isMaster && !!socket },
             ]
               .filter((a) => a.mostrar)
               .map((a) => (
@@ -311,6 +315,9 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
 
         <div className="flex-1 overflow-y-auto px-5 pb-6 space-y-6 text-xs text-[#B5B8C0]">
           {aba === "loja" && socket && isMaster && <EditorLoja socket={socket} masterToken={masterToken} />}
+          {(aba === "raiox" || aba === "anuncio" || aba === "chuva") && socket && isMaster && (
+            <ConteudoExtrasMaster socket={socket} masterToken={masterToken} aba={aba} compacto onFeito={onClose} />
+          )}
           {aba === "sala" && (!podePainel ? (
             <div className="bg-[#1E2026] border border-[#2A2D35] rounded-2xl p-4 space-y-3">
               <div className="flex items-center gap-2 text-[#C4B5FD] font-bold text-sm">

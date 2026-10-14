@@ -11,9 +11,6 @@ import {
   Crown,
   Target,
   Disc3,
-  Activity,
-  Megaphone,
-  CloudRain,
   Trophy,
   Users,
 } from "lucide-react";
@@ -263,28 +260,6 @@ export const Header: React.FC<HeaderProps> = ({
                   <LayoutGrid className="w-4 h-4 text-[#C4B5FD]" />
                   <span>Painel Master</span>
                 </button>
-
-                {onOpenExtras && (
-                  <>
-                    {([
-                      { aba: "raiox", rotulo: "Raio-X ao vivo", Icone: Activity },
-                      { aba: "anuncio", rotulo: "Anúncio global", Icone: Megaphone },
-                      { aba: "chuva", rotulo: "Chuva de moedas", Icone: CloudRain },
-                    ] as const).map(({ aba, rotulo, Icone }) => (
-                      <button
-                        key={aba}
-                        onClick={() => {
-                          setIsOwnerMenuOpen(false);
-                          onOpenExtras(aba);
-                        }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[#ECECEC] hover:bg-[#252830] hover:text-[#C4B5FD] transition-colors text-left cursor-pointer"
-                      >
-                        <Icone className="w-4 h-4 text-[#C4B5FD]" />
-                        <span>{rotulo}</span>
-                      </button>
-                    ))}
-                  </>
-                )}
 
                 {onOpenAdmissionModal && (
                   <button
