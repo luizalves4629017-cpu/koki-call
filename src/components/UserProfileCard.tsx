@@ -92,7 +92,7 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
   const isCofundador = !isOwner && Boolean(participant.isCofundador || participant.badges?.includes("cofundador"));
 
   // ---------- Aura do card ----------
-  // Dono Master (prata) e Co-fundador (verde-água/lilás) têm aura fixa: ninguém troca.
+  // Dono Master (branca/prata) e Co-fundador ("Horizonte", aço/prata com anel duplo) têm aura fixa e exclusiva: ninguém troca.
   const auraFixa = isOwner || Boolean((participant as any).ehDono) || isCofundador;
   // Aura completa: só quem o Dono Master/Co-fundador liberou (o servidor manda auraLiberada)
   const auraLiberada = !auraFixa && Boolean(participant.auraLiberada);
@@ -264,7 +264,7 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
       {/* Aura personalizada (liberada pelo Dono/Co-fundador) ou a simples da loja */}
       {!auraFixa && auraCompletaAtual && <AuraCard config={auraCompletaAtual} />}
       {!auraFixa && !auraCompletaAtual && auraLojaAtual && <AuraLojaBrilho cor={auraLojaAtual} />}
-      <div className={`relative w-full bg-[#1E2026] border ${isOwner ? "border-white/20" : "border-[#2A2D35]"} rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] max-h-[92dvh] ${editorAura ? "max-lg:max-h-[42vh]" : ""}`}>
+      <div className={`relative w-full bg-[#1E2026] border ${isOwner ? "border-white/20" : isCofundador ? "border-slate-300/25" : "border-[#2A2D35]"} rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] max-h-[92dvh] ${editorAura ? "max-lg:max-h-[42vh]" : ""}`}>
         
         {/* BOTÃO FECHAR */}
         <button
@@ -558,8 +558,8 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-[#ECECEC]">Cargo:</span>
-                <span className={isOwner ? "text-[#C4B5FD] font-bold" : participant.cargo ? "text-[#C4B5FD]" : "text-[#ECECEC]"}>
-                  {isOwner ? "Dono Master & Criador" : participant.cargo || "Membro"}
+                <span className={isOwner ? "text-[#C4B5FD] font-bold" : isCofundador ? "text-[#CBD5E1] font-bold" : participant.cargo ? "text-[#C4B5FD]" : "text-[#ECECEC]"}>
+                  {isOwner ? "Dono Master & Criador" : isCofundador ? "Co-fundador" : participant.cargo || "Membro"}
                 </span>
               </div>
             </div>
@@ -855,6 +855,8 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
 
 /** Aura de buraco negro em volta do card do criador: anel de luz branca/prata girando + névoa + partículas. */
 export const AuraCriador: React.FC<{ cofundador?: boolean }> = ({ cofundador = false }) => {
+  // Co-fundador tem a aura própria "Horizonte" (aço/prata, anel duplo com faixa escura), exclusiva do cargo
+  if (cofundador) return <AuraHorizonte />;
   // Criador: prata. Co-fundador: verde-água e lilás, mais suave (abaixo do Dono)
   const luz = cofundador
     ? "conic-gradient(from 0deg, transparent 0deg, rgba(94,234,212,0.85) 40deg, rgba(196,181,253,0.45) 90deg, transparent 140deg, transparent 180deg, rgba(196,181,253,0.75) 220deg, rgba(94,234,212,0.35) 270deg, transparent 320deg)"
@@ -889,6 +891,60 @@ export const AuraCriador: React.FC<{ cofundador?: boolean }> = ({ cofundador = f
           key={i}
           className={`absolute w-1 h-1 rounded-full eco-aura-particula ${cofundador ? "bg-[#5EEAD4]" : "bg-white"}`}
           style={{ left: p.l, top: p.t, animationDelay: p.d, boxShadow: cofundador ? "0 0 6px 1px rgba(94,234,212,0.7)" : "0 0 6px 1px rgba(255,255,255,0.8)" }}
+        />
+      ))}
+    </div>
+  );
+};
+
+/**
+ * Aura "Horizonte" — exclusiva do Co-fundador (combina com a insígnia Horizonte).
+ * Buraco negro em tons de aço/prata com um toque gelo: dois fios de luz girando em sentidos
+ * opostos com uma faixa escura entre eles (o "horizonte de eventos"), só em volta da borda do card.
+ * Diferente da aura do Dono (branca/prata, fio único) e de qualquer aura de membro
+ * (membros só conseguem auras coloridas: o servidor limita o tom, sem branco/prata/cinza).
+ */
+export const AuraHorizonte: React.FC = () => {
+  // Base de aço sempre visível (anel contínuo) + brilhos prata/gelo que giram por cima
+  const aco =
+    "conic-gradient(from 0deg, rgba(148,163,184,0.85) 0deg, rgba(248,250,252,1) 30deg, rgba(186,230,253,0.95) 60deg, rgba(148,163,184,0.85) 110deg, rgba(100,116,139,0.8) 160deg, rgba(226,232,240,1) 210deg, rgba(186,230,253,0.85) 250deg, rgba(100,116,139,0.8) 300deg, rgba(148,163,184,0.85) 360deg)";
+  const acoInv =
+    "conic-gradient(from 90deg, rgba(100,116,139,0.85) 0deg, rgba(186,230,253,1) 40deg, rgba(248,250,252,1) 70deg, rgba(148,163,184,0.85) 130deg, rgba(100,116,139,0.8) 190deg, rgba(226,232,240,1) 240deg, rgba(100,116,139,0.85) 320deg, rgba(100,116,139,0.85) 360deg)";
+  const particulas = [
+    { l: "6%", t: "-1.2%", d: "0.3s" },
+    { l: "94%", t: "16%", d: "1.5s" },
+    { l: "-1.6%", t: "40%", d: "2.4s" },
+    { l: "101.2%", t: "62%", d: "0.9s" },
+    { l: "48%", t: "-1.4%", d: "2.0s" },
+    { l: "60%", t: "101%", d: "2.9s" },
+    { l: "-1%", t: "86%", d: "1.1s" },
+    { l: "100.8%", t: "92%", d: "3.3s" },
+  ];
+  return (
+    <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
+      {/* névoa de aço, larga e lenta, ao contrário */}
+      <div className="absolute -inset-5 rounded-[40px] overflow-hidden opacity-35" style={{ filter: "blur(22px)" }}>
+        <div className="absolute left-1/2 top-1/2 w-[220%] aspect-square -translate-x-1/2 -translate-y-1/2 eco-aura-girar-rev" style={{ background: aco, animationDuration: "20s" }} />
+      </div>
+      {/* brilho do anel externo */}
+      <div className="absolute -inset-[11px] rounded-[35px] overflow-hidden opacity-80" style={{ filter: "blur(7px)" }}>
+        <div className="absolute left-1/2 top-1/2 w-[220%] aspect-square -translate-x-1/2 -translate-y-1/2 eco-aura-girar" style={{ background: aco, animationDuration: "10s" }} />
+      </div>
+      {/* fio externo nítido */}
+      <div className="absolute -inset-[7.5px] rounded-[31.5px] overflow-hidden">
+        <div className="absolute left-1/2 top-1/2 w-[220%] aspect-square -translate-x-1/2 -translate-y-1/2 eco-aura-girar" style={{ background: aco, animationDuration: "10s" }} />
+      </div>
+      {/* horizonte de eventos: faixa escura entre os dois fios */}
+      <div className="absolute -inset-[5.5px] rounded-[29.5px] bg-[#050507]/90" style={{ boxShadow: "inset 0 0 4px 1px rgba(148,163,184,0.25)" }} />
+      {/* fio interno, gira ao contrário */}
+      <div className="absolute -inset-[2px] rounded-[26px] overflow-hidden">
+        <div className="absolute left-1/2 top-1/2 w-[220%] aspect-square -translate-x-1/2 -translate-y-1/2 eco-aura-girar-rev" style={{ background: acoInv, animationDuration: "7s" }} />
+      </div>
+      {particulas.map((p, i) => (
+        <span
+          key={i}
+          className="absolute w-1 h-1 rounded-full eco-aura-particula bg-[#E2E8F0]"
+          style={{ left: p.l, top: p.t, animationDelay: p.d, boxShadow: "0 0 6px 1px rgba(186,230,253,0.75)" }}
         />
       ))}
     </div>

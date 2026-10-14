@@ -32,6 +32,8 @@ import { ChannelSidebar, VoiceChannel } from "./ChannelSidebar";
 import { MemberList } from "./MemberList";
 import { UserProfileCard } from "./UserProfileCard";
 import { SettingsModal } from "./SettingsModal";
+import { coletarStats, lerTelaAec, salvarTelaAec, TelaAec } from "../utils/audioStats";
+import { priorizarAudio, limitarVideoTela, tetoTelaPorPessoa, saudeConexao, proximoFator } from "../utils/rtpTuning";
 import { MicProcessor } from "../utils/micProcessor";
 import { HostPanelModal } from "./HostPanelModal";
 import { InviteModal } from "./InviteModal";
@@ -44,6 +46,7 @@ import { StoreModal } from "./StoreModal";
 import { notify } from "./Toast";
 import { PunirModal } from "./PunirModal";
 import { AmigosPainel } from "./AmigosPainel";
+import { AudioDiagnostico } from "./AudioDiagnostico";
 import {
   saveUserProfile,
   saveUserPreferences,
@@ -280,6 +283,23 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
   // Modals state
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  // Painel de diagnóstico de áudio: Ctrl+Shift+D ou botão nas Configurações
+  const [diagAberto, setDiagAberto] = useState<boolean>(false);
+  useEffect(() => {
+    const tecla = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === "D" || e.key === "d")) {
+        e.preventDefault();
+        setDiagAberto((v) => !v);
+      }
+    };
+    const evento = () => setDiagAberto(true);
+    window.addEventListener("keydown", tecla);
+    window.addEventListener("eco:diag", evento);
+    return () => {
+      window.removeEventListener("keydown", tecla);
+      window.removeEventListener("eco:diag", evento);
+    };
+  }, []);
   const [isHostPanelOpen, setIsHostPanelOpen] = useState<boolean>(false);
   const [isInviteOpen, setIsInviteOpen] = useState<boolean>(false);
   const [isOwnerProfileOpen, setIsOwnerProfileOpen] = useState<boolean>(false);
@@ -435,7 +455,10 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const buildMicConstraints = (withDevice = true): MediaTrackConstraints => ({
     echoCancellation: preferences.echoCancellation,
     noiseSuppression: preferences.noiseSuppression,
-    autoGainControl: true,
+    // AGC do navegador DESLIGADO: no Windows ele abaixa o volume do microfone do sistema aos poucos
+    // (principalmente com som do jogo/vídeo vazando no mic ao compartilhar a tela). O ganho de
+    // compensação agora é feito no noise gate (só para cima, nunca abaixa).
+    autoGainControl: false,
     ...(withDevice && preferences.selectedAudioInput ? { deviceId: { exact: preferences.selectedAudioInput } } : {}),
   });
 
@@ -511,8 +534,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     localScreenStreamRef.current?.getAudioTracks().forEach((t) => {
       if (!t.enabled) t.enabled = true;
     });
-    // 3) Trilhas certas em todas as conexões (replaceTrack só se mudou)
+    // 3) Trilhas certas em todas as conexões (replaceTrack só se mudou) + banda (áudio na frente)
     syncLocalTracksToAllPeers();
+    void ajustarBandaTodos();
     // 4) Vozes dos outros: tocando, sem mute e com volume > 0 (a não ser que o usuário tenha pedido)
     if (!isDeafenedRef.current) {
       remoteAudioElementsRef.current.forEach((el, id) => {
@@ -532,6 +556,15 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     const id = window.setInterval(() => garantirAudioVivoRef.current("intervalo"), 3000);
     (window as any).__ecoAudio = {
       garantir: () => garantirAudioVivoRef.current("manual"),
+      stats: () => coletarStats(peerConnectionsRef.current, peerTransceiversRef.current),
+      telaAec: (v?: TelaAec) => {
+        if (v) {
+          salvarTelaAec(v);
+          const t = localScreenStreamRef.current?.getAudioTracks()[0];
+          if (t && v !== "auto") t.applyConstraints({ echoCancellation: v === "on" } as any).catch(() => {});
+        }
+        return { pref: lerTelaAec(), atual: (localScreenStreamRef.current?.getAudioTracks()[0]?.getSettings() as any)?.echoCancellation ?? null };
+      },
       estado: () => {
         const mic = localStreamRef.current?.getAudioTracks()[0] || null;
         const scr = localScreenStreamRef.current?.getAudioTracks()[0] || null;
@@ -548,6 +581,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         remoteAudioElementsRef.current.forEach((el, peer) => remotos.push({ peer, muted: el.muted, volume: el.volume, paused: el.paused }));
         return {
           compartilhando: Boolean(localScreenStreamRef.current),
+          nomes: Object.fromEntries((roomRef.current?.participants || []).map((p: any) => [p.id, p.name])),
           mic: mic ? { id: mic.id, enabled: mic.enabled, readyState: mic.readyState, label: mic.label } : null,
           micIA: micProcessorRef.current ? micProcessorRef.current.diagnostico() : null,
           telaAudio: scr ? { id: scr.id, enabled: scr.enabled, readyState: scr.readyState, settings: scr.getSettings?.() } : null,
@@ -618,6 +652,54 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     safeReplaceTrack(slots.screenAudioTransceiver, scrAudio);
     if (telaNova) {
       console.log(`[tela] track da tela atribuída ao slot de tela do peer ${targetId}`);
+    }
+    ajustarBandaPeer(targetId);
+    // A primeira negociação pode ainda não ter "encodings": tenta de novo logo depois
+    if (telaNova) [400, 1500].forEach((ms) => setTimeout(() => ajustarBandaPeer(targetId), ms));
+  };
+
+  // ---------------------------------------------------------------------------
+  // BANDA: áudio sempre na frente, vídeo da tela com orçamento total e corte adaptativo.
+  // (ver src/utils/rtpTuning.ts — causa provável do áudio "sumindo aos poucos" ao compartilhar)
+  // ---------------------------------------------------------------------------
+  const fatorRedeRef = useRef<Map<string, number>>(new Map());
+  const screenPresetRef = useRef<ScreenSharePresetId>(DEFAULT_SCREEN_PRESET_ID);
+  screenPresetRef.current = screenQualityPreset;
+  const ultimoTetoRef = useRef<Map<string, number>>(new Map());
+  const ajustarBandaPeer = (targetId: string, disponivelBps = 0) => {
+    const slots = peerTransceiversRef.current.get(targetId);
+    if (!slots || invisivelRef.current) return;
+    priorizarAudio(slots);
+    const scr = localScreenStreamRef.current?.getVideoTracks()[0];
+    if (!scr) {
+      fatorRedeRef.current.delete(targetId);
+      return;
+    }
+    const preset = SCREEN_SHARE_PRESETS[screenPresetRef.current] || SCREEN_SHARE_PRESETS[DEFAULT_SCREEN_PRESET_ID];
+    const fator = fatorRedeRef.current.get(targetId) ?? 1;
+    const pessoas = Array.from(peerConnectionsRef.current.entries()).filter(([id, pc]) => id !== socket.id && pc.connectionState !== "closed" && pc.connectionState !== "failed").length;
+    let teto = tetoTelaPorPessoa(screenPresetRef.current, pessoas, fator);
+    // Nunca passa de ~70% do que a rede diz ter (sobra para o áudio e para a fila não crescer)
+    if (disponivelBps > 0) teto = Math.max(250_000, Math.min(teto, Math.round(disponivelBps * 0.7 - 200_000)));
+    // Com pouca banda, menos quadros por segundo (o áudio e a nitidez valem mais)
+    const fps = teto < 800_000 ? Math.min(preset.frameRate, 15) : teto < 1_500_000 ? Math.min(preset.frameRate, 30) : Math.min(preset.frameRate, 60);
+    limitarVideoTela(slots, teto, fps);
+    const antes = ultimoTetoRef.current.get(targetId) || 0;
+    if (Math.abs(antes - teto) > antes * 0.15) {
+      ultimoTetoRef.current.set(targetId, teto);
+      console.log(`[banda] tela → ${targetId}: ${Math.round(teto / 1000)} kbps, ${fps} fps (fator ${fator.toFixed(2)})`);
+    }
+  };
+  const ajustarBandaTodos = async () => {
+    const compartilhando = Boolean(localScreenStreamRef.current);
+    for (const [targetId, pc] of peerConnectionsRef.current) {
+      if (compartilhando) {
+        const saude = await saudeConexao(pc);
+        fatorRedeRef.current.set(targetId, proximoFator(fatorRedeRef.current.get(targetId) ?? 1, saude));
+        ajustarBandaPeer(targetId, saude?.disponivelBps || 0);
+      } else {
+        ajustarBandaPeer(targetId);
+      }
     }
   };
 
@@ -899,6 +981,11 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
   // 4. WebRTC Peer Connection Helper
   const createPeerConnection = useCallback((targetId: string, isInitiator: boolean) => {
+    // Nunca abre conexão consigo mesmo (acontecia quando self.id ainda não era o socket.id:
+    // ficava uma conexão morta que contava como "pessoa" na divisão da banda)
+    if (!targetId || targetId === socket.id) {
+      return undefined as unknown as RTCPeerConnection;
+    }
     if (peerConnectionsRef.current.has(targetId)) {
       return peerConnectionsRef.current.get(targetId)!;
     }
@@ -1931,7 +2018,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     const preset = SCREEN_SHARE_PRESETS[presetId];
 
     if (isScreenSharing && localScreenStreamRef.current) {
-      await applyScreenShareQuality(localScreenStreamRef.current, presetId, peerConnectionsRef.current);
+      await applyScreenShareQuality(localScreenStreamRef.current, presetId);
+      void ajustarBandaTodos();
       setForceUpdate((prev) => prev + 1);
     }
   };
@@ -1993,7 +2081,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           const cfg: any = screenAudioTrack.getSettings ? screenAudioTrack.getSettings() : {};
           console.log("[tela] áudio da tela:", cfg);
           // Pedimos áudio limpo achando que o navegador tira o som do Eco; se não tirou, liga o cancelamento de eco
-          if (cfg && cfg.restrictOwnAudio !== true && cfg.echoCancellation === false) {
+          if (lerTelaAec() === "off") {
+            if (cfg && cfg.echoCancellation === true) screenAudioTrack.applyConstraints({ echoCancellation: false } as any).catch(() => {});
+          } else if (cfg && cfg.restrictOwnAudio !== true && cfg.echoCancellation === false) {
             screenAudioTrack.applyConstraints({ echoCancellation: true } as any).catch(() => {});
           }
         }
@@ -2018,7 +2108,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
         // Aplica qualidade depois que a trilha já está nos senders
         setTimeout(() => {
-          applyScreenShareQuality(screenStream, screenQualityPreset, peerConnectionsRef.current);
+          applyScreenShareQuality(screenStream, screenQualityPreset);
+          void ajustarBandaTodos();
         }, 300);
 
         // ONLY emit screen-share-started and room:state-update AFTER getDisplayMedia succeeds
@@ -3277,6 +3368,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         />
       )}
 
+      {diagAberto && <AudioDiagnostico onFechar={() => setDiagAberto(false)} />}
       {/* Modals */}
       <InviteModal
         isOpen={isInviteOpen}

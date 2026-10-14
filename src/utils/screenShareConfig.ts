@@ -1,3 +1,5 @@
+import { lerTelaAec } from "./audioStats";
+
 export type ScreenSharePresetId = '1080p_90' | '1080p_60' | '720p_60' | '720p_30';
 
 export interface ScreenSharePreset {
@@ -83,6 +85,9 @@ export function navegadorExcluiProprioAudio(): boolean {
 export function getDisplayMediaConstraints(presetId: ScreenSharePresetId = DEFAULT_SCREEN_PRESET_ID): DisplayMediaStreamOptions {
   const preset = SCREEN_SHARE_PRESETS[presetId] || SCREEN_SHARE_PRESETS['1080p_90'];
   const excluiProprio = navegadorExcluiProprioAudio();
+  // Cancelamento de eco no áudio da tela: automático, ou forçado pelo painel de diagnóstico (Ctrl+Shift+D)
+  const aecPref = lerTelaAec();
+  const aecTela = aecPref === "on" ? true : aecPref === "off" ? false : !excluiProprio;
   return {
     video: {
       width: { ideal: preset.width, max: preset.width },
@@ -92,7 +97,7 @@ export function getDisplayMediaConstraints(presetId: ScreenSharePresetId = DEFAU
     audio: {
       // Áudio da tela é uma trilha SEPARADA do microfone (slot 3) e nunca passa pela IA/gate/AGC.
       // Cancelamento de eco só quando o navegador não consegue excluir o som do próprio Eco (ver acima).
-      echoCancellation: !excluiProprio,
+      echoCancellation: aecTela,
       noiseSuppression: false,
       autoGainControl: false,
       // Quem compartilha continua ouvindo a call e o próprio PC normalmente

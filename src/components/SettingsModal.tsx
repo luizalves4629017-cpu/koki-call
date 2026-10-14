@@ -337,9 +337,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* Otimizações de Áudio */}
           <div className="bg-[#16171B] border border-[#2A2D35] rounded-xl p-4 space-y-3">
-            <span className="font-bold text-[#8B8F98] uppercase tracking-wider text-[10px] block">
-              Processamento de Áudio
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-[#8B8F98] uppercase tracking-wider text-[10px] block">
+                Processamento de Áudio
+              </span>
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new Event("eco:diag"))}
+                className="text-[10px] px-2 py-0.5 rounded-full border border-[#2A2D35] text-[#5EEAD4] hover:border-[#5EEAD4]/60 cursor-pointer"
+                title="Atalho: Ctrl+Shift+D"
+              >
+                Diagnóstico de áudio
+              </button>
+            </div>
 
             {/* Supressão de ruído com IA (RNNoise) */}
             <div className="flex items-center justify-between">

@@ -28,14 +28,18 @@ export const AURA_PADRAO: AuraConfig = {
 };
 
 export const AURA_PRESETS: { nome: string; config: AuraConfig }[] = [
-  { nome: "Prata", config: { cor1: 230, tom: 92, intensidade: 70, velocidade: 45, duasCores: false, cor2: 230, particulas: true } },
+  { nome: "Azul", config: { cor1: 215, tom: 62, intensidade: 70, velocidade: 45, duasCores: false, cor2: 215, particulas: true } },
   { nome: "Verde-água", config: { cor1: 170, tom: 65, intensidade: 70, velocidade: 45, duasCores: false, cor2: 170, particulas: true } },
   { nome: "Lilás", config: { cor1: 258, tom: 78, intensidade: 70, velocidade: 40, duasCores: false, cor2: 258, particulas: true } },
   { nome: "Fogo", config: { cor1: 12, tom: 55, intensidade: 85, velocidade: 70, duasCores: true, cor2: 42, particulas: true } },
-  { nome: "Gelo", config: { cor1: 195, tom: 80, intensidade: 65, velocidade: 30, duasCores: true, cor2: 220, particulas: true } },
+  { nome: "Gelo", config: { cor1: 195, tom: 76, intensidade: 65, velocidade: 30, duasCores: true, cor2: 220, particulas: true } },
   { nome: "Dourado", config: { cor1: 45, tom: 60, intensidade: 75, velocidade: 40, duasCores: false, cor2: 45, particulas: true } },
   { nome: "Rosa", config: { cor1: 330, tom: 72, intensidade: 70, velocidade: 45, duasCores: true, cor2: 285, particulas: true } },
 ];
+
+/** Faixa de tom permitida para auras de membro (vale no servidor também). */
+export const TOM_MIN_MEMBRO = 20;
+export const TOM_MAX_MEMBRO = 80;
 
 const num = (v: any, min: number, max: number, padrao: number) => {
   const n = Number(v);
@@ -48,7 +52,9 @@ export function limparAura(c: any): AuraConfig {
   const x = c && typeof c === "object" ? c : {};
   return {
     cor1: num(x.cor1, 0, 360, AURA_PADRAO.cor1),
-    tom: num(x.tom, 0, 100, AURA_PADRAO.tom),
+    // Tom limitado (20–80): membro nunca chega no branco/prata/cinza nem no preto,
+    // que são exclusivos das auras do Dono Master e do Co-fundador.
+    tom: num(x.tom, TOM_MIN_MEMBRO, TOM_MAX_MEMBRO, AURA_PADRAO.tom),
     intensidade: num(x.intensidade, 0, 100, AURA_PADRAO.intensidade),
     velocidade: num(x.velocidade, 0, 100, AURA_PADRAO.velocidade),
     duasCores: Boolean(x.duasCores),

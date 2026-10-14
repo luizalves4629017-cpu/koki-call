@@ -1,6 +1,6 @@
 import React from "react";
 import { X, Sparkles, Trash2 } from "lucide-react";
-import { AuraConfig, AURA_PRESETS, corAura, duracaoAura, gradienteAura } from "../utils/auraCard";
+import { AuraConfig, AURA_PRESETS, corAura, duracaoAura, gradienteAura, TOM_MIN_MEMBRO, TOM_MAX_MEMBRO } from "../utils/auraCard";
 import { CORES_AURA_LOJA, corAuraLoja } from "../utils/auraLoja";
 
 const PARTICULAS = [
@@ -19,7 +19,9 @@ const PARTICULAS = [
  * (fio nítido na borda + brilho desfocado + névoa larga + partículas), com as cores/valores escolhidos.
  * Só pra quem o Dono Master ou o Co-fundador liberou.
  */
-export const AuraCard: React.FC<{ config: AuraConfig }> = ({ config }) => {
+export const AuraCard: React.FC<{ config: AuraConfig }> = ({ config: bruto }) => {
+  // Mesmo limite do servidor (sem branco/prata/preto, exclusivos do Dono e do Co-fundador)
+  const config = { ...bruto, tom: Math.min(TOM_MAX_MEMBRO, Math.max(TOM_MIN_MEMBRO, bruto.tom)) };
   const luz = gradienteAura(config);
   const i = config.intensidade / 100;
   const dur = duracaoAura(config.velocidade);
@@ -163,9 +165,10 @@ export const AuraEditor: React.FC<{
         <Slider rotulo="Cor" valor={config.cor1} max={360} fundo={ARCO_IRIS} onChange={(v) => set("cor1", v)} dica={`${config.cor1}°`} />
         <Slider
           rotulo="Tom"
-          valor={config.tom}
-          max={100}
-          fundo={`linear-gradient(90deg, ${corAura(config.cor1, 0, 1)}, ${corAura(config.cor1, 50, 1)}, ${corAura(config.cor1, 100, 1)})`}
+          valor={Math.min(TOM_MAX_MEMBRO, Math.max(TOM_MIN_MEMBRO, config.tom))}
+          min={TOM_MIN_MEMBRO}
+          max={TOM_MAX_MEMBRO}
+          fundo={`linear-gradient(90deg, ${corAura(config.cor1, TOM_MIN_MEMBRO, 1)}, ${corAura(config.cor1, 50, 1)}, ${corAura(config.cor1, TOM_MAX_MEMBRO, 1)})`}
           onChange={(v) => set("tom", v)}
           dica={config.tom < 35 ? "Escuro" : config.tom > 75 ? "Claro" : "Médio"}
         />

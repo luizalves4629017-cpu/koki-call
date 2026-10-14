@@ -228,12 +228,15 @@ export class MicProcessor {
       rawState: this.rawTrack.readyState,
       rawEnabled: this.rawTrack.enabled,
       rawMuted: this.rawTrack.muted,
+      rawSettings: (() => { try { const s: any = this.rawTrack.getSettings(); return { autoGainControl: s.autoGainControl, echoCancellation: s.echoCancellation, noiseSuppression: s.noiseSuppression, sampleRate: s.sampleRate, deviceId: s.deviceId }; } catch { return null; } })(),
       trackState: this.track.readyState,
       trackEnabled: this.track.enabled,
       aiOn: this.aiOn,
       levelDb: this.lastInfo.levelDb,
       thresholdDb: this.lastInfo.thresholdDb,
       gateOpen: this.lastInfo.open,
+      makeupDb: (this.lastInfo as any).makeupDb ?? 0,
+      gateGain: (this.lastInfo as any).gain ?? null,
     };
   }
 
