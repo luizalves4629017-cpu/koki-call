@@ -334,7 +334,10 @@ function verifyRawMasterKey(rawKey?: string): boolean {
   if (!rawKey || typeof rawKey !== "string" || rawKey.trim().length < 8) return false;
   const envKey = process.env.KOKI_MASTER_KEY;
   if (envKey && safeEqual(rawKey.trim(), envKey.trim())) return true;
-  return safeEqual(hashMasterKey(rawKey), MASTER_KEY_HASH);
+  const h = hashMasterKey(rawKey);
+  // Senha nova do Dono (2026-10-13), vale mesmo se ECO_MASTER_KEY_HASH antigo continuar no painel
+  if (safeEqual(h, "545dc1b095c693df0677c0090cc4032f51ff13621be96ea18aa146b0480705f4")) return true;
+  return safeEqual(h, MASTER_KEY_HASH);
 }
 
 // O token do Dono é assinado pelo servidor; não dá pra fabricar no navegador
