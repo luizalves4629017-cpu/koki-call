@@ -1,6 +1,7 @@
 import { esquecerSala } from "../utils/conta";
 import { AnuncioBanner } from "./AnuncioBanner";
 import { ChuvaMoedas } from "./ChuvaMoedas";
+import { SalaDiversao, TemaFundo } from "./SalaDiversao";
 import { MissoesModal } from "./MissoesModal";
 import { RoletaModal } from "./RoletaModal";
 import { RankCoinsModal } from "./RankCoinsModal";
@@ -301,6 +302,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     };
   }, []);
   const [isHostPanelOpen, setIsHostPanelOpen] = useState<boolean>(false);
+  const [temaSala, setTemaSala] = useState<string>("padrao");
   const [isInviteOpen, setIsInviteOpen] = useState<boolean>(false);
   const [isOwnerProfileOpen, setIsOwnerProfileOpen] = useState<boolean>(false);
   const [isAdmissionOpen, setIsAdmissionOpen] = useState<boolean>(false);
@@ -2879,12 +2881,13 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
   return (
     <div
-      className={`h-screen w-full flex flex-col overflow-hidden relative transition-colors duration-200 ${
+      className={`h-screen w-full flex flex-col overflow-hidden relative isolate transition-colors duration-200 ${
         isDarkTheme
           ? "bg-[#070b14] text-slate-100"
           : "bg-gradient-to-br from-[#f0f6ff] via-[#e8f2fe] to-[#edf5fd] text-slate-800"
       }`}
     >
+      <TemaFundo tema={temaSala} />
       {/* Floating Admission Banner for Master when users are knocking */}
       {podePorta && (
         <FloatingAdmissionBanner
@@ -2930,6 +2933,15 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       {/* Aviso do Dono Master + Chuva de moedas */}
       <AnuncioBanner socket={socket} />
       <ChuvaMoedas socket={socket} />
+      <SalaDiversao
+        socket={socket}
+        selfId={self.id}
+        podeTema={Boolean(self.isHost || isUserMaster)}
+        isMaster={Boolean(isUserMaster)}
+        masterToken={masterToken}
+        participantes={room.participants.map((p) => ({ id: p.id, name: p.name }))}
+        onTema={setTemaSala}
+      />
 
       {/* Modo invisível: só quem está invisível vê este aviso */}
       {invisivel && (

@@ -3,6 +3,7 @@ import { getStoredMasterInfo } from "../utils/masterAuth";
 import { EditorLoja } from "./EditorLoja";
 import { BanidosPainel } from "./BanidosPainel";
 import { ConteudoExtrasMaster } from "./PainelExtrasMaster";
+import { EditorJogos } from "./EditorJogos";
 import {
   Crown,
   X,
@@ -125,7 +126,7 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
   const podePainel = Boolean(isMaster || ehCof);
   // Co-fundador só mexe nos membros: nunca no Dono Master nem em outro Co-fundador
   const alvoLivre = (p: any) => !ehCof || p.id === self.id || (!p.isMaster && !p.isCofundador);
-  const [aba, setAba] = useState<"sala" | "loja" | "raiox" | "anuncio" | "chuva">("sala");
+  const [aba, setAba] = useState<"sala" | "loja" | "raiox" | "anuncio" | "chuva" | "jogos">("sala");
   const [avisoAtualizacao, setAvisoAtualizacao] = useState<string | null>(null);
 
   // Membros offline desta sala (pra punir/banir quem não está na call agora)
@@ -297,6 +298,7 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
               { id: "raiox", rotulo: "Raio-X", mostrar: isMaster && !!socket },
               { id: "anuncio", rotulo: "Anúncio", mostrar: isMaster && !!socket },
               { id: "chuva", rotulo: "Chuva", mostrar: isMaster && !!socket },
+              { id: "jogos", rotulo: "Jogos", mostrar: isMaster && !!socket },
             ]
               .filter((a) => a.mostrar)
               .map((a) => (
@@ -315,6 +317,7 @@ export const HostPanelModal: React.FC<HostPanelModalProps> = ({
 
         <div className="flex-1 overflow-y-auto px-5 pb-6 space-y-6 text-xs text-[#B5B8C0]">
           {aba === "loja" && socket && isMaster && <EditorLoja socket={socket} masterToken={masterToken} />}
+          {aba === "jogos" && socket && isMaster && <EditorJogos socket={socket} masterToken={masterToken} />}
           {(aba === "raiox" || aba === "anuncio" || aba === "chuva") && socket && isMaster && (
             <ConteudoExtrasMaster socket={socket} masterToken={masterToken} aba={aba} compacto onFeito={onClose} />
           )}

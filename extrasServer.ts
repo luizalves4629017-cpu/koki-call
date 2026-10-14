@@ -2,6 +2,7 @@
  * extrasServer — Raio-X ao vivo, Anúncio global, Chuva de moedas e Roleta (servidor).
  */
 import type { Server, Socket } from "socket.io";
+import { getAjustesLoja } from "./lojaStore";
 
 interface Ctx {
   rooms: Map<string, any>;
@@ -80,6 +81,23 @@ const ultimoClique = new Map<string, number>();
 // ---------- Roleta ----------
 const roletaUltimos = new Map<string, Array<{ nome: string; premio: string; quando: number }>>();
 const PREMIOS_ROLETA = ["+50 Eco Coins", "+100 Eco Coins", "+500 Eco Coins", "Anel Aurora 24h", "VIP 24h", "Tente de novo"];
+
+// ---------- Temas da Sala e Mini-jogos ----------
+export const TEMAS = ["padrao", "buraco_negro", "aurora", "chuva", "cerejeira"] as const;
+const PRECO_TEMA_PADRAO: Record<string, number> = { padrao: 0, buraco_negro: 200, aurora: 150, chuva: 100, cerejeira: 150 };
+const PREMIO_PADRAO: Record<string, number> = { jogo_velha: 20 };
+/** Valor editável pelo Dono Master na aba Jogos (fica salvo junto com os preços da loja) */
+function valorConfig(chave: string, padrao: number): number {
+  const v = getAjustesLoja()[chave]?.price;
+  return typeof v === "number" && Number.isFinite(v) ? v : padrao;
+}
+export const precoTema = (t: string) => valorConfig(`tema_${t}`, PRECO_TEMA_PADRAO[t] ?? 0);
+export const premioJogo = (j: string) => valorConfig(j, PREMIO_PADRAO[j] ?? 0);
+
+const temaDaSala = new Map<string, string>();
+interface Velha { id: string; x: { id: string; nome: string }; o: { id: string; nome: string }; casas: string[]; vez: "X" | "O"; vencedor: string | null; aceito: boolean; premio: number }
+const velhas = new Map<string, Velha>(); // por sala (um jogo por vez)
+const LINHAS = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
 
 export function registrarExtras(io: Server, socket: Socket, ctx: Ctx) {
   const resp = (cb: any, v: any) => typeof cb === "function" && cb(v);
@@ -219,5 +237,77 @@ export function registrarExtras(io: Server, socket: Socket, ctx: Ctx) {
     io.to(rid).emit("roleta:novo-premio", item);
   });
 
-  socket.on("disconnect", () => ultimoClique.delete(socket.id));
+  // ----- Temas da Sala -----
+  socket.on("tema:atual", (_d: any, cb: any) => {
+    const rid = ctx.salaAtual();
+    resp(cb, { tema: (rid && temaDaSala.get(rid)) || "padrao", precos: Object.fromEntries(TEMAS.map((t) => [t, precoTema(t)])) });
+  });
+  socket.on("tema:definir", (d: { tema?: string; masterToken?: string }, cb: any) => {
+    const { rid, p } = eu();
+    if (!rid || !p) return resp(cb, { ok: false, mensagem: "Entre numa sala primeiro." });
+    const master = ctx.ehMaster(d?.masterToken) || p.isMaster;
+    if (!master && !p.isHost) return resp(cb, { ok: false, mensagem: "Só o dono da sala escolhe o tema." });
+    const tema = String(d?.tema || "");
+    if (!(TEMAS as readonly string[]).includes(tema)) return resp(cb, { ok: false, mensagem: "Tema inválido." });
+    const preco = master ? 0 : precoTema(tema);
+    if (preco > 0) {
+      if ((Number(p.kokiCoins) || 0) < preco) return resp(cb, { ok: false, mensagem: `Precisa de ${preco} Eco Coins.` });
+      p.kokiCoins = (Number(p.kokiCoins) || 0) - preco;
+      socket.emit("coins:updated", { participantId: socket.id, kokiCoins: p.kokiCoins, newBalance: p.kokiCoins, amount: -preco });
+    }
+    temaDaSala.set(rid, tema);
+    io.to(rid).emit("tema:mudou", { tema, por: p.name });
+    resp(cb, { ok: true });
+  });
+
+  // ----- Mini-jogo: Jogo da Velha (um por sala, todo mundo assiste) -----
+  const enviarVelha = (rid: string) => io.to(rid).emit("velha:estado", velhas.get(rid) || null);
+  socket.on("velha:atual", (_d: any, cb: any) => { const rid = ctx.salaAtual(); resp(cb, { jogo: (rid && velhas.get(rid)) || null, premio: premioJogo("jogo_velha") }); });
+  socket.on("velha:desafiar", (d: { alvoId?: string }, cb: any) => {
+    const { rid, room, p } = eu();
+    if (!rid || !room || !p) return resp(cb, { ok: false });
+    const atual = velhas.get(rid);
+    if (atual && !atual.vencedor) return resp(cb, { ok: false, mensagem: "Já tem uma partida rolando." });
+    const alvo = room.participants.get(String(d?.alvoId || ""));
+    if (!alvo || alvo.id === socket.id) return resp(cb, { ok: false, mensagem: "Escolha alguém da call." });
+    const jogo: Velha = { id: `v${Date.now()}`, x: { id: socket.id, nome: p.name }, o: { id: alvo.id, nome: alvo.name }, casas: Array(9).fill(""), vez: "X", vencedor: null, aceito: false, premio: premioJogo("jogo_velha") };
+    velhas.set(rid, jogo);
+    enviarVelha(rid);
+    resp(cb, { ok: true });
+  });
+  socket.on("velha:aceitar", (d: { aceitar?: boolean }) => {
+    const { rid } = eu(); const j = rid ? velhas.get(rid) : null;
+    if (!rid || !j || j.o.id !== socket.id || j.aceito) return;
+    if (d?.aceitar) j.aceito = true; else velhas.delete(rid);
+    enviarVelha(rid);
+  });
+  socket.on("velha:jogar", (d: { casa?: number }) => {
+    const { rid, room } = eu(); const j = rid ? velhas.get(rid) : null;
+    if (!rid || !room || !j || !j.aceito || j.vencedor) return;
+    const minha = j.x.id === socket.id ? "X" : j.o.id === socket.id ? "O" : null;
+    const c = Math.floor(Number(d?.casa));
+    if (!minha || minha !== j.vez || !(c >= 0 && c < 9) || j.casas[c]) return;
+    j.casas[c] = minha;
+    const ganhou = LINHAS.some((l) => l.every((i) => j.casas[i] === minha));
+    if (ganhou) {
+      j.vencedor = minha;
+      const g = room.participants.get(minha === "X" ? j.x.id : j.o.id);
+      if (g && j.premio > 0 && !g.isMaster) {
+        g.kokiCoins = (Number(g.kokiCoins) || 0) + j.premio;
+        io.to(g.id).emit("coins:updated", { participantId: g.id, kokiCoins: g.kokiCoins, newBalance: g.kokiCoins, amount: j.premio });
+      }
+    } else if (j.casas.every(Boolean)) j.vencedor = "empate";
+    else j.vez = minha === "X" ? "O" : "X";
+    enviarVelha(rid);
+  });
+  socket.on("velha:sair", () => {
+    const { rid } = eu(); const j = rid ? velhas.get(rid) : null;
+    if (!rid || !j) return;
+    if (j.vencedor || j.x.id === socket.id || j.o.id === socket.id) { velhas.delete(rid); enviarVelha(rid); }
+  });
+
+  socket.on("disconnect", () => {
+    ultimoClique.delete(socket.id);
+    for (const [rid, j] of velhas) if (!j.vencedor && (j.x.id === socket.id || j.o.id === socket.id)) { velhas.delete(rid); io.to(rid).emit("velha:estado", null); }
+  });
 }
