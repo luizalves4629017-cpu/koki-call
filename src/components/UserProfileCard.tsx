@@ -20,6 +20,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { Participant } from "../types";
+import { AnelBuracoNegro } from "./AnelBuracoNegro";
 import { anelDoParticipante, perkAtivo, GRADIENTE_ANEL } from "../utils/perks";
 import { isVideoMedia, isPerkActive, getPerkRemainingTime, getEcoCoins, isMasterIdentity, formatCoinDisplay, getMemberSince } from "../utils/storage";
 import { EcoCoinIcon } from "./EcoCoinIcon";
@@ -329,8 +330,11 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
         <div className="relative -mt-20 flex flex-col items-center justify-center shrink-0 z-20">
           <div className="relative w-36 h-36 flex items-center justify-center">
             
-            {/* ANEL ORBITAL INCLINADO COM DEGRADÊ */}
-            <div
+            {/* Dono Master e Co-fundador: anel exclusivo de buraco negro */}
+            {(isOwner || isCofundador) && <AnelBuracoNegro variante={isOwner ? "dono" : "cofundador"} />}
+
+            {/* ANEL ORBITAL INCLINADO COM DEGRADÊ (demais pessoas) */}
+            {!(isOwner || isCofundador) && <div
               className={`absolute inset-0 rounded-full border-[2.2px] pointer-events-none transition-transform ${
                 isOwner || anelComprado ? "animate-[spin_20s_linear_infinite]" : ""
               }`}
@@ -343,7 +347,7 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
                 padding: "2px",
                 transform: "rotate(-20deg) scale(1.15, 0.45)",
               }}
-            />
+            />}
 
             {/* PLANETAS / INSÍGNIAS PRINCIPAIS SOBRE O ANEL */}
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
