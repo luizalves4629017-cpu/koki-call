@@ -264,7 +264,7 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
       {/* Aura personalizada (liberada pelo Dono/Co-fundador) ou a simples da loja */}
       {!auraFixa && auraCompletaAtual && <AuraCard config={auraCompletaAtual} />}
       {!auraFixa && !auraCompletaAtual && auraLojaAtual && <AuraLojaBrilho cor={auraLojaAtual} />}
-      <div className={`relative w-full bg-[#1E2026] border ${isOwner ? "border-white/20" : "border-[#2A2D35]"} rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] ${editorAura ? "max-lg:max-h-[42vh]" : ""}`}>
+      <div className={`relative w-full bg-[#1E2026] border ${isOwner ? "border-white/20" : "border-[#2A2D35]"} rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] max-h-[92dvh] ${editorAura ? "max-lg:max-h-[42vh]" : ""}`}>
         
         {/* BOTÃO FECHAR */}
         <button
@@ -274,8 +274,10 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
           <X className="w-4 h-4" />
         </button>
 
+        {/* Corpo do card: tudo em altura natural. Só rola (o card inteiro, não uma caixinha) se passar de ~92% da tela. */}
+        <div className="eco-perfil-corpo min-h-0 shrink overflow-y-auto overscroll-contain">
         {/* 1. TOPO: BANNER QUE SE DISSOLVE COM DEGRADÊ SUAVE (Sem corte reto) */}
-        <div className="relative w-full h-44 sm:h-48 overflow-hidden shrink-0">
+        <div className="relative w-full h-40 sm:h-48 [@media(max-height:800px)]:h-32 overflow-hidden shrink-0">
           {participant.bannerUrl ? (
             isVideoMedia(participant.bannerUrl) ? (
               <video
@@ -498,7 +500,7 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
         </div>
 
         {/* 7. ABAS: Sobre, Insígnias, Itens */}
-        <div className="flex-1 overflow-y-auto px-6 py-3 space-y-3">
+        <div className="px-6 py-3 space-y-3">
           <div className="flex items-center gap-4 border-b border-[#2A2D35] text-xs font-bold text-[#8B8F98]">
             <button
               onClick={() => setActiveTab("sobre")}
@@ -735,7 +737,11 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
           </div>
         )}
 
-        {/* 8. DOCK DE AÇÕES (Pílula flutuante embaixo) */}
+        </div>
+        {/* fim do corpo */}
+
+        {/* 8. DOCK DE AÇÕES (Pílula flutuante embaixo) — some quando não há nenhum botão */}
+        {(isSelf || isHostViewer || onToggleCofundador) && (
         <div className="p-4 pt-2 border-t border-[#2A2D35] bg-[#1E2026] shrink-0">
           <div className="flex items-center justify-center gap-2">
             {/* Se for o PRÓPRIO PERFIL: Editar, Status, Itens e Painel (se for Dono) */}
@@ -816,6 +822,8 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
             )}
           </div>
         </div>
+        )}
+        {!(isSelf || isHostViewer || onToggleCofundador) && <div className="h-3 shrink-0" />}
       </div>
     </div>
       {/* Painel de edição da aura (só no próprio card) */}

@@ -205,6 +205,38 @@ export class MicProcessor {
       thresholdDb: Math.max(MIC_DB_MIN, Math.min(MIC_DB_MAX, Number(opts.sensitivityDb) || -50)),
     });
   }
+  /**
+   * Proteção (usada principalmente ao iniciar/parar o compartilhamento de tela):
+   * - acorda o AudioContext se o navegador suspendeu;
+   * - garante a trilha crua ligada (o mute da call é feito na trilha processada, nunca na crua);
+   * - religa a corrente microfone → IA → gate se algo desconectou.
+   * Devolve false se o pipeline morreu de vez (contexto fechado ou trilha encerrada) e precisa ser refeito.
+   */
+  ensureAlive(): boolean {
+    if (this.closed) return false;
+    if (this.ctx.state === "closed") return false;
+    if (this.rawTrack.readyState === "ended" || this.track.readyState === "ended") return false;
+    if (!this.rawTrack.enabled) this.rawTrack.enabled = true;
+    if (this.ctx.state === "suspended") this.ctx.resume().catch(() => {});
+    return true;
+  }
+
+  /** Estado atual do pipeline (para diagnóstico e teste automatizado). */
+  diagnostico() {
+    return {
+      ctxState: this.ctx.state,
+      rawState: this.rawTrack.readyState,
+      rawEnabled: this.rawTrack.enabled,
+      rawMuted: this.rawTrack.muted,
+      trackState: this.track.readyState,
+      trackEnabled: this.track.enabled,
+      aiOn: this.aiOn,
+      levelDb: this.lastInfo.levelDb,
+      thresholdDb: this.lastInfo.thresholdDb,
+      gateOpen: this.lastInfo.open,
+    };
+  }
+
   get aiActive() {
     return this.aiOn;
   }

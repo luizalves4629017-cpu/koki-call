@@ -57,11 +57,32 @@ export const SCREEN_SHARE_PRESETS: Record<ScreenSharePresetId, ScreenSharePreset
 export const DEFAULT_SCREEN_PRESET_ID: ScreenSharePresetId = '1080p_90';
 
 /**
+ * O navegador consegue tirar o som do próprio Eco (vozes da call) do áudio do sistema?
+ * - Chrome/Edge 141+ no Windows/ChromeOS: sim (restrictOwnAudio).
+ * - App Windows (Electron 33 = Chromium 130): não. Detectado pela versão do Chromium.
+ * Quando não dá, ligamos o cancelamento de eco SÓ na trilha de áudio da tela: o Chromium usa
+ * o som que ele mesmo está tocando (as vozes da call) como referência e tira ele do áudio do PC,
+ * então ninguém se ouve de volta. Quando dá, deixamos o áudio da tela limpo (sem nenhum filtro).
+ */
+export function navegadorExcluiProprioAudio(): boolean {
+  try {
+    const ua = navigator.userAgent || "";
+    const m = ua.match(/Chrom(?:e|ium)\/(\d+)/);
+    const versao = m ? parseInt(m[1], 10) : 0;
+    const plataformaOk = /Windows|CrOS/i.test(ua);
+    return plataformaOk && versao >= 141;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Returns DisplayMedia constraints matching the selected preset
  * Default: 1080p @ 90 FPS ({ width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 90, max: 90 } })
  */
 export function getDisplayMediaConstraints(presetId: ScreenSharePresetId = DEFAULT_SCREEN_PRESET_ID): DisplayMediaStreamOptions {
   const preset = SCREEN_SHARE_PRESETS[presetId] || SCREEN_SHARE_PRESETS['1080p_90'];
+  const excluiProprio = navegadorExcluiProprioAudio();
   return {
     video: {
       width: { ideal: preset.width, max: preset.width },
@@ -69,12 +90,13 @@ export function getDisplayMediaConstraints(presetId: ScreenSharePresetId = DEFAU
       frameRate: { ideal: preset.frameRate, max: preset.frameRate },
     } as any,
     audio: {
-      // Cancelamento de eco LIGADO no áudio da tela: o Chrome usa o som que está tocando na call
-      // como referência e tira ele do áudio capturado (sua voz não volta pra você dentro da tela).
-      echoCancellation: true,
+      // Áudio da tela é uma trilha SEPARADA do microfone (slot 3) e nunca passa pela IA/gate/AGC.
+      // Cancelamento de eco só quando o navegador não consegue excluir o som do próprio Eco (ver acima).
+      echoCancellation: !excluiProprio,
       noiseSuppression: false,
       autoGainControl: false,
-      // Quem compartilha continua ouvindo o próprio PC normalmente
+      // Quem compartilha continua ouvindo a call e o próprio PC normalmente
+      // (true faria o navegador silenciar o som local = parar de ouvir os outros)
       suppressLocalAudioPlayback: false,
       // Chrome 141+: não captura o som que sai desta própria aba/app (o áudio da call)
       restrictOwnAudio: true,

@@ -65,7 +65,9 @@ class EcoNoiseGateProcessor extends AudioWorkletProcessor {
     else this.floorDb += (db - this.floorDb) * Math.min(1, blockSec / 3);
 
     if (this.auto) {
-      const target = Math.min(-28, Math.max(-60, this.floorDb + 15));
+      // Teto do limite automático em -40 dB: antes ia até -28 dB e, com som do PC/jogo vazando
+      // no microfone (ex.: ao compartilhar a tela), o limite subia aos poucos e passava a cortar a voz.
+      const target = Math.min(-40, Math.max(-60, this.floorDb + 12));
       this.thresholdDb += (target - this.thresholdDb) * Math.min(1, blockSec / 0.5);
     } else {
       this.thresholdDb = this.manualDb;

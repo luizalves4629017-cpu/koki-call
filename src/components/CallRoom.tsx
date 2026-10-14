@@ -454,8 +454,113 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       console.warn("[mic-ia] usando microfone sem IA (fallback com filtros do navegador).");
       return { track: rawTrack, proc: null };
     }
+    try { (proc.track as any).contentHint = "speech"; } catch { /* ignore */ }
     return { track: proc.track, proc };
   };
+
+  // ---------------------------------------------------------------------------
+  // PROTEÇÃO DO ÁUDIO (principalmente ao iniciar/parar o compartilhamento de tela)
+  // Nada pode deixar o microfone, o áudio da tela ou as vozes dos outros em volume 0 / desligados
+  // sem o usuário ter pedido (mute, ensurdecer, volume 0 no slider).
+  // ---------------------------------------------------------------------------
+  const reconstruindoMicRef = useRef(false);
+  const reconstruirMic = async (motivo: string) => {
+    if (reconstruindoMicRef.current || invisivelRef.current) return;
+    reconstruindoMicRef.current = true;
+    console.warn(`[audio-guard] refazendo o microfone (${motivo})`);
+    try {
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: buildMicConstraints(true), video: false });
+      const raw = micStream.getAudioTracks()[0];
+      if (!raw) return;
+      const antigo = micProcessorRef.current;
+      const { track, proc } = await createProcessedMic(raw);
+      micProcessorRef.current = proc;
+      setMicProcessor(proc);
+      if (antigo && antigo !== proc) antigo.close();
+      const stream = localStreamRef.current || new MediaStream();
+      stream.getAudioTracks().forEach((t) => {
+        stream.removeTrack(t);
+        if (t !== track) { try { t.stop(); } catch { /* ignore */ } }
+      });
+      stream.addTrack(track);
+      localStreamRef.current = stream;
+      track.enabled = !isAudioMutedRef.current && !selfRef.current.isMutedByHost;
+      syncLocalTracksToAllPeers();
+      if (audioTrackerRef.current) audioTrackerRef.current.start(stream);
+    } catch (e) {
+      console.warn("[audio-guard] não consegui refazer o microfone:", e);
+    } finally {
+      reconstruindoMicRef.current = false;
+    }
+  };
+
+  const garantirAudioVivo = (motivo = "verificação") => {
+    if (invisivelRef.current) return;
+    // 1) Microfone: pipeline da IA vivo e acordado; trilha ligada conforme o mute do usuário
+    const proc = micProcessorRef.current;
+    const micTrack = localStreamRef.current?.getAudioTracks()[0] || null;
+    const procVivo = proc ? proc.ensureAlive() : true;
+    const micEncerrado = Boolean(micTrack && micTrack.readyState === "ended");
+    if (localStreamRef.current && (!procVivo || micEncerrado)) {
+      reconstruirMic(`${motivo}: ${!procVivo ? "pipeline da IA parou" : "trilha do microfone encerrada"}`);
+    } else if (micTrack) {
+      const querLigado = !isAudioMutedRef.current && !selfRef.current.isMutedByHost;
+      if (micTrack.enabled !== querLigado) micTrack.enabled = querLigado;
+    }
+    // 2) Áudio da tela: sempre ligado enquanto compartilha
+    localScreenStreamRef.current?.getAudioTracks().forEach((t) => {
+      if (!t.enabled) t.enabled = true;
+    });
+    // 3) Trilhas certas em todas as conexões (replaceTrack só se mudou)
+    syncLocalTracksToAllPeers();
+    // 4) Vozes dos outros: tocando, sem mute e com volume > 0 (a não ser que o usuário tenha pedido)
+    if (!isDeafenedRef.current) {
+      remoteAudioElementsRef.current.forEach((el, id) => {
+        const userVol = participantVolumesRef.current[id] ?? 100;
+        const alvo = Math.max(0, Math.min(1, (userVol / 100) * (masterVoiceVolumeRef.current / 100)));
+        if (el.muted) el.muted = false;
+        if (Math.abs(el.volume - alvo) > 0.01) el.volume = alvo;
+        if (el.paused && el.srcObject) el.play().catch(() => {});
+      });
+    }
+  };
+  const garantirAudioVivoRef = useRef(garantirAudioVivo);
+  garantirAudioVivoRef.current = garantirAudioVivo;
+
+  // Verificação contínua leve (a cada 3 s) + estado exposto para diagnóstico/teste: window.__ecoAudio.estado()
+  useEffect(() => {
+    const id = window.setInterval(() => garantirAudioVivoRef.current("intervalo"), 3000);
+    (window as any).__ecoAudio = {
+      garantir: () => garantirAudioVivoRef.current("manual"),
+      estado: () => {
+        const mic = localStreamRef.current?.getAudioTracks()[0] || null;
+        const scr = localScreenStreamRef.current?.getAudioTracks()[0] || null;
+        const senders: any[] = [];
+        peerTransceiversRef.current.forEach((slots, peer) => {
+          senders.push({
+            peer,
+            micSender: slots.audioTransceiver?.sender.track?.id || null,
+            micSenderEnabled: slots.audioTransceiver?.sender.track?.enabled ?? null,
+            telaAudioSender: slots.screenAudioTransceiver?.sender.track?.id || null,
+          });
+        });
+        const remotos: any[] = [];
+        remoteAudioElementsRef.current.forEach((el, peer) => remotos.push({ peer, muted: el.muted, volume: el.volume, paused: el.paused }));
+        return {
+          compartilhando: Boolean(localScreenStreamRef.current),
+          mic: mic ? { id: mic.id, enabled: mic.enabled, readyState: mic.readyState, label: mic.label } : null,
+          micIA: micProcessorRef.current ? micProcessorRef.current.diagnostico() : null,
+          telaAudio: scr ? { id: scr.id, enabled: scr.enabled, readyState: scr.readyState, settings: scr.getSettings?.() } : null,
+          senders,
+          remotos,
+        };
+      },
+    };
+    return () => {
+      window.clearInterval(id);
+      try { delete (window as any).__ecoAudio; } catch { /* ignore */ }
+    };
+  }, []);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
   const remoteScreenStreamsRef = useRef<Map<string, MediaStream>>(new Map());
@@ -506,11 +611,12 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     const cam = localStreamRef.current?.getVideoTracks().find((t) => t.readyState === "live") || null;
     const scr = localScreenStreamRef.current?.getVideoTracks()[0] || null;
     const scrAudio = localScreenStreamRef.current?.getAudioTracks()[0] || null;
+    const telaNova = Boolean(scr && slots.screenTransceiver && slots.screenTransceiver.sender.track !== scr);
     safeReplaceTrack(slots.audioTransceiver, mic);
     safeReplaceTrack(slots.cameraTransceiver, cam);
     safeReplaceTrack(slots.screenTransceiver, scr);
     safeReplaceTrack(slots.screenAudioTransceiver, scrAudio);
-    if (scr) {
+    if (telaNova) {
       console.log(`[tela] track da tela atribuída ao slot de tela do peer ${targetId}`);
     }
   };
@@ -651,6 +757,10 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   participantVolumesRef.current = participantVolumes;
   const masterVoiceVolumeRef = useRef(masterVoiceVolume);
   masterVoiceVolumeRef.current = masterVoiceVolume;
+  const isAudioMutedRef = useRef(isAudioMuted);
+  isAudioMutedRef.current = isAudioMuted;
+  const isDeafenedRef = useRef(isDeafened);
+  isDeafenedRef.current = isDeafened;
 
   const audioTrackerRef = useRef<AudioVolumeTracker | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
@@ -1839,6 +1949,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
       // Esvazia os slots de tela (sem renegociar)
       syncLocalTracksToAllPeers();
+      garantirAudioVivo("fim da tela");
+      setTimeout(() => garantirAudioVivoRef.current("fim da tela +1s"), 1000);
 
       socket.emit("screen-share-stopped", { userId: self.id, roomId: room.roomId });
       socket.emit("room:state-update", { isScreenSharing: false });
@@ -1874,6 +1986,18 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
         console.log(`[tela] compartilhamento iniciado: track id = ${screenVideoTrack.id}`);
 
+        // Áudio da tela: trilha própria (slot 3), tratada como música, nunca misturada no microfone
+        if (screenAudioTrack) {
+          try { (screenAudioTrack as any).contentHint = "music"; } catch { /* ignore */ }
+          screenAudioTrack.enabled = true;
+          const cfg: any = screenAudioTrack.getSettings ? screenAudioTrack.getSettings() : {};
+          console.log("[tela] áudio da tela:", cfg);
+          // Pedimos áudio limpo achando que o navegador tira o som do Eco; se não tirou, liga o cancelamento de eco
+          if (cfg && cfg.restrictOwnAudio !== true && cfg.echoCancellation === false) {
+            screenAudioTrack.applyConstraints({ echoCancellation: true } as any).catch(() => {});
+          }
+        }
+
         localScreenStreamRef.current = screenStream;
         setIsScreenSharing(true);
         setSpotlightId(`screen-${self.id}`);
@@ -1888,6 +2012,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         // Coloca a tela nos slots 2/3 de todas as conexões (sem renegociar)
         syncLocalTracksToAllPeers();
         somarMissao("tela", 1);
+        // Proteção: microfone e vozes dos outros continuam vivos depois de começar a compartilhar
+        garantirAudioVivo("início da tela");
+        [800, 2500, 6000].forEach((ms) => setTimeout(() => garantirAudioVivoRef.current("início da tela +" + ms), ms));
 
         // Aplica qualidade depois que a trilha já está nos senders
         setTimeout(() => {
