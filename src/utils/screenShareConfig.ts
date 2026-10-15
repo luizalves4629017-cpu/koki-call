@@ -81,6 +81,38 @@ export function navegadorExcluiProprioAudio(): boolean {
 }
 
 /**
+ * Windows 10 não tem o "process loopback" (precisa do build 20348+ = Windows 11). Sem ele, nem o
+ * Chrome (restrictOwnAudio) nem o app (loopbackWithoutChrome) conseguem tirar as vozes da call do
+ * áudio do PC: quem transmite manda a voz dos outros de volta pra eles (eco).
+ * Detecta pelo userAgentData (platformVersion < 13 = Windows 10). Calculado uma vez ao carregar.
+ */
+let _semExclusao: boolean | null = null;
+(async () => {
+  try {
+    const uad: any = (navigator as any).userAgentData;
+    if (!uad?.getHighEntropyValues) return;
+    const v = await uad.getHighEntropyValues(["platform", "platformVersion"]);
+    if (String(v.platform) === "Windows") {
+      const major = parseInt(String(v.platformVersion || "0").split(".")[0], 10);
+      _semExclusao = major > 0 && major < 13;
+    } else {
+      _semExclusao = false;
+    }
+    console.log(`[tela] Windows ${_semExclusao ? "10 (sem exclusão do som do Eco → cancelamento de eco no áudio da tela)" : "11/outro"}`);
+  } catch { /* ignore */ }
+})();
+export function semExclusaoDoProprioAudio(): boolean {
+  return _semExclusao === true;
+}
+/** Cancelamento de eco no áudio da tela: escolha do usuário; no Automático, só no Windows 10. */
+export function querAecNaTela(): boolean {
+  const pref = lerTelaAec();
+  if (pref === "on") return true;
+  if (pref === "off") return false;
+  return semExclusaoDoProprioAudio();
+}
+
+/**
  * Returns DisplayMedia constraints matching the selected preset
  * Default: 1080p @ 90 FPS ({ width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 90, max: 90 } })
  */
@@ -93,7 +125,8 @@ export function getDisplayMediaConstraints(presetId: ScreenSharePresetId = DEFAU
   // ligava o cancelamento de eco na trilha da tela, e isso deixava o MICROFONE em silêncio (-88 dB).
   // O app novo (Electron 44) já tira o som do próprio Eco da captura, igual ao Chrome 141+.
   void excluiProprio;
-  const aecTela = aecPref === "on";
+  void aecPref;
+  const aecTela = querAecNaTela();
   return {
     video: {
       width: { ideal: preset.width, max: preset.width },

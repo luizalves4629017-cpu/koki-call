@@ -64,6 +64,7 @@ import {
   DEFAULT_SCREEN_PRESET_ID,
   SCREEN_SHARE_PRESETS,
   getDisplayMediaConstraints,
+  querAecNaTela,
   applyScreenShareQuality,
 } from "../utils/screenShareConfig";
 
@@ -2198,7 +2199,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           console.log("[tela] áudio da tela:", cfg);
           // Cancelamento de eco no áudio da tela: só quando o usuário escolheu "Ligado" no diagnóstico.
           // Automático = Desligado (no app Windows/Chromium antigo o AEC na trilha da tela calava o microfone).
-          const querAec = lerTelaAec() === "on";
+          const querAec = querAecNaTela();
           if (cfg && typeof cfg.echoCancellation === "boolean" && cfg.echoCancellation !== querAec) {
             screenAudioTrack.applyConstraints({ echoCancellation: querAec } as any).catch(() => {});
           }
