@@ -250,6 +250,14 @@ interface ServerRoom {
   invisiveis?: Map<string, ServerParticipant>;
 }
 
+/** Invisível com "falar invisível" ligado: só o 1º slot (microfone) pode enviar; câmera e tela continuam só-recebe. */
+function sdpSoVoz(desc: any): any {
+  if (!desc || typeof desc !== "object" || typeof desc.sdp !== "string") return desc;
+  const partes = desc.sdp.split(/(?=\r?\nm=)/);
+  const sdp = partes.map((sec: string, i: number) => (i === 1 && /^\r?\nm=audio/.test(sec) ? sec : sec.replace(/a=sendrecv/g, "a=recvonly").replace(/a=sendonly/g, "a=inactive"))).join("");
+  return { type: desc.type, sdp };
+}
+
 /** SDP de quem está invisível: só recebe. Mesmo que o cliente tente mandar mídia, o outro lado responde sem receber nada. */
 function sdpSoRecebe(desc: any): any {
   if (!desc || typeof desc !== "object" || typeof desc.sdp !== "string") return desc;
@@ -824,7 +832,7 @@ async function startServer() {
         // só pros participantes visíveis da MESMA sala
         if (!euFantasma.room.participants.has(destId)) return;
         if (ev === "signal:offer") {
-          p.offer = sdpSoRecebe(p.offer);
+          p.offer = (euFantasma.g as any).vozInvisivel ? sdpSoVoz(p.offer) : sdpSoRecebe(p.offer);
           p.espectador = true;
           return next();
         }
@@ -3411,6 +3419,14 @@ async function startServer() {
     });
 
     // Modo invisível → Aparecer: vira participante normal e só AGORA os outros ficam sabendo
+    // Invisível liga/desliga a própria voz sem aparecer na lista
+    socket.on("invisivel:voz", (d: { ligar?: boolean } | undefined, cb?: any) => {
+      const f = acharFantasma(socket.id);
+      if (!f) return typeof cb === "function" && cb({ ok: false });
+      (f.g as any).vozInvisivel = d?.ligar === true;
+      if (typeof cb === "function") cb({ ok: true });
+    });
+
     socket.on("sala:revelar", (_data: { masterToken?: string } | undefined, callback?: any) => {
       const responder = (v: any) => typeof callback === "function" && callback(v);
       const room = currentRoomId ? rooms.get(currentRoomId) : undefined;

@@ -163,6 +163,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   // invisivelRef é lido na hora (dentro da sinalização WebRTC), o estado só redesenha a tela.
   const [invisivel, setInvisivel] = useState<boolean>(Boolean(entrouInvisivel));
   const invisivelRef = useRef<boolean>(Boolean(entrouInvisivel));
+  // "Falar invisível": microfone enviado só no slot de áudio, sem aparecer na lista
+  const vozInvisivelRef = useRef<MediaStream | null>(null);
+  const [vozInvisivel, setVozInvisivel] = useState<"off" | "on" | "mudo">("off");
   // Lado de quem está visível: ids de invisíveis com quem temos conexão só-envio (sem card, fora da lista)
   const espectadoresRef = useRef<Set<string>>(new Set());
   // Dono Master / Co-fundador: quem mais está invisível nesta sala (o servidor só manda pra eles)
@@ -805,8 +808,10 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const createOwnSlots = (targetId: string, pc: RTCPeerConnection) => {
     const [audioTransceiver, cameraTransceiver, screenTransceiver, screenAudioTransceiver] = SLOT_KINDS.map((kind) =>
       // Invisível: slots só-recebe (o servidor também reescreve a oferta pra recvonly)
-      pc.addTransceiver(kind, { direction: invisivelRef.current ? "recvonly" : "sendrecv" })
+      pc.addTransceiver(kind, { direction: invisivelRef.current && !(kind === "audio" && vozInvisivelRef.current) ? "recvonly" : "sendrecv" })
     );
+    const vozTrack = invisivelRef.current ? vozInvisivelRef.current?.getAudioTracks()[0] : null;
+    if (vozTrack) audioTransceiver.sender.replaceTrack(vozTrack).catch(() => {});
     peerTransceiversRef.current.set(targetId, {
       audioTransceiver,
       cameraTransceiver,
@@ -1123,9 +1128,10 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     // Handle Incoming Remote Tracks (Camera & Screen Share)
     pc.ontrack = (event) => {
       // Conexão com um invisível: dele não vem nada (e se vier, ignora)
-      if (espectadoresRef.current.has(targetId)) return;
       const track = event.track;
       const slotIndex = getNegotiatedTransceivers(pc).indexOf(event.transceiver);
+      // De um invisível só pode vir a voz (slot 0), quando ele liga "falar invisível"
+      if (espectadoresRef.current.has(targetId) && !(track.kind === "audio" && slotIndex === 0)) return;
 
       console.log(`[tela] ontrack recebido: kind = ${track.kind}, id = ${track.id}, slot = ${slotIndex} de peer ${targetId}`);
 
@@ -1808,6 +1814,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       const id = data?.id;
       if (!id || !espectadoresRef.current.has(id)) return;
       espectadoresRef.current.delete(id);
+      const elVoz = remoteAudioElementsRef.current.get(id);
+      if (elVoz) { elVoz.pause(); elVoz.srcObject = null; elVoz.remove(); remoteAudioElementsRef.current.delete(id); }
       const pc = peerConnectionsRef.current.get(id);
       if (pc) {
         try { pc.close(); } catch { /* ignore */ }
@@ -2334,6 +2342,41 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
 
+  // Falar invisível: liga o microfone (1º clique) e depois alterna mudo/falando, sem aparecer
+  const handleFalarInvisivel = async () => {
+    if (!invisivelRef.current) return;
+    const atual = vozInvisivelRef.current?.getAudioTracks()[0];
+    if (atual) {
+      atual.enabled = !atual.enabled;
+      setVozInvisivel(atual.enabled ? "on" : "mudo");
+      return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: buildMicConstraints(true) });
+    } catch {
+      notify("Não consegui acessar o microfone.", "error");
+      return;
+    }
+    const ok = await new Promise<boolean>((r) => socket.emit("invisivel:voz", { ligar: true }, (res: any) => r(Boolean(res?.ok))));
+    if (!ok || !invisivelRef.current) {
+      stream.getTracks().forEach((t) => t.stop());
+      notify("Não deu pra ligar a voz agora.", "error");
+      return;
+    }
+    vozInvisivelRef.current = stream;
+    const track = stream.getAudioTracks()[0];
+    peerConnectionsRef.current.forEach((pc, id) => {
+      const tr = peerTransceiversRef.current.get(id)?.audioTransceiver;
+      if (!tr) return;
+      try { tr.direction = "sendrecv"; } catch { /* ignore */ }
+      tr.sender.replaceTrack(track).catch(() => {});
+      sendOffer(id, pc);
+    });
+    setVozInvisivel("on");
+    notify("Falando invisível: todos te ouvem, mas ninguém te vê na lista.", "success");
+  };
+
   // Aparecer: sai do modo invisível. O servidor põe na lista e só então os outros criam conexão/card.
   const [revelando, setRevelando] = useState(false);
   const handleAparecer = (falarJa = false) => {
@@ -2347,6 +2390,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       }
       // Antes da lista nova chegar: fecha as conexões só-recebe (a entrada normal recria tudo)
       invisivelRef.current = false;
+      vozInvisivelRef.current?.getTracks().forEach((t) => t.stop());
+      vozInvisivelRef.current = null;
+      setVozInvisivel("off");
       peerConnectionsRef.current.forEach((pc) => {
         try { pc.close(); } catch { /* ignore */ }
       });
@@ -2953,10 +2999,20 @@ export const CallRoom: React.FC<CallRoomProps> = ({
               </span>
               <span>
                 Você está invisível nesta sala
-                <span className="block text-[10px] sm:text-[11px] font-normal text-[#8B8F98]">Você vê e ouve todos. Ninguém vê, ouve ou sabe que você está aqui.</span>
+                <span className="block text-[10px] sm:text-[11px] font-normal text-[#8B8F98]">{vozInvisivel === "off" ? "Você vê e ouve todos. Ninguém vê, ouve ou sabe que você está aqui." : "Todos ouvem sua voz, mas ninguém te vê na lista."}</span>
               </span>
             </span>
             <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={revelando}
+                onClick={handleFalarInvisivel}
+                className={`flex items-center gap-1.5 rounded-xl text-xs font-bold px-3 py-1.5 cursor-pointer disabled:opacity-60 border ${vozInvisivel === "on" ? "bg-[#C4B5FD] text-[#16171B] border-[#C4B5FD]" : "border-[#C4B5FD]/50 text-[#C4B5FD] hover:bg-[#C4B5FD]/10"}`}
+                title={vozInvisivel === "off" ? "Falar sem aparecer na lista" : vozInvisivel === "on" ? "Mutar" : "Desmutar"}
+              >
+                <Ghost className="w-3.5 h-3.5" />
+                <span>{vozInvisivel === "off" ? "Falar invisível" : vozInvisivel === "on" ? "Falando… (mutar)" : "Mudo (falar)"}</span>
+              </button>
               <button
                 type="button"
                 disabled={revelando}
