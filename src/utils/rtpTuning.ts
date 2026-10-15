@@ -80,7 +80,8 @@ export function limitarVideoTela(slots: Slots | undefined, maxBitrate: number, m
     if (enc.maxFramerate !== maxFps) { enc.maxFramerate = maxFps; m = true; }
     if (enc.priority !== "low") { enc.priority = "low"; m = true; }
     if (enc.networkPriority !== "low") { enc.networkPriority = "low"; m = true; }
-    if (params.degradationPreference !== "balanced") { params.degradationPreference = "balanced"; m = true; }
+    // Fluidez primeiro: com pouca banda o navegador baixa a resolução, mas mantém os quadros por segundo
+    if (params.degradationPreference !== "maintain-framerate") { params.degradationPreference = "maintain-framerate"; m = true; }
     return m;
   });
 }
@@ -89,12 +90,14 @@ export function limitarVideoTela(slots: Slots | undefined, maxBitrate: number, m
  * Lê a saúde da conexão (RTT e perda que o outro lado reporta) para o controle adaptativo.
  * Devolve null se ainda não houver números.
  */
-export async function saudeConexao(pc: RTCPeerConnection): Promise<{ rttMs: number; perda: number; disponivelBps: number } | null> {
+export async function saudeConexao(pc: RTCPeerConnection): Promise<{ rttMs: number; perda: number; disponivelBps: number; relay: boolean } | null> {
   try {
     const stats = await pc.getStats();
     let rtt = 0;
     let perda = 0;
     let disp = 0;
+    let localId = "";
+    let remoteId = "";
     stats.forEach((r: any) => {
       if (r.type === "remote-inbound-rtp" && r.kind === "audio") {
         if (typeof r.roundTripTime === "number") rtt = Math.max(rtt, r.roundTripTime * 1000);
@@ -103,9 +106,15 @@ export async function saudeConexao(pc: RTCPeerConnection): Promise<{ rttMs: numb
       if (r.type === "candidate-pair" && r.nominated && r.state === "succeeded") {
         if (typeof r.availableOutgoingBitrate === "number") disp = r.availableOutgoingBitrate;
         if (!rtt && typeof r.currentRoundTripTime === "number") rtt = r.currentRoundTripTime * 1000;
+        localId = r.localCandidateId || "";
+        remoteId = r.remoteCandidateId || "";
       }
     });
-    return { rttMs: rtt, perda, disponivelBps: disp };
+    let relay = false;
+    stats.forEach((r: any) => {
+      if ((r.id === localId || r.id === remoteId) && r.candidateType === "relay") relay = true;
+    });
+    return { rttMs: rtt, perda, disponivelBps: disp, relay };
   } catch {
     return null;
   }
@@ -115,9 +124,13 @@ export async function saudeConexao(pc: RTCPeerConnection): Promise<{ rttMs: numb
  * Fator de rede (0.1–1) por conexão: cai pela metade quando há fila/perda, sobe 15% a cada
  * verificação boa. Guardado fora do React (Map por peer).
  */
-export function proximoFator(atual: number, s: { rttMs: number; perda: number } | null): number {
+export function proximoFator(atual: number, s: { rttMs: number; perda: number } | null, rttBaseMs = 0): number {
   if (!s) return atual;
-  if (s.rttMs > 350 || s.perda > 0.05) return Math.max(0.1, atual * 0.5);
-  if (s.rttMs > 220 || s.perda > 0.02) return atual; // segura
-  return Math.min(1, atual * 1.15);
+  // Compara com o RTT "normal" desta conexão (o menor já visto), não com um número fixo:
+  // pelo TURN o RTT base já é alto (200–300 ms) e antes isso derrubava a tela pra 250 kbps / 15 fps
+  // mesmo sem congestionamento nenhum — era o principal motivo da tela travando.
+  const fila = rttBaseMs > 0 ? s.rttMs - rttBaseMs : s.rttMs - 150;
+  if (fila > 200 || s.perda > 0.06) return Math.max(0.25, atual * 0.7);
+  if (fila > 100 || s.perda > 0.03) return atual; // segura
+  return Math.min(1, atual * 1.2);
 }

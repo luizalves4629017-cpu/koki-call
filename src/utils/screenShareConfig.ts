@@ -56,7 +56,9 @@ export const SCREEN_SHARE_PRESETS: Record<ScreenSharePresetId, ScreenSharePreset
   },
 };
 
-export const DEFAULT_SCREEN_PRESET_ID: ScreenSharePresetId = '1080p_90';
+// 720p60 por padrão: na malha P2P o upload é dividido entre as pessoas, e 1080p90 com pouca banda
+// fazia o encoder descartar quadros (tela "travando"). 720p60 fica liso com ~1,5–3 Mbps.
+export const DEFAULT_SCREEN_PRESET_ID: ScreenSharePresetId = '720p_60';
 
 /**
  * O navegador consegue tirar o som do próprio Eco (vozes da call) do áudio do sistema?

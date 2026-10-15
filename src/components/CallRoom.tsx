@@ -763,6 +763,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   const screenPresetRef = useRef<ScreenSharePresetId>(DEFAULT_SCREEN_PRESET_ID);
   screenPresetRef.current = screenQualityPreset;
   const ultimoTetoRef = useRef<Map<string, number>>(new Map());
+  const rttBaseRef = useRef<Map<string, number>>(new Map());
+  const [rotaConexao, setRotaConexao] = useState<{ relay: number; total: number; rttMs: number }>({ relay: 0, total: 0, rttMs: 0 });
   const ajustarBandaPeer = (targetId: string, disponivelBps = 0) => {
     const slots = peerTransceiversRef.current.get(targetId);
     if (!slots || invisivelRef.current) return;
@@ -779,7 +781,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     // Nunca passa de ~70% do que a rede diz ter (sobra para o áudio e para a fila não crescer)
     if (disponivelBps > 0) teto = Math.max(250_000, Math.min(teto, Math.round(disponivelBps * 0.7 - 200_000)));
     // Com pouca banda, menos quadros por segundo (o áudio e a nitidez valem mais)
-    const fps = teto < 800_000 ? Math.min(preset.frameRate, 15) : teto < 1_500_000 ? Math.min(preset.frameRate, 30) : Math.min(preset.frameRate, 60);
+    const fps = teto < 450_000 ? Math.min(preset.frameRate, 20) : teto < 1_000_000 ? Math.min(preset.frameRate, 30) : Math.min(preset.frameRate, 60);
     limitarVideoTela(slots, teto, fps);
     const antes = ultimoTetoRef.current.get(targetId) || 0;
     if (Math.abs(antes - teto) > antes * 0.15) {
@@ -789,15 +791,25 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   };
   const ajustarBandaTodos = async () => {
     const compartilhando = Boolean(localScreenStreamRef.current);
+    let relay = 0, total = 0, rttMax = 0;
     for (const [targetId, pc] of peerConnectionsRef.current) {
+      if (pc.connectionState === "closed" || pc.connectionState === "failed") continue;
+      const saude = await saudeConexao(pc);
+      if (saude && saude.rttMs > 0) {
+        total++;
+        if (saude.relay) relay++;
+        rttMax = Math.max(rttMax, saude.rttMs);
+        const base = rttBaseRef.current.get(targetId);
+        rttBaseRef.current.set(targetId, base ? Math.min(base, saude.rttMs) : saude.rttMs);
+      }
       if (compartilhando) {
-        const saude = await saudeConexao(pc);
-        fatorRedeRef.current.set(targetId, proximoFator(fatorRedeRef.current.get(targetId) ?? 1, saude));
+        fatorRedeRef.current.set(targetId, proximoFator(fatorRedeRef.current.get(targetId) ?? 1, saude, rttBaseRef.current.get(targetId) || 0));
         ajustarBandaPeer(targetId, saude?.disponivelBps || 0);
       } else {
         ajustarBandaPeer(targetId);
       }
     }
+    setRotaConexao((prev) => (prev.relay === relay && prev.total === total && Math.abs(prev.rttMs - rttMax) < 25 ? prev : { relay, total, rttMs: Math.round(rttMax) }));
   };
 
   const syncLocalTracksToAllPeers = () => {
@@ -2175,6 +2187,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         }
 
         console.log(`[tela] compartilhamento iniciado: track id = ${screenVideoTrack.id}`);
+        // "motion": o encoder prioriza movimento fluido (jogos, vídeos) em vez de nitidez parada
+        try { (screenVideoTrack as any).contentHint = "motion"; } catch { /* ignore */ }
 
         // Áudio da tela: trilha própria (slot 3), tratada como música, nunca misturada no microfone
         if (screenAudioTrack) {
@@ -2989,6 +3003,15 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         onTema={setTemaSala}
       />
 
+      {rotaConexao.total > 0 && (
+        <div
+          className="fixed bottom-24 left-3 z-[60] px-2.5 py-1 rounded-full text-[11px] font-medium bg-black/60 backdrop-blur text-white/90 border border-white/10 pointer-events-auto"
+          title={rotaConexao.relay > 0 ? "Parte da call passa por um servidor de retransmissão (TURN). É mais lento que a conexão direta." : "Conexão direta entre vocês (P2P), a mais rápida."}
+        >
+          <span className={`inline-block w-2 h-2 rounded-full mr-1.5 align-middle ${rotaConexao.relay > 0 ? "bg-amber-400" : "bg-emerald-400"}`} />
+          {rotaConexao.relay > 0 ? `Via servidor (${rotaConexao.relay}/${rotaConexao.total})` : "Conexão direta"} · {rotaConexao.rttMs} ms
+        </div>
+      )}
       {/* Modo invisível: só quem está invisível vê este aviso */}
       {invisivel && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[70] max-w-[92vw]">
