@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { Gamepad2, X } from "lucide-react";
+import { DamasCard, UnoMesa } from "./JogosMesa";
 
 /** Temas da Sala (fundo animado escolhido pelo dono) + Mini-jogo Jogo da Velha valendo Eco Coins. */
 
@@ -76,6 +77,8 @@ export const SalaDiversao: React.FC<{
   const [premio, setPremio] = useState(20);
   const [jogo, setJogo] = useState<Velha | null>(null);
   const [aviso, setAviso] = useState("");
+  const [jogoSel, setJogoSel] = useState<"velha" | "damas" | "uno">("velha");
+  const [premios, setPremios] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const t = (d: any) => { setTema(d?.tema || "padrao"); onTema(d?.tema || "padrao"); };
@@ -90,6 +93,8 @@ export const SalaDiversao: React.FC<{
   const abrir = () => {
     socket.emit("tema:atual", {}, (r: any) => r && setPrecos(r.precos || {}));
     socket.emit("velha:atual", {}, (r: any) => r && setPremio(r.premio ?? 20));
+    socket.emit("damas:atual", {}, (r: any) => r && setPremios((x) => ({ ...x, damas: r.premio })));
+    socket.emit("uno:atual", {}, (r: any) => r && setPremios((x) => ({ ...x, uno: r.premio })));
     setAviso("");
     setAberto(true);
   };
@@ -97,7 +102,7 @@ export const SalaDiversao: React.FC<{
   const escolherTema = (id: string) =>
     socket.emit("tema:definir", { tema: id, masterToken: masterToken || undefined }, (r: any) => (r?.ok ? avisar("Tema aplicado para todos!") : avisar(r?.mensagem || "Não deu.")));
   const desafiar = (id: string) =>
-    socket.emit("velha:desafiar", { alvoId: id }, (r: any) => { if (r?.ok) setAberto(false); else avisar(r?.mensagem || "Não deu."); });
+    socket.emit(jogoSel === "damas" ? "damas:desafiar" : "velha:desafiar", { alvoId: id }, (r: any) => { if (r?.ok) setAberto(false); else avisar(r?.mensagem || "Não deu."); });
 
   const souX = jogo?.x.id === selfId, souO = jogo?.o.id === selfId, jogador = souX || souO;
   const minhaVez = jogo && jogo.aceito && !jogo.vencedor && ((souX && jogo.vez === "X") || (souO && jogo.vez === "O"));
@@ -126,15 +131,29 @@ export const SalaDiversao: React.FC<{
 
             {aba === "jogos" && (
               <div className="space-y-2">
-                <p className="text-xs text-[#8B8E98]">Jogo da Velha · quem vencer ganha <b className="text-[#FACC15]">{premio} Eco Coins</b>. Desafie alguém:</p>
-                {outros.length === 0 && <p className="text-xs text-[#8B8E98]">Ninguém mais na call ainda.</p>}
-                <div className="max-h-60 overflow-y-auto space-y-1">
-                  {outros.map((p) => (
-                    <button key={p.id} onClick={() => desafiar(p.id)} className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-[#16171B] hover:bg-[#2A2D35] text-sm cursor-pointer">
-                      <span className="truncate">{p.name}</span><span className="text-[#5EEAD4] text-xs font-bold">Desafiar</span>
-                    </button>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {([["velha", "⭕ Velha"], ["damas", "♟ Damas"], ["uno", "🃏 Uno"]] as const).map(([id, nome]) => (
+                    <button key={id} onClick={() => setJogoSel(id)} className={`py-2 rounded-lg text-xs font-bold cursor-pointer border ${jogoSel === id ? "border-[#5EEAD4] text-[#5EEAD4] bg-[#5EEAD4]/10" : "border-[#2A2D35] text-[#B5B8C0] bg-[#16171B]"}`}>{nome}</button>
                   ))}
                 </div>
+                {jogoSel === "uno" ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-[#8B8E98]">De 2 a 6 jogadores · quem zerar a mão ganha <b className="text-[#FACC15]">{premios.uno ?? 40} Eco Coins</b>.</p>
+                    <button onClick={() => socket.emit("uno:criar", {}, (r: any) => (r?.ok ? setAberto(false) : avisar(r?.mensagem || "Não deu.")))} className="w-full py-2 rounded-lg bg-[#FACC15] text-[#16171B] font-bold text-sm cursor-pointer">Abrir mesa de Uno</button>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-xs text-[#8B8E98]">{jogoSel === "damas" ? "Damas" : "Jogo da Velha"} · quem vencer ganha <b className="text-[#FACC15]">{jogoSel === "damas" ? premios.damas ?? 30 : premio} Eco Coins</b>. Desafie alguém:</p>
+                    {outros.length === 0 && <p className="text-xs text-[#8B8E98]">Ninguém mais na call ainda.</p>}
+                    <div className="max-h-60 overflow-y-auto space-y-1">
+                      {outros.map((p) => (
+                        <button key={p.id} onClick={() => desafiar(p.id)} className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-[#16171B] hover:bg-[#2A2D35] text-sm cursor-pointer">
+                          <span className="truncate">{p.name}</span><span className="text-[#5EEAD4] text-xs font-bold">Desafiar</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -159,6 +178,9 @@ export const SalaDiversao: React.FC<{
           </div>
         </div>
       )}
+
+      <DamasCard socket={socket} selfId={selfId} />
+      <UnoMesa socket={socket} selfId={selfId} />
 
       {jogo && (jogador || jogo.aceito) && (
         <div className="fixed top-20 right-4 z-[65] w-56 bg-[#1E2026]/95 border border-[#2A2D35] rounded-2xl p-3 text-[#ECECEC] shadow-2xl">

@@ -6,6 +6,8 @@ import { TEMAS_INFO } from "./SalaDiversao";
 /** Dono Master define o prêmio dos mini-jogos e o preço de cada Tema da Sala (Eco Coins). */
 const CAMPOS: Array<{ chave: string; rotulo: string; padrao: number }> = [
   { chave: "jogo_velha", rotulo: "Prêmio do Jogo da Velha", padrao: 20 },
+  { chave: "jogo_damas", rotulo: "Prêmio das Damas", padrao: 30 },
+  { chave: "jogo_uno", rotulo: "Prêmio do Uno", padrao: 40 },
   ...TEMAS_INFO.filter((t) => t.id !== "padrao").map((t) => ({
     chave: `tema_${t.id}`,
     rotulo: `Tema ${t.nome}`,

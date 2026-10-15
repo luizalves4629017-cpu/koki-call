@@ -3,6 +3,7 @@
  */
 import type { Server, Socket } from "socket.io";
 import { getAjustesLoja } from "./lojaStore";
+import { registrarJogos } from "./jogosServer";
 
 interface Ctx {
   rooms: Map<string, any>;
@@ -85,7 +86,7 @@ const PREMIOS_ROLETA = ["+50 Eco Coins", "+100 Eco Coins", "+500 Eco Coins", "An
 // ---------- Temas da Sala e Mini-jogos ----------
 export const TEMAS = ["padrao", "buraco_negro", "aurora", "chuva", "cerejeira"] as const;
 const PRECO_TEMA_PADRAO: Record<string, number> = { padrao: 0, buraco_negro: 200, aurora: 150, chuva: 100, cerejeira: 150 };
-const PREMIO_PADRAO: Record<string, number> = { jogo_velha: 20 };
+const PREMIO_PADRAO: Record<string, number> = { jogo_velha: 20, jogo_damas: 30, jogo_uno: 40 };
 /** Valor editável pelo Dono Master na aba Jogos (fica salvo junto com os preços da loja) */
 function valorConfig(chave: string, padrao: number): number {
   const v = getAjustesLoja()[chave]?.price;
@@ -236,6 +237,8 @@ export function registrarExtras(io: Server, socket: Socket, ctx: Ctx) {
     roletaUltimos.set(rid, lista);
     io.to(rid).emit("roleta:novo-premio", item);
   });
+
+  registrarJogos(io, socket, eu, premioJogo);
 
   // ----- Temas da Sala -----
   socket.on("tema:atual", (_d: any, cb: any) => {
