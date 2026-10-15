@@ -253,8 +253,8 @@ interface ServerRoom {
 /** Invisível com "falar invisível" ligado: só o 1º slot (microfone) pode enviar; câmera e tela continuam só-recebe. */
 function sdpSoVoz(desc: any): any {
   if (!desc || typeof desc !== "object" || typeof desc.sdp !== "string") return desc;
-  const partes = desc.sdp.split(/(?=\r?\nm=)/);
-  const sdp = partes.map((sec: string, i: number) => (i === 1 && /^\r?\nm=audio/.test(sec) ? sec : sec.replace(/a=sendrecv/g, "a=recvonly").replace(/a=sendonly/g, "a=inactive"))).join("");
+  const partes = desc.sdp.split(/(?=\nm=)/);
+  const sdp = partes.map((sec: string, i: number) => (i === 1 && /^\nm=audio/.test(sec) ? sec : sec.replace(/a=sendrecv/g, "a=recvonly").replace(/a=sendonly/g, "a=inactive"))).join("");
   return { type: desc.type, sdp };
 }
 
