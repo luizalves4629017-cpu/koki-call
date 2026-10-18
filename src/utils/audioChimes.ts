@@ -27,7 +27,7 @@ function getAudioContext(): AudioContext | null {
  * Uses a gentle two-note ascending harmonic chime (D5 -> A5) with a smooth attack and exponential decay.
  * Guaranteed no broken or missing external audio files.
  */
-export function playVoiceJoinChime(volume: number = 0.25): void {
+function tocarSinoOriginal(volume: number = 0.25): void {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
@@ -82,4 +82,105 @@ export function playVoiceJoinChime(volume: number = 0.25): void {
   } catch (e) {
     console.warn("Could not play voice join chime:", e);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Sons de entrada selecionáveis (Configurações → Som de entrada). Guardado no localStorage.
+// ---------------------------------------------------------------------------
+export type SomEntradaId = "sino" | "pop" | "discord" | "grave" | "nenhum";
+export const SONS_ENTRADA: { id: SomEntradaId; nome: string }[] = [
+  { id: "sino", nome: "Sino (original)" },
+  { id: "pop", nome: "Pop curto" },
+  { id: "discord", nome: "Estilo Discord" },
+  { id: "grave", nome: "Sino grave" },
+  { id: "nenhum", nome: "Sem som" },
+];
+const CHAVE_SOM = "eco:somEntrada";
+export function getSomEntrada(): SomEntradaId {
+  try {
+    const v = localStorage.getItem(CHAVE_SOM) as SomEntradaId | null;
+    if (v && SONS_ENTRADA.some((s) => s.id === v)) return v;
+  } catch { /* ignore */ }
+  return "sino";
+}
+export function setSomEntrada(id: SomEntradaId) {
+  try { localStorage.setItem(CHAVE_SOM, id); } catch { /* ignore */ }
+}
+
+/** Nota simples com envelope (ataque curto + decaimento exponencial). */
+function nota(ctx: AudioContext, destino: AudioNode, freq: number, inicio: number, dur: number, pico: number, tipo: OscillatorType = "sine", freqFim?: number) {
+  const osc = ctx.createOscillator();
+  osc.type = tipo;
+  osc.frequency.setValueAtTime(freq, inicio);
+  if (freqFim) osc.frequency.exponentialRampToValueAtTime(freqFim, inicio + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, inicio);
+  g.gain.linearRampToValueAtTime(pico, inicio + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, inicio + dur);
+  osc.connect(g);
+  g.connect(destino);
+  osc.start(inicio);
+  osc.stop(inicio + dur + 0.02);
+}
+
+function saida(ctx: AudioContext, volume: number, corte = 4000) {
+  const master = ctx.createGain();
+  master.gain.value = Math.max(0.01, Math.min(1, volume));
+  const f = ctx.createBiquadFilter();
+  f.type = "lowpass";
+  f.frequency.value = corte;
+  f.connect(master);
+  master.connect(ctx.destination);
+  return f;
+}
+
+function tocarPop(volume: number) {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = saida(ctx, volume, 3500);
+  // "bolha": sobe rápido de tom e some em ~120 ms
+  nota(ctx, out, 420, t, 0.12, 0.9, "sine", 980);
+  nota(ctx, out, 840, t, 0.06, 0.15, "triangle", 1600);
+}
+
+function tocarDiscord(volume: number) {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = saida(ctx, volume, 5000);
+  // duas notas curtas e brilhantes subindo (E5 → B5), com leve harmônico
+  nota(ctx, out, 659.25, t, 0.16, 0.5, "triangle");
+  nota(ctx, out, 1318.5, t, 0.1, 0.08, "sine");
+  nota(ctx, out, 987.77, t + 0.09, 0.26, 0.55, "triangle");
+  nota(ctx, out, 1975.5, t + 0.09, 0.14, 0.07, "sine");
+}
+
+function tocarGrave(volume: number) {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  const out = saida(ctx, volume, 1200);
+  // sino grave e quente (A3 + E4), decaimento longo
+  nota(ctx, out, 220, t, 1.1, 0.6, "sine");
+  nota(ctx, out, 440.5, t, 0.7, 0.18, "sine");
+  nota(ctx, out, 329.63, t + 0.11, 1.0, 0.5, "sine");
+}
+
+/** Toca um som específico (usado no botão "Testar"). */
+export function tocarSomEntrada(id: SomEntradaId, volume: number = 0.25): void {
+  try {
+    if (id === "nenhum") return;
+    if (id === "pop") return tocarPop(volume);
+    if (id === "discord") return tocarDiscord(volume);
+    if (id === "grave") return tocarGrave(volume);
+    return tocarSinoOriginal(volume);
+  } catch (e) {
+    console.warn("Could not play join sound:", e);
+  }
+}
+
+/** Som de quando alguém entra: usa o escolhido nas Configurações. */
+export function playVoiceJoinChime(volume: number = 0.25): void {
+  tocarSomEntrada(getSomEntrada(), volume);
 }

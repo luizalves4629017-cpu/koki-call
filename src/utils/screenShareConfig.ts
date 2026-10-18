@@ -201,3 +201,22 @@ export async function applyScreenShareQuality(
 
   return true;
 }
+
+/** Este aparelho é celular/tablet? (quem transmite manda uma versão mais leve da tela pra ele) */
+export const EH_CELULAR: boolean = (() => {
+  try {
+    const uad: any = (navigator as any).userAgentData;
+    if (uad && typeof uad.mobile === "boolean" && uad.mobile) return true;
+    const ua = navigator.userAgent || "";
+    if (/Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua)) return true;
+    // iPad novo se apresenta como Mac
+    if (/Macintosh/.test(ua) && (navigator as any).maxTouchPoints > 1) return true;
+    return false;
+  } catch {
+    return false;
+  }
+})();
+/** Teto da tela enviada para um celular: fluidez antes de nitidez. */
+export const CELULAR_MAX_BPS = 1_200_000;
+export const CELULAR_MAX_FPS = 30;
+export const CELULAR_MAX_ALTURA = 540;

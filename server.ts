@@ -1625,6 +1625,7 @@ async function startServer() {
         offer: payload.offer,
         streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
         isScreen: Boolean(payload.isScreen),
+        ...(typeof (payload as any).mobile === "boolean" ? { mobile: (payload as any).mobile } : {}),
         // marcado pelo servidor (guarda acima): conexão só-recebe de um invisível, sem card na tela
         ...((payload as any).espectador === true ? { espectador: true } : {}),
       });
@@ -1640,6 +1641,7 @@ async function startServer() {
         answer: payload.answer,
         streamType: payload.streamType || (payload.isScreen ? "screen" : "camera"),
         isScreen: Boolean(payload.isScreen),
+        ...(typeof (payload as any).mobile === "boolean" ? { mobile: (payload as any).mobile } : {}),
       });
     });
 

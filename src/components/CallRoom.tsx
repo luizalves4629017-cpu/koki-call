@@ -66,6 +66,10 @@ import {
   getDisplayMediaConstraints,
   querAecNaTela,
   applyScreenShareQuality,
+  EH_CELULAR,
+  CELULAR_MAX_BPS,
+  CELULAR_MAX_FPS,
+  CELULAR_MAX_ALTURA,
 } from "../utils/screenShareConfig";
 
 const DEMO_PARTICIPANTS: Participant[] = [
@@ -761,6 +765,11 @@ export const CallRoom: React.FC<CallRoomProps> = ({
   // (ver src/utils/rtpTuning.ts — causa provável do áudio "sumindo aos poucos" ao compartilhar)
   // ---------------------------------------------------------------------------
   const fatorRedeRef = useRef<Map<string, number>>(new Map());
+  const celularesRef = useRef<Set<string>>(new Set());
+  const marcarCelular = (id: string, mobile: unknown) => {
+    if (mobile === true) celularesRef.current.add(id);
+    else if (mobile === false) celularesRef.current.delete(id);
+  };
   const screenPresetRef = useRef<ScreenSharePresetId>(DEFAULT_SCREEN_PRESET_ID);
   screenPresetRef.current = screenQualityPreset;
   const ultimoTetoRef = useRef<Map<string, number>>(new Map());
@@ -782,12 +791,22 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     // Nunca passa de ~70% do que a rede diz ter (sobra para o áudio e para a fila não crescer)
     if (disponivelBps > 0) teto = Math.max(250_000, Math.min(teto, Math.round(disponivelBps * 0.7 - 200_000)));
     // Com pouca banda, menos quadros por segundo (o áudio e a nitidez valem mais)
-    const fps = teto < 450_000 ? Math.min(preset.frameRate, 20) : teto < 1_000_000 ? Math.min(preset.frameRate, 30) : Math.min(preset.frameRate, 60);
-    limitarVideoTela(slots, teto, fps);
+    let fps = teto < 450_000 ? Math.min(preset.frameRate, 20) : teto < 1_000_000 ? Math.min(preset.frameRate, 30) : Math.min(preset.frameRate, 60);
+    // Quem assiste no CELULAR recebe uma versão mais leve (30 fps, ~540p, até 1,2 Mbps):
+    // celular decodificando 720p60 por software + internet móvel = tela travando.
+    let escala = 1;
+    const celular = celularesRef.current.has(targetId);
+    if (celular) {
+      teto = Math.min(teto, CELULAR_MAX_BPS);
+      fps = Math.min(fps, CELULAR_MAX_FPS);
+      const altura = scr.getSettings().height || 0;
+      if (altura > CELULAR_MAX_ALTURA) escala = altura / CELULAR_MAX_ALTURA;
+    }
+    limitarVideoTela(slots, teto, fps, escala);
     const antes = ultimoTetoRef.current.get(targetId) || 0;
     if (Math.abs(antes - teto) > antes * 0.15) {
       ultimoTetoRef.current.set(targetId, teto);
-      console.log(`[banda] tela → ${targetId}: ${Math.round(teto / 1000)} kbps, ${fps} fps (fator ${fator.toFixed(2)})`);
+      console.log(`[banda] tela → ${targetId}: ${Math.round(teto / 1000)} kbps, ${fps} fps (fator ${fator.toFixed(2)})${celular ? " [celular]" : ""}`);
     }
   };
   const ajustarBandaTodos = async () => {
@@ -867,6 +886,14 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     const camTrack = negotiated[1]?.receiver.track || null;
     const scrTrack = negotiated[2]?.receiver.track || null;
     const scrAudioTrack = negotiated[3]?.receiver.track || null;
+    // No celular: um pouco mais de buffer na tela recebida = menos engasgo com internet móvel
+    if (EH_CELULAR && negotiated[2]) {
+      try {
+        const r: any = negotiated[2].receiver;
+        if ("jitterBufferTarget" in r) { if (r.jitterBufferTarget !== 200) r.jitterBufferTarget = 200; }
+        else if ("playoutDelayHint" in r) r.playoutDelayHint = 0.2;
+      } catch { /* ignore */ }
+    }
 
     const camTracks = [micTrack, camTrack].filter(Boolean) as MediaStreamTrack[];
     if (camTracks.length > 0) {
@@ -895,6 +922,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       socket.emit("signal:offer", {
         targetId,
         to: targetId,
+        mobile: EH_CELULAR,
         offer: pc.localDescription,
         streamType: "camera",
       });
@@ -1394,6 +1422,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     }) => {
       const senderId = payload.senderId || payload.from;
       if (!senderId || !payload.offer) return;
+      marcarCelular(senderId, (payload as any).mobile);
       // Invisível não aceita oferta de ninguém (o servidor já barra; aqui é só garantia)
       if (invisivelRef.current) return;
       // Oferta de um invisível (marcada pelo SERVIDOR): conexão só-envio, sem card e fora da lista
@@ -1431,6 +1460,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
               socket.emit("signal:offer", {
                 targetId: senderId,
                 to: senderId,
+                mobile: EH_CELULAR,
                 offer: activePc.localDescription,
                 streamType: localScreenStreamRef.current ? "screen" : "camera",
                 isScreen: Boolean(localScreenStreamRef.current),
@@ -1487,6 +1517,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
         socket.emit("signal:answer", {
           targetId: senderId,
           to: senderId,
+          mobile: EH_CELULAR,
           answer: pc.localDescription,
           streamType: payload.streamType || "camera",
           isScreen: Boolean(payload.isScreen),
@@ -1503,6 +1534,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
     }) => {
       const senderId = payload.senderId || payload.from;
       if (!senderId || !payload.answer) return;
+      marcarCelular(senderId, (payload as any).mobile);
 
       const pc = peerConnectionsRef.current.get(senderId);
       if (pc) {

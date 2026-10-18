@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { UserPreferences, VideoQuality } from "../types";
 import { MicProcessor, MicLevelInfo, MIC_DB_MIN, MIC_DB_MAX } from "../utils/micProcessor";
+import { SONS_ENTRADA, SomEntradaId, getSomEntrada, setSomEntrada, tocarSomEntrada } from "../utils/audioChimes";
 
 const dbToPct = (db: number) =>
   Math.max(0, Math.min(100, ((db - MIC_DB_MIN) / (MIC_DB_MAX - MIC_DB_MIN)) * 100));
@@ -335,6 +336,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </select>
           </div>
 
+          {/* Som de quando alguém entra */}
+          <SomEntradaSeletor />
+
           {/* Otimizações de Áudio */}
           <div className="bg-[#16171B] border border-[#2A2D35] rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -425,3 +429,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     </div>
   );
 };
+
+function SomEntradaSeletor() {
+  const [som, setSom] = React.useState<SomEntradaId>(() => getSomEntrada());
+  return (
+    <div className="space-y-2">
+      <label className="font-semibold text-[#ECECEC] flex items-center gap-2">
+        <Volume2 className="w-4 h-4 text-[#5EEAD4]" />
+        Som quando alguém entra
+      </label>
+      <div className="flex gap-2">
+        <select
+          value={som}
+          onChange={(e) => {
+            const v = e.target.value as SomEntradaId;
+            setSom(v);
+            setSomEntrada(v);
+            tocarSomEntrada(v);
+          }}
+          className="flex-1 bg-[#16171B] border border-[#2A2D35] text-[#ECECEC] rounded-xl p-2.5 focus:outline-none focus:border-[#5EEAD4]"
+        >
+          {SONS_ENTRADA.map((s) => (
+            <option key={s.id} value={s.id}>{s.nome}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => tocarSomEntrada(som)}
+          className="px-3 rounded-xl border border-[#2A2D35] text-[#5EEAD4] hover:border-[#5EEAD4]/60 text-xs font-semibold cursor-pointer"
+        >
+          Testar
+        </button>
+      </div>
+    </div>
+  );
+}

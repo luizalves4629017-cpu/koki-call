@@ -72,12 +72,14 @@ export function tetoTelaPorPessoa(presetId: ScreenSharePresetId, pessoas: number
 }
 
 /** Aplica o teto no vídeo da tela de uma conexão (prioridade baixa, equilíbrio entre fps e resolução). */
-export function limitarVideoTela(slots: Slots | undefined, maxBitrate: number, maxFps: number) {
+export function limitarVideoTela(slots: Slots | undefined, maxBitrate: number, maxFps: number, escala = 1) {
   if (!slots) return;
   setarParams(slots.screenTransceiver?.sender, (enc, params) => {
     let m = false;
     if (enc.maxBitrate !== maxBitrate) { enc.maxBitrate = maxBitrate; m = true; }
     if (enc.maxFramerate !== maxFps) { enc.maxFramerate = maxFps; m = true; }
+    const esc = Math.max(1, Math.round(escala * 100) / 100);
+    if ((enc.scaleResolutionDownBy || 1) !== esc) { enc.scaleResolutionDownBy = esc; m = true; }
     if (enc.priority !== "low") { enc.priority = "low"; m = true; }
     if (enc.networkPriority !== "low") { enc.networkPriority = "low"; m = true; }
     // Fluidez primeiro: com pouca banda o navegador baixa a resolução, mas mantém os quadros por segundo
