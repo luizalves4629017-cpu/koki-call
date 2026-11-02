@@ -16,7 +16,9 @@ import {
   ArrowRightLeft,
   Share2,
   ChevronLeft,
+  Gamepad2,
 } from "lucide-react";
+import { JOGOS_COMUNS, tempoDesde, useAgoraMinuto } from "../utils/atividade";
 import { Participant, TextChannel } from "../types";
 import { BlackHoleBadge } from "./BlackHoleBadge";
 
@@ -56,6 +58,8 @@ interface ChannelSidebarProps {
   /** barra recolhida pro lado (só ícones e fotos) */
   recolhida?: boolean;
   onAlternarRecolhida?: () => void;
+  /** "Estou jogando…": define (ou limpa com null) o jogo atual */
+  onDefinirJogo?: (jogo: string | null) => void;
 }
 
 export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
@@ -82,7 +86,16 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   onMoveMember,
   recolhida = false,
   onAlternarRecolhida,
+  onDefinirJogo,
 }) => {
+  const [menuJogo, setMenuJogo] = useState(false);
+  const [jogoTexto, setJogoTexto] = useState("");
+  const agoraMin = useAgoraMinuto();
+  const escolherJogo = (j: string | null) => {
+    onDefinirJogo?.(j ? j.trim().slice(0, 40) : null);
+    setMenuJogo(false);
+    setJogoTexto("");
+  };
   const [textCollapsed, setTextCollapsed] = useState(false);
   const [voiceCollapsed, setVoiceCollapsed] = useState(false);
   const [lockWarning, setLockWarning] = useState<string | null>(null);
@@ -518,12 +531,63 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
         </div>
       </div>
 
+      {/* "Estou jogando…" */}
+      {menuJogo && onDefinirJogo && (
+        <div className="border-t border-[#2A2D35] bg-[#1A1C21] p-3 shrink-0 animate-in fade-in slide-in-from-bottom-2">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-black uppercase tracking-wider text-[#5EEAD4]">Estou jogando…</span>
+            <button type="button" onClick={() => setMenuJogo(false)} className="text-[11px] text-[#8B8F98] hover:text-[#ECECEC] cursor-pointer">Fechar</button>
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (jogoTexto.trim()) escolherJogo(jogoTexto);
+            }}
+            className="flex gap-1.5 mb-2"
+          >
+            <input
+              value={jogoTexto}
+              onChange={(e) => setJogoTexto(e.target.value)}
+              maxLength={40}
+              placeholder="Outro jogo…"
+              className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#16171B] border border-[#2A2D35] text-xs text-[#ECECEC] placeholder-[#8B8F98] focus:outline-none focus:border-[#5EEAD4]/60"
+            />
+            <button type="submit" className="px-2.5 rounded-lg bg-[#5EEAD4] text-[#16171B] text-xs font-bold cursor-pointer">OK</button>
+          </form>
+          <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+            {JOGOS_COMUNS.map((j) => (
+              <button
+                type="button"
+                key={j}
+                onClick={() => escolherJogo(j)}
+                className={`px-2 py-1 rounded-lg text-[11px] border cursor-pointer transition-colors ${
+                  self.atividade?.jogo === j
+                    ? "bg-[#5EEAD4]/15 border-[#5EEAD4]/50 text-[#5EEAD4]"
+                    : "bg-[#16171B] border-[#2A2D35] text-[#ECECEC] hover:border-[#5EEAD4]/40"
+                }`}
+              >
+                {j}
+              </button>
+            ))}
+          </div>
+          {self.atividade?.jogo && (
+            <button
+              type="button"
+              onClick={() => escolherJogo(null)}
+              className="mt-2 w-full py-1.5 rounded-lg border border-[#F43F5E]/40 text-[#F43F5E] hover:bg-[#F43F5E]/10 text-xs font-bold cursor-pointer"
+            >
+              Parar de jogar
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 3. PAINEL DO USUÁRIO EMBAIXO: avatar, nome e tag com ícones mic, fone e engrenagem perfeitamente alinhados */}
       <div className="h-14 border-t border-[#2A2D35] px-3 flex items-center justify-between bg-[#1E2026] shrink-0">
         <button
           type="button"
           onClick={onOpenSelfProfile}
-          className="flex items-center gap-2 p-1 rounded-xl hover:bg-[#252830] transition-colors text-left min-w-0 max-w-[130px] sm:max-w-[140px] cursor-pointer group"
+          className="flex items-center gap-2 p-1 rounded-xl hover:bg-[#252830] transition-colors text-left min-w-0 max-w-[100px] sm:max-w-[116px] cursor-pointer group"
           title="Ver e editar meu perfil Órbita"
         >
           <div className="relative shrink-0">
@@ -562,14 +626,34 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                 <BlackHoleBadge type="singularidade" size={13} />
               )}
             </div>
-            <span className="text-[10px] text-[#8B8F98] font-mono block truncate">
-              #{tagVisivel(self, "0001")}
-            </span>
+            {self.atividade?.jogo ? (
+              <span className="text-[10px] text-[#5EEAD4] block truncate" title={`Jogando ${self.atividade.jogo}`}>
+                {self.atividade.jogo} · {tempoDesde(self.atividade.desde, agoraMin)}
+              </span>
+            ) : (
+              <span className="text-[10px] text-[#8B8F98] font-mono block truncate">
+                #{tagVisivel(self, "0001")}
+              </span>
+            )}
           </div>
         </button>
 
         {/* Três botões de controle alinhados: mic, fone e engrenagem */}
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-0.5 shrink-0">
+          {onDefinirJogo && (
+            <button
+              type="button"
+              onClick={() => setMenuJogo((v) => !v)}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                self.atividade?.jogo || menuJogo
+                  ? "text-[#5EEAD4] bg-[#5EEAD4]/10 hover:bg-[#5EEAD4]/20"
+                  : "text-[#8B8F98] hover:text-[#ECECEC] hover:bg-[#252830]"
+              }`}
+              title={self.atividade?.jogo ? `Jogando ${self.atividade.jogo}` : "Estou jogando…"}
+            >
+              <Gamepad2 className="w-4 h-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={onToggleMic}

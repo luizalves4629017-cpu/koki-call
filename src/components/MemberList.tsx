@@ -2,7 +2,8 @@ import { useFecharComNevoa, NevoaSaida } from "./NevoaSaida";
 import { TAG_COFUNDADOR } from "../utils/tagExibida";
 import React, { useEffect, useMemo, useState } from "react";
 import { Socket } from "socket.io-client";
-import { Search, Award, DoorOpen, ChevronLeft, ChevronRight, Gavel, Ghost } from "lucide-react";
+import { Search, Award, DoorOpen, ChevronLeft, ChevronRight, Gavel, Ghost, Gamepad2 } from "lucide-react";
+import { tempoDesde, useAgoraMinuto } from "../utils/atividade";
 import { BadgeIcon } from "./BadgeIcon";
 import { ALL_BADGES } from "../data/badges";
 import {
@@ -171,6 +172,7 @@ export const MemberList: React.FC<MemberListProps> = ({
   souInvisivel = false,
   onEntrarInvisivel,
 }) => {
+  const agoraMin = useAgoraMinuto();
   // Botão fantasma: entrar invisível na sala dessa pessoa (Dono Master / Co-fundador)
   const botaoInvisivel = (sala?: string, nome?: string) =>
     onEntrarInvisivel && sala && !(souInvisivel && sala === roomId) ? (
@@ -389,6 +391,12 @@ export const MemberList: React.FC<MemberListProps> = ({
                 <BlackHoleBadge type="horizonte" size={15} />
               )}
             </div>
+            {participant.atividade?.jogo && (
+              <div className="flex items-center gap-1 text-[10.5px] leading-tight text-[#5EEAD4] truncate mt-0.5">
+                <Gamepad2 className="w-3 h-3 shrink-0" />
+                <span className="truncate">Jogando {participant.atividade.jogo} · {tempoDesde(participant.atividade.desde, agoraMin)}</span>
+              </div>
+            )}
           </div>
         </div>
 

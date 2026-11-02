@@ -18,6 +18,7 @@ export interface Participant {
   hasAudio: boolean;
   hasVideo: boolean;
   isScreenSharing: boolean;
+  atividade?: { jogo: string; modo?: string; desde: number; auto?: boolean } | null; // "Jogando agora"
   isDeafened: boolean;
   isMutedByHost: boolean;
   avatarColor: string;

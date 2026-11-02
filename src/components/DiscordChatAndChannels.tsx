@@ -16,6 +16,7 @@ import {
   EyeOff,
   Upload,
   Film,
+  Hash,
 } from "lucide-react";
 import { ChatAttachment, ChatMessage, Participant, TextChannel } from "../types";
 
@@ -103,6 +104,15 @@ interface Pendente {
 }
 
 const hora = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+/** "Hoje às 19:20", "Ontem às 08:05" ou "12/10 às 21:00" */
+const quando = (t: number) => {
+  const d = new Date(t);
+  const hoje = new Date();
+  const ontem = new Date(Date.now() - 86400000);
+  const mesmoDia = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+  const dia = mesmoDia(d, hoje) ? "Hoje" : mesmoDia(d, ontem) ? "Ontem" : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  return `${dia} às ${hora(t)}`;
+};
 const duracao = (s: number) => {
   if (!Number.isFinite(s)) return "";
   const m = Math.floor(s / 60);
@@ -457,7 +467,7 @@ export const DiscordChatAndChannels: React.FC<DiscordChatAndChannelsProps> = ({
 
   return (
     <aside
-      className={`w-[340px] border-l flex flex-col h-full shadow-2xl z-30 relative ${fechando ? "eco-painel-sair" : "eco-painel-entrar"}`}
+      className={`w-[min(400px,100vw)] border-l flex flex-col h-full shadow-2xl z-30 relative ${fechando ? "eco-painel-sair" : "eco-painel-entrar"}`}
       style={{ backgroundColor: C.painel, borderColor: C.borda, fontFamily: "Inter, system-ui, sans-serif" }}
       onDragEnter={(e) => {
         if (!e.dataTransfer.types.includes("Files")) return;
@@ -480,10 +490,17 @@ export const DiscordChatAndChannels: React.FC<DiscordChatAndChannelsProps> = ({
       <NevoaSaida ativo={fechando} />
       {/* Cabeçalho */}
       <div className="px-4 pt-3 border-b" style={{ borderColor: C.borda }}>
-        <div className="flex items-center justify-between">
-          <span className="font-semibold text-[15px]" style={{ color: C.texto }}>
-            Chat da call
-          </span>
+        <div className="flex items-center justify-between gap-2 min-h-[32px]">
+          <div className="flex items-center gap-2 min-w-0">
+            <Hash className="w-5 h-5 shrink-0" style={{ color: C.suave }} />
+            <span className="font-bold text-[16px] truncate" style={{ color: C.texto }}>
+              {canal.name || "geral"}
+            </span>
+            <span className="hidden sm:block w-px h-4 shrink-0" style={{ backgroundColor: C.borda }} />
+            <span className="hidden sm:block text-[12px] truncate" style={{ color: C.suave }}>
+              {(canal as any).description || "Conversa da call"}
+            </span>
+          </div>
           <button onClick={fechar} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors cursor-pointer" style={{ color: C.suave }} title="Fechar chat">
             <X className="w-4 h-4" />
           </button>
@@ -540,7 +557,7 @@ export const DiscordChatAndChannels: React.FC<DiscordChatAndChannelsProps> = ({
           )}
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto py-2 select-text" style={{ backgroundColor: C.painel }}>
+        <div className="flex-1 overflow-y-auto pt-2 pb-4 select-text" style={{ backgroundColor: C.painel }}>
           {messages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-center gap-2 px-6" style={{ color: C.suave }}>
               <Upload className="w-7 h-7 opacity-50" />
@@ -588,16 +605,16 @@ export const DiscordChatAndChannels: React.FC<DiscordChatAndChannelsProps> = ({
             return (
               <div
                 key={msg.id}
-                className={`group flex gap-3 px-4 hover:bg-white/[0.025] transition-colors ${agrupada ? "py-0.5" : "pt-2.5 pb-0.5"}`}
+                className={`group flex gap-3.5 px-4 hover:bg-white/[0.03] transition-colors ${agrupada ? "py-[3px]" : "mt-3 pt-1.5 pb-[3px]"}`}
               >
-                <div className="w-9 shrink-0">
+                <div className="w-10 shrink-0">
                   {agrupada ? (
-                    <span className="hidden group-hover:block text-[9px] text-right pt-1" style={{ color: C.suave }}>
+                    <span className="hidden group-hover:block text-[9.5px] text-center pt-1" style={{ color: C.suave }}>
                       {hora(msg.timestamp)}
                     </span>
                   ) : (
                     <div
-                      className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center text-sm font-semibold"
+                      className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center text-[15px] font-semibold"
                       style={{ backgroundColor: msg.senderAvatarColor || (isMe ? self.avatarColor : C.lilas), color: C.fundo }}
                     >
                       {avatarUrl ? (
@@ -610,19 +627,19 @@ export const DiscordChatAndChannels: React.FC<DiscordChatAndChannelsProps> = ({
                 </div>
                 <div className="flex-1 min-w-0">
                   {!agrupada && (
-                    <div className="flex items-center gap-1.5 leading-none mb-1">
-                      <span className="text-[13px] font-semibold truncate" style={{ color: dono ? C.lilas : C.texto }}>
+                    <div className="flex items-baseline gap-2 leading-tight mb-0.5 min-w-0">
+                      <span className="text-[14.5px] font-bold truncate" style={{ color: dono ? C.lilas : C.texto }}>
                         {isMe ? self.name || "Você" : msg.senderName}
                       </span>
-                      {dono && <Crown className="w-3 h-3 shrink-0" style={{ color: C.lilas }} />}
-                      <span className="text-[10px]" style={{ color: C.suave }}>
-                        {hora(msg.timestamp)}
+                      {dono && <Crown className="w-3 h-3 shrink-0 self-center" style={{ color: C.lilas }} />}
+                      <span className="text-[11px] shrink-0" style={{ color: C.suave }}>
+                        {quando(msg.timestamp)}
                       </span>
                     </div>
                   )}
                   {msg.text && (
                     <div
-                      className="text-[13px] leading-relaxed break-words whitespace-pre-wrap"
+                      className="text-[14px] leading-[1.45] break-words whitespace-pre-wrap"
                       style={{ color: msg.isSecurityWarning ? "#FDA4AF" : "#D4D6DC" }}
                     >
                       {msg.text}
@@ -653,7 +670,7 @@ export const DiscordChatAndChannels: React.FC<DiscordChatAndChannelsProps> = ({
       )}
 
       {/* Escrever */}
-      <form onSubmit={enviar} className="p-3 border-t" style={{ borderColor: C.borda }}>
+      <form onSubmit={enviar} className="px-3 pt-2 pb-3">
         {erro && (
           <div className="mb-2 text-[11px] px-2.5 py-1.5 rounded-lg" style={{ color: "#FDA4AF", backgroundColor: `${C.perigo}14` }}>
             {erro}
@@ -751,7 +768,7 @@ export const DiscordChatAndChannels: React.FC<DiscordChatAndChannelsProps> = ({
             <ImageIcon className="w-[18px] h-[18px]" />
           </button>
           <div
-            className="flex-1 flex items-center rounded-xl border pl-3 pr-1 py-1 transition-colors focus-within:border-[#5EEAD4]/60"
+            className="flex-1 flex items-center rounded-2xl border pl-3.5 pr-1.5 py-1.5 transition-colors focus-within:border-[#5EEAD4]/60"
             style={{ backgroundColor: C.fundo, borderColor: C.borda }}
           >
             <input
@@ -762,13 +779,13 @@ export const DiscordChatAndChannels: React.FC<DiscordChatAndChannelsProps> = ({
               onPaste={colar}
               maxLength={1000}
               disabled={enviando || segundosBloqueado > 0}
-              className="flex-1 min-w-0 text-[13px] bg-transparent focus:outline-none py-1.5"
+              className="flex-1 min-w-0 text-[14px] bg-transparent focus:outline-none py-2"
               style={{ color: C.texto }}
             />
             <button
               type="submit"
               disabled={enviando || segundosBloqueado > 0 || (!inputText.trim() && pendentes.length === 0)}
-              className="w-8 h-8 rounded-lg flex items-center justify-center transition-opacity cursor-pointer disabled:opacity-30"
+              className="w-9 h-9 rounded-xl flex items-center justify-center transition-opacity cursor-pointer disabled:opacity-30"
               style={{ backgroundColor: C.agua }}
               title="Enviar"
             >

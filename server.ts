@@ -1,3 +1,4 @@
+import { registrarAtividade } from "./atividadeServer";
 import express from "express";
 // Rodando o bundle (npm start -> dist/server.cjs) sem NODE_ENV: assume produção (Railway/Render)
 if (!process.env.NODE_ENV && /dist[\\/]server\.cjs$/.test(process.argv[1] || "")) process.env.NODE_ENV = "production";
@@ -932,6 +933,7 @@ async function startServer() {
       salaAtual: () => currentRoomId,
       ehMaster: (t?: string) => validateServerMasterAuth(t).isMaster,
     });
+    registrarAtividade(io, socket, { rooms, salaAtual: () => currentRoomId, chave: chaveVip });
 
     // Loja: preços definidos pelo Dono Master valem para todo mundo
     socket.on("loja:config", (_p: any, cb: any) => {
@@ -2601,7 +2603,7 @@ async function startServer() {
         delete (safeUpdates as any).isMaster;
         delete (safeUpdates as any).isCofundador;
         // Campos que só o servidor controla (mute do Dono, tela/câmera, cargo, tag de exibição...)
-        for (const k of ["isMutedByHost", "tagExibida", "temConta", "isScreenSharing", "hasVideo", "hasAudio", "isDeafened", "joinedAt", "voiceChannelId", "cargo", "poderes", "auraLiberada", "auraLiberadaPor", "auraCard", "aura", "auraLoja"]) delete (safeUpdates as any)[k];
+        for (const k of ["isMutedByHost", "tagExibida", "temConta", "isScreenSharing", "hasVideo", "hasAudio", "isDeafened", "joinedAt", "voiceChannelId", "cargo", "poderes", "auraLiberada", "auraLiberadaPor", "auraCard", "aura", "auraLoja", "atividade"]) delete (safeUpdates as any)[k];
 
         // "Membro desde": data do primeiro acesso (não aceita data no futuro nem absurda)
         delete (safeUpdates as any).memberSince;

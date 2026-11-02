@@ -18,7 +18,12 @@ import {
   MoreHorizontal,
   Crown,
   UserPlus,
+  Gamepad2,
+  Flame,
+  Trophy,
 } from "lucide-react";
+import { JogoTile } from "./JogoTile";
+import { tempoDesde, horas, useAgoraMinuto } from "../utils/atividade";
 import { Participant } from "../types";
 import { AnelBuracoNegro } from "./AnelBuracoNegro";
 import { anelDoParticipante, perkAtivo, GRADIENTE_ANEL } from "../utils/perks";
@@ -51,6 +56,14 @@ interface UserProfileCardProps {
   onAbrirConversa?: (uid: string, nome: string) => void;
   /** Modo invisível: entrar na sala dessa pessoa sem aparecer (só Dono Master / Co-fundador) */
   onEntrarInvisivel?: () => void;
+  /** Jogo que EU estou jogando (pra chamar essa pessoa pro meu jogo) */
+  meuJogo?: string | null;
+  /** Meu canal de voz atual, pra saber se "Entrar na call" faz sentido */
+  meuCanal?: string;
+  /** Entrar no canal de voz de quem está jogando */
+  onEntrarNaCall?: (channelId: string) => void;
+  /** Mostrar um aviso curto (toast) */
+  onAviso?: (texto: string) => void;
   onClose: () => void;
 }
 
@@ -72,9 +85,39 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
   socket,
   onAbrirConversa,
   onEntrarInvisivel,
+  meuJogo,
+  meuCanal,
+  onEntrarNaCall,
+  onAviso,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<"sobre" | "insignias" | "itens">("sobre");
+  const [activeTab, setActiveTab] = useState<"sobre" | "insignias" | "itens" | "jogos">("sobre");
+  const agoraMin = useAgoraMinuto();
+  const [statsJogos, setStatsJogos] = useState<null | {
+    maisJogados: Array<{ jogo: string; minutos: number }>;
+    favoritos: Array<{ jogo: string; minutos: number }>;
+    totalSemana: number;
+    sequencia: number;
+    viciado: string | null;
+  }>(null);
+  const [statsCarregando, setStatsCarregando] = useState(false);
+  useEffect(() => {
+    if (activeTab !== "jogos" || !socket) return;
+    setStatsCarregando(true);
+    socket.emit("jogos:stats", { alvoId: participant.id }, (r: any) => {
+      setStatsCarregando(false);
+      if (r?.ok) setStatsJogos(r);
+    });
+  }, [activeTab, socket, participant.id]);
+  const [chamando, setChamando] = useState(false);
+  const chamarPraJogar = (jogo: string, modo?: string) => {
+    if (!socket || chamando) return;
+    setChamando(true);
+    socket.emit("convite:enviar", { alvoId: participant.id, jogo, modo }, (r: any) => {
+      setChamando(false);
+      onAviso?.(r?.ok ? `Convite enviado pra ${participant.name}.` : r?.mensagem || "Não deu pra enviar o convite.");
+    });
+  };
   // Animação de saída: o card desliza pro lado e some numa névoa cinza/branca
   const [fechando, setFechando] = useState(false);
   const fecharComNevoa = () => {
@@ -472,6 +515,56 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
             </p>
           )}
 
+          {/* JOGANDO AGORA */}
+          {participant.atividade?.jogo && (
+            <div className="w-full px-6 mt-3">
+              <div className="rounded-2xl bg-[#16171B] border border-[#2A2D35] p-3">
+                <div className="text-[10px] font-black uppercase tracking-wider text-[#5EEAD4] mb-2 flex items-center gap-1.5">
+                  <Gamepad2 className="w-3.5 h-3.5" /> Jogando agora
+                </div>
+                <div className="flex items-center gap-3">
+                  <JogoTile jogo={participant.atividade.jogo} tamanho={46} />
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-[#ECECEC] truncate">{participant.atividade.jogo}</div>
+                    <div className="text-[11px] text-[#8B8F98] truncate">
+                      {participant.atividade.modo ? `${participant.atividade.modo} · ` : ""}há {tempoDesde(participant.atividade.desde, agoraMin)}
+                    </div>
+                  </div>
+                </div>
+                {!isSelf && !String(participant.id).startsWith("membro:") && (
+                  <div className="grid grid-cols-2 gap-2 mt-3">
+                    <button
+                      onClick={() => chamarPraJogar(participant.atividade!.jogo, participant.atividade!.modo)}
+                      disabled={chamando}
+                      className="py-2 rounded-xl bg-[#5EEAD4] text-[#16171B] text-xs font-bold hover:brightness-110 disabled:opacity-60 cursor-pointer"
+                    >
+                      Chamar pra jogar
+                    </button>
+                    <button
+                      onClick={() => participant.voiceChannelId && onEntrarNaCall?.(participant.voiceChannelId)}
+                      disabled={!onEntrarNaCall || !participant.voiceChannelId || participant.voiceChannelId === meuCanal}
+                      title={participant.voiceChannelId === meuCanal ? "Vocês já estão na mesma call" : ""}
+                      className="py-2 rounded-xl bg-[#C4B5FD] text-[#16171B] text-xs font-bold hover:brightness-110 disabled:opacity-40 cursor-pointer"
+                    >
+                      {participant.voiceChannelId === meuCanal ? "Mesma call" : "Entrar na call"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {!isSelf && meuJogo && meuJogo !== participant.atividade?.jogo && !String(participant.id).startsWith("membro:") && (
+            <div className="w-full px-6 mt-2">
+              <button
+                onClick={() => chamarPraJogar(meuJogo)}
+                disabled={chamando}
+                className="w-full py-2 rounded-xl border border-[#5EEAD4]/40 text-[#5EEAD4] hover:bg-[#5EEAD4]/10 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
+              >
+                <Gamepad2 className="w-3.5 h-3.5" /> Chamar pra jogar {meuJogo}
+              </button>
+            </div>
+          )}
+
           {/* 6. NÚMEROS: Eco Coins, Insígnias e Horas em call */}
           <div className="w-full px-6 mt-4">
             <div className="grid grid-cols-3 divide-x divide-[#2A2D35] py-2 border-y border-[#2A2D35] text-center">
@@ -536,7 +629,77 @@ export const UserProfileCard: React.FC<UserProfileCardProps> = ({
             >
               Itens
             </button>
+            <button
+              onClick={() => setActiveTab("jogos")}
+              className={`pb-2 transition-colors cursor-pointer ${
+                activeTab === "jogos"
+                  ? "text-[#5EEAD4] border-b-2 border-[#5EEAD4]"
+                  : "hover:text-[#ECECEC]"
+              }`}
+            >
+              Jogos
+            </button>
           </div>
+
+          {activeTab === "jogos" && (
+            <div className="py-1 space-y-3">
+              {statsCarregando && !statsJogos ? (
+                <div className="text-center text-xs text-[#8B8F98] py-4">Carregando…</div>
+              ) : !statsJogos || (statsJogos.maisJogados.length === 0 && statsJogos.favoritos.length === 0) ? (
+                <div className="text-center text-xs text-[#8B8F98] py-4">
+                  Ainda sem jogos registrados.
+                  {isSelf && <div className="mt-1 text-[11px]">Use "Estou jogando…" na sua barra pra começar a contar.</div>}
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <div className="text-xs font-bold text-[#ECECEC] mb-2">Mais jogados na semana</div>
+                    {statsJogos.maisJogados.length === 0 ? (
+                      <div className="text-[11px] text-[#8B8F98]">Nada nos últimos 7 dias.</div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {statsJogos.maisJogados.map((j, i) => {
+                          const max = statsJogos.maisJogados[0].minutos || 1;
+                          const cores = ["#5EEAD4", "#C4B5FD", "#7DD3C8", "#A5B4FC", "#99F6E4"];
+                          return (
+                            <div key={j.jogo} className="flex items-center gap-2 text-[11px]">
+                              <span className="w-24 truncate text-[#ECECEC]">{j.jogo}</span>
+                              <div className="flex-1 h-3 rounded-md bg-[#2A2D35] overflow-hidden">
+                                <div className="h-full rounded-md" style={{ width: `${Math.max(6, (j.minutos / max) * 100)}%`, background: cores[i % cores.length] }} />
+                              </div>
+                              <span className="w-12 text-right text-[#8B8F98]">{horas(j.minutos)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  {statsJogos.favoritos.length > 0 && (
+                    <div>
+                      <div className="text-xs font-bold text-[#ECECEC] mb-2">Jogos favoritos</div>
+                      <div className="flex gap-2">
+                        {statsJogos.favoritos.map((j) => (
+                          <div key={j.jogo} className="flex flex-col items-center gap-1 w-16">
+                            <JogoTile jogo={j.jogo} tamanho={52} />
+                            <span className="text-[10px] text-[#8B8F98] truncate w-full text-center">{j.jogo}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-2 border-t border-[#2A2D35] text-[11px] text-[#8B8F98]">
+                    <span>Total na semana: <b className="text-[#ECECEC]">{horas(statsJogos.totalSemana)}</b></span>
+                    <span className="flex items-center gap-1"><Flame className="w-3 h-3 text-[#F59E0B]" />Sequência: <b className="text-[#ECECEC]">{statsJogos.sequencia} {statsJogos.sequencia === 1 ? "dia" : "dias"}</b></span>
+                    {statsJogos.viciado && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#2A2D35] text-[#ECECEC]">
+                        <Trophy className="w-3 h-3 text-[#FACC15]" /> Viciado em {statsJogos.viciado}
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* CONTEÚDO DAS ABAS */}
           {activeTab === "sobre" && (

@@ -29,6 +29,7 @@ import { VideoTile } from "./VideoTile";
 import { ScreenShareTile } from "./ScreenShareTile";
 import { ControlBar } from "./ControlBar";
 import { DiscordChatAndChannels } from "./DiscordChatAndChannels";
+import { ConvitePopup, ConviteJogo } from "./ConvitePopup";
 import { ChannelSidebar, VoiceChannel } from "./ChannelSidebar";
 import { MemberList } from "./MemberList";
 import { UserProfileCard } from "./UserProfileCard";
@@ -2972,6 +2973,71 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       self.purchasedPerks["vip_role"] > Date.now())
   );
 
+  // ---------- "Jogando agora" + Convite pra jogar ----------
+  const [conviteRecebido, setConviteRecebido] = useState<ConviteJogo | null>(null);
+  const meuJogoRef = useRef<{ jogo: string; origem: "manual" | "desktop" } | null>(null);
+  const selecionarCanalRef = useRef(handleSelectVoiceChannel);
+  selecionarCanalRef.current = handleSelectVoiceChannel;
+
+  const definirJogo = (jogo: string | null, origem: "manual" | "desktop" = "manual") => {
+    // jogo detectado no PC não passa por cima do que a pessoa escolheu na mão
+    if (origem === "desktop" && meuJogoRef.current?.origem === "manual") return;
+    meuJogoRef.current = jogo ? { jogo, origem } : null;
+    socket.emit("atividade:definir", { jogo, origem });
+  };
+
+  // Reconectou/trocou de sala: manda de novo o jogo atual
+  useEffect(() => {
+    if (meuJogoRef.current) socket.emit("atividade:definir", { jogo: meuJogoRef.current.jogo, origem: meuJogoRef.current.origem });
+  }, [self.id, room.roomId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // App do Windows: detecção automática do jogo aberto
+  useEffect(() => {
+    const api: any = (window as any).ecoDesktop;
+    if (!api || typeof api.onAtividade !== "function") return;
+    const parar = api.onAtividade((jogo: string | null) => {
+      if (meuJogoRef.current?.origem === "manual") return;
+      if ((meuJogoRef.current?.jogo || null) === (jogo || null)) return;
+      definirJogo(jogo || null, "desktop");
+    });
+    return () => { if (typeof parar === "function") parar(); };
+  }, [socket]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const recebido = (c: ConviteJogo) => {
+      setConviteRecebido(c);
+      try { playVoiceJoinChime(0.12); } catch {}
+    };
+    const atualizado = (c: ConviteJogo) => {
+      setConviteRecebido((atual) => (atual && atual.id === c.id ? { ...atual, ...c } : atual));
+      const ultimo = c.aceitos[c.aceitos.length - 1];
+      if (c.deId === socket.id && ultimo && ultimo.id !== socket.id) {
+        notify(`${ultimo.nome} topou jogar ${c.jogo} (${c.aceitos.length}/${c.vagas})`, "success");
+      }
+    };
+    const recusado = (d: { nome: string }) => notify(`${d.nome} não pode jogar agora.`, "info");
+    socket.on("convite:recebido", recebido);
+    socket.on("convite:atualizado", atualizado);
+    socket.on("convite:recusado", recusado);
+    return () => {
+      socket.off("convite:recebido", recebido);
+      socket.off("convite:atualizado", atualizado);
+      socket.off("convite:recusado", recusado);
+    };
+  }, [socket]);
+
+  const responderConvite = (aceitar: boolean) => {
+    const c = conviteRecebido;
+    setConviteRecebido(null);
+    if (!c) return;
+    socket.emit("convite:responder", { conviteId: c.id, aceitar }, (r: any) => {
+      if (!aceitar) return;
+      if (!r?.ok) return notify(r?.mensagem || "O convite expirou.", "error");
+      if (r.canal) selecionarCanalRef.current(r.canal);
+      notify(`Bora! Você entrou no time de ${c.deNome}.`, "success");
+    });
+  };
+
   return (
     <div
       className={`h-screen w-full flex flex-col overflow-hidden relative isolate transition-colors duration-200 ${
@@ -3124,6 +3190,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           isMaster={Boolean(isMaster)}
           isDarkTheme={isDarkTheme}
           onMoveMember={handleMoveToVoiceChannel}
+          onDefinirJogo={(j) => definirJogo(j, "manual")}
         />
 
         <main className="flex-1 p-3 sm:p-5 pb-28 sm:pb-32 overflow-y-auto flex flex-col justify-center items-center">
@@ -3468,6 +3535,8 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       />
 
       {/* Discord User Profile Popover / Modal */}
+      {conviteRecebido && <ConvitePopup convite={conviteRecebido} onResponder={responderConvite} />}
+
       {selectedProfileParticipant && (
         <UserProfileCard
           participant={selectedProfileParticipant}
@@ -3493,6 +3562,13 @@ export const CallRoom: React.FC<CallRoomProps> = ({
             };
           })()}
           socket={socket}
+          meuJogo={self.atividade?.jogo || null}
+          meuCanal={activeVoiceChannelId}
+          onEntrarNaCall={(canal) => {
+            setSelectedProfileParticipant(null);
+            handleSelectVoiceChannel(canal);
+          }}
+          onAviso={(t) => notify(t, "info")}
           onAbrirConversa={(uid, nome) => {
             setConversaInicial({ uid, nome });
             setIsAmigosOpen(true);
