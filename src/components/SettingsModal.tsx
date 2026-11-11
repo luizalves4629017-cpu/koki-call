@@ -11,9 +11,11 @@ import {
   Sparkles,
   Check,
   AudioLines,
+  Rocket,
 } from "lucide-react";
 import { UserPreferences, VideoQuality } from "../types";
 import { MicProcessor, MicLevelInfo, MIC_DB_MIN, MIC_DB_MAX } from "../utils/micProcessor";
+import { ModoDesempenho, setModoDesempenho, useModoDesempenho } from "../utils/desempenho";
 import { SONS_ENTRADA, SomEntradaId, getSomEntrada, setSomEntrada, tocarSomEntrada } from "../utils/audioChimes";
 
 const dbToPct = (db: number) =>
@@ -339,6 +341,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Som de quando alguém entra */}
           <SomEntradaSeletor />
 
+          {/* Modo Desempenho */}
+          <ModoDesempenhoSeletor />
+
           {/* Otimizações de Áudio */}
           <div className="bg-[#16171B] border border-[#2A2D35] rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -429,6 +434,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     </div>
   );
 };
+
+function ModoDesempenhoSeletor() {
+  const modo = useModoDesempenho();
+  const opcoes: Array<[ModoDesempenho, string, string]> = [
+    ["auto", "Automático", "Liga sozinho quando você marca \"Estou jogando\""],
+    ["on", "Sempre ligado", "Bom pra PC mais fraco"],
+    ["off", "Desligado", "Tudo com animação e qualidade máxima"],
+  ];
+  return (
+    <div className="bg-[#16171B] border border-[#2A2D35] rounded-xl p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold text-[#ECECEC] flex items-center gap-2">
+          <Rocket className="w-4 h-4 text-[#C4B5FD]" />
+          Modo Desempenho
+        </span>
+        <span className="text-[10px] text-[#8B8F98]">pro jogo não travar</span>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {opcoes.map(([id, nome]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setModoDesempenho(id)}
+            className={`py-2 rounded-lg text-xs font-bold border cursor-pointer transition-colors ${
+              modo === id ? "bg-[#5EEAD4]/15 border-[#5EEAD4]/60 text-[#5EEAD4]" : "border-[#2A2D35] text-[#8B8F98] hover:text-[#ECECEC]"
+            }`}
+          >
+            {nome}
+          </button>
+        ))}
+      </div>
+      <p className="text-[11px] text-[#8B8F98]">{opcoes.find((o) => o[0] === modo)?.[2]}</p>
+      <ul className="text-[11px] text-[#ECECEC] space-y-1">
+        <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-[#5EEAD4]" />Pausa animações (auras, anéis, chuva de moedas)</li>
+        <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-[#5EEAD4]" />Esconde o fundo animado da sala</li>
+        <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-[#5EEAD4]" />Tela compartilhada dos outros chega a 15 FPS e ~540p</li>
+      </ul>
+    </div>
+  );
+}
 
 function SomEntradaSeletor() {
   const [som, setSom] = React.useState<SomEntradaId>(() => getSomEntrada());

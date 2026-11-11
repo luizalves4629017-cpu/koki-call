@@ -30,6 +30,8 @@ import { ScreenShareTile } from "./ScreenShareTile";
 import { ControlBar } from "./ControlBar";
 import { DiscordChatAndChannels } from "./DiscordChatAndChannels";
 import { ConvitePopup, ConviteJogo } from "./ConvitePopup";
+import { SortearTimesModal, TimesResultadoModal, TimesResultado } from "./SortearTimes";
+import { useModoDesempenho, desempenhoAtivo, LEVE_MAX_FPS, LEVE_MAX_ALTURA, LEVE_MAX_BPS } from "../utils/desempenho";
 import { ChannelSidebar, VoiceChannel } from "./ChannelSidebar";
 import { MemberList } from "./MemberList";
 import { UserProfileCard } from "./UserProfileCard";
@@ -234,6 +236,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       return;
     }
 
+    const canalAnterior = activeVoiceChannelId;
     setActiveVoiceChannelId(channelId);
     setSelf((prev) => ({ ...prev, voiceChannelId: channelId }));
 
@@ -250,6 +253,12 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       (res: { success: boolean; message?: string }) => {
         if (res && !res.success && res.message) {
           console.warn("Voice channel selection error:", res.message);
+          // Sala temporária cheia/fechada/acabou: volta pro canal de antes
+          if (String(channelId).startsWith("tmp-")) {
+            setActiveVoiceChannelId(canalAnterior);
+            setSelf((prev) => ({ ...prev, voiceChannelId: canalAnterior }));
+            notify(res.message, "error");
+          }
         }
       }
     );
@@ -802,6 +811,14 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       fps = Math.min(fps, CELULAR_MAX_FPS);
       const altura = scr.getSettings().height || 0;
       if (altura > CELULAR_MAX_ALTURA) escala = altura / CELULAR_MAX_ALTURA;
+    }
+    // Quem está no MODO DESEMPENHO (jogando) recebe uma tela ainda mais leve: 15 fps, ~540p, até 1 Mbps
+    const leve = Boolean((roomRef.current.participants.find((pp) => pp.id === targetId) as any)?.modoLeve);
+    if (leve) {
+      teto = Math.min(teto, LEVE_MAX_BPS);
+      fps = Math.min(fps, LEVE_MAX_FPS);
+      const altura = scr.getSettings().height || 0;
+      if (altura > LEVE_MAX_ALTURA) escala = Math.max(escala, altura / LEVE_MAX_ALTURA);
     }
     limitarVideoTela(slots, teto, fps, escala);
     const antes = ultimoTetoRef.current.get(targetId) || 0;
@@ -2973,6 +2990,75 @@ export const CallRoom: React.FC<CallRoomProps> = ({
       self.purchasedPerks["vip_role"] > Date.now())
   );
 
+  // ---------- Salas temporárias + Sortear times ----------
+  const [salasTemp, setSalasTemp] = useState<VoiceChannel[]>([]);
+  const [sortearAberto, setSortearAberto] = useState(false);
+  const [resultadoTimes, setResultadoTimes] = useState<TimesResultado | null>(null);
+  useEffect(() => {
+    const lista = (l: VoiceChannel[]) => setSalasTemp(Array.isArray(l) ? l : []);
+    const chamado = (d: { canal: string; nome: string; deNome: string }) => {
+      try { playVoiceJoinChime(0.12); } catch {}
+      notify(`${d.deNome} te chamou pra sala "${d.nome}". Clique nela pra entrar.`, "info");
+    };
+    const times = (r: TimesResultado) => {
+      setResultadoTimes(r);
+      try { playVoiceJoinChime(0.12); } catch {}
+    };
+    socket.on("salas-temp:lista", lista);
+    socket.on("salas-temp:chamado", chamado);
+    socket.on("times:resultado", times);
+    socket.emit("salas-temp:listar", {}, (r: any) => lista(r?.salas || []));
+    return () => {
+      socket.off("salas-temp:lista", lista);
+      socket.off("salas-temp:chamado", chamado);
+      socket.off("times:resultado", times);
+    };
+  }, [socket, room.roomId, self.id]);
+  // A sala temporária em que eu estava acabou: volta pro Geral
+  useEffect(() => {
+    if (String(activeVoiceChannelId).startsWith("tmp-") && salasTemp.length >= 0 && !salasTemp.some((c) => c.id === activeVoiceChannelId)) {
+      const t = setTimeout(() => {
+        if (!salasTempRef.current.some((c) => c.id === activeVoiceChannelIdRef.current) && String(activeVoiceChannelIdRef.current).startsWith("tmp-")) {
+          selecionarCanalRef2.current("voice-geral");
+        }
+      }, 1500);
+      return () => clearTimeout(t);
+    }
+  }, [salasTemp, activeVoiceChannelId]);
+  const salasTempRef = useRef<VoiceChannel[]>([]);
+  salasTempRef.current = salasTemp;
+  const activeVoiceChannelIdRef = useRef(activeVoiceChannelId);
+  activeVoiceChannelIdRef.current = activeVoiceChannelId;
+  const selecionarCanalRef2 = useRef(handleSelectVoiceChannel);
+  selecionarCanalRef2.current = handleSelectVoiceChannel;
+
+  const criarSalaTemp = (dados: { nome: string; limite: number; privada: boolean }) => {
+    socket.emit("salas-temp:criar", dados, (r: any) => {
+      if (!r?.ok) {
+        notify(r?.mensagem || "Não deu pra criar a sala.", "error");
+        if (r?.sala?.id) handleSelectVoiceChannel(r.sala.id);
+        return;
+      }
+      setSalasTemp((prev) => (prev.some((c) => c.id === r.sala.id) ? prev : [...prev, r.sala]));
+      handleSelectVoiceChannel(r.sala.id);
+    });
+  };
+  const chamarParaSala = (canalId: string, alvoId: string) => {
+    socket.emit("salas-temp:chamar", { canal: canalId, alvoId }, (r: any) => {
+      const nome = roomRef.current.participants.find((p) => p.id === alvoId)?.name || "A pessoa";
+      notify(r?.ok ? `${nome} foi chamado(a) pra sala.` : r?.mensagem || "Não deu pra chamar.", r?.ok ? "success" : "error");
+    });
+  };
+
+  // ---------- Modo Desempenho ----------
+  const modoDesempenho = useModoDesempenho();
+  const leveAgora = desempenhoAtivo(modoDesempenho, Boolean(self.atividade?.jogo));
+  useEffect(() => {
+    document.documentElement.classList.toggle("eco-desempenho", leveAgora);
+    socket.emit("desempenho:leve", { ativo: leveAgora });
+    return () => document.documentElement.classList.remove("eco-desempenho");
+  }, [leveAgora, self.id, room.roomId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---------- "Jogando agora" + Convite pra jogar ----------
   const [conviteRecebido, setConviteRecebido] = useState<ConviteJogo | null>(null);
   const meuJogoRef = useRef<{ jogo: string; origem: "manual" | "desktop" } | null>(null);
@@ -3046,7 +3132,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           : "bg-gradient-to-br from-[#f0f6ff] via-[#e8f2fe] to-[#edf5fd] text-slate-800"
       }`}
     >
-      <TemaFundo tema={temaSala} />
+      {!leveAgora && <TemaFundo tema={temaSala} />}
       {/* Floating Admission Banner for Master when users are knocking */}
       {podePorta && (
         <FloatingAdmissionBanner
@@ -3091,7 +3177,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
       {/* Aviso do Dono Master + Chuva de moedas */}
       <AnuncioBanner socket={socket} />
-      <ChuvaMoedas socket={socket} />
+      <div data-eco-anim="esconder"><ChuvaMoedas socket={socket} /></div>
       <SalaDiversao
         socket={socket}
         selfId={self.id}
@@ -3169,7 +3255,7 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           roomName={room.roomName}
           roomId={room.roomId}
           textChannels={room.channels && room.channels.length > 0 ? room.channels : defaultTextChannels}
-          voiceChannels={defaultVoiceChannels}
+          voiceChannels={[...defaultVoiceChannels, ...salasTemp]}
           activeTextChannelId={activeChannelId}
           activeVoiceChannelId={activeVoiceChannelId}
           onSelectTextChannel={handleSelectTextChannel}
@@ -3191,6 +3277,9 @@ export const CallRoom: React.FC<CallRoomProps> = ({
           isDarkTheme={isDarkTheme}
           onMoveMember={handleMoveToVoiceChannel}
           onDefinirJogo={(j) => definirJogo(j, "manual")}
+          onCriarSalaTemp={criarSalaTemp}
+          onChamarParaSala={chamarParaSala}
+          onSortearTimes={() => setSortearAberto(true)}
         />
 
         <main className="flex-1 p-3 sm:p-5 pb-28 sm:pb-32 overflow-y-auto flex flex-col justify-center items-center">
@@ -3536,6 +3625,31 @@ export const CallRoom: React.FC<CallRoomProps> = ({
 
       {/* Discord User Profile Popover / Modal */}
       {conviteRecebido && <ConvitePopup convite={conviteRecebido} onResponder={responderConvite} />}
+      {sortearAberto && (
+        <SortearTimesModal
+          participants={displayParticipants}
+          selfId={self.id}
+          meuCanal={activeVoiceChannelId}
+          jogo={self.atividade?.jogo || null}
+          socket={socket}
+          onAviso={(t, tipo) => notify(t, tipo || "info")}
+          onClose={() => setSortearAberto(false)}
+        />
+      )}
+      {resultadoTimes && (
+        <TimesResultadoModal
+          resultado={resultadoTimes}
+          selfId={self.id}
+          onEntrar={(canal) => {
+            if (!salasTempRef.current.some((c) => c.id === canal)) {
+              const t = resultadoTimes.times.find((x) => x.canal === canal);
+              if (t) setSalasTemp((prev) => [...prev, { id: canal, name: t.nome, temporaria: true, privada: true, permitidos: t.membros.map((m) => m.id), cor: t.cor, userLimit: t.membros.length } as any]);
+            }
+            handleSelectVoiceChannel(canal);
+          }}
+          onClose={() => setResultadoTimes(null)}
+        />
+      )}
 
       {selectedProfileParticipant && (
         <UserProfileCard

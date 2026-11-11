@@ -151,3 +151,13 @@
 .eco-range { -webkit-appearance: none; appearance: none; height: 8px; border-radius: 9999px; outline: none; cursor: pointer; }
 .eco-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 9999px; background: #fff; border: 2px solid #16171B; box-shadow: 0 0 0 1px rgba(255,255,255,0.4); }
 .eco-range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 9999px; background: #fff; border: 2px solid #16171B; }
+
+/* Modo Desempenho: pausa as animações enquanto a pessoa joga (economiza CPU/GPU) */
+html.eco-desempenho *,
+html.eco-desempenho *::before,
+html.eco-desempenho *::after {
+  animation-play-state: paused !important;
+}
+html.eco-desempenho [data-eco-anim="esconder"] {
+  display: none !important;
+}

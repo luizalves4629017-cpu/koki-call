@@ -17,6 +17,10 @@ import {
   Share2,
   ChevronLeft,
   Gamepad2,
+  Clock,
+  Plus,
+  Dices,
+  UserPlus,
 } from "lucide-react";
 import { JOGOS_COMUNS, tempoDesde, useAgoraMinuto } from "../utils/atividade";
 import { Participant, TextChannel } from "../types";
@@ -27,6 +31,12 @@ export interface VoiceChannel {
   name: string;
   isVip?: boolean;
   userLimit?: number;
+  /** Sala temporária (some quando esvazia) */
+  temporaria?: boolean;
+  privada?: boolean;
+  permitidos?: string[];
+  donoId?: string;
+  cor?: string;
 }
 
 interface ChannelSidebarProps {
@@ -60,6 +70,11 @@ interface ChannelSidebarProps {
   onAlternarRecolhida?: () => void;
   /** "Estou jogando…": define (ou limpa com null) o jogo atual */
   onDefinirJogo?: (jogo: string | null) => void;
+  /** Salas temporárias */
+  onCriarSalaTemp?: (dados: { nome: string; limite: number; privada: boolean }) => void;
+  onChamarParaSala?: (canalId: string, alvoId: string) => void;
+  /** Abre o "Sortear times" */
+  onSortearTimes?: () => void;
 }
 
 export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
@@ -87,7 +102,15 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   recolhida = false,
   onAlternarRecolhida,
   onDefinirJogo,
+  onCriarSalaTemp,
+  onChamarParaSala,
+  onSortearTimes,
 }) => {
+  const [criandoSala, setCriandoSala] = useState(false);
+  const [nomeSala, setNomeSala] = useState("");
+  const [limiteSala, setLimiteSala] = useState(5);
+  const [salaPrivada, setSalaPrivada] = useState(false);
+  const [chamarEm, setChamarEm] = useState<string | null>(null);
   const [menuJogo, setMenuJogo] = useState(false);
   const [jogoTexto, setJogoTexto] = useState("");
   const agoraMin = useAgoraMinuto();
@@ -106,6 +129,11 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   const isSelfMaster = Boolean(isMaster || self.isMaster || self.tag === "0001");
 
   const handleVoiceChannelClick = (channel: VoiceChannel) => {
+    if (channel.temporaria && channel.privada && !isSelfMaster && !(channel.permitidos || []).includes(self.id) && channel.donoId !== self.id) {
+      setLockWarning("Sala fechada: só entra quem foi chamado");
+      setTimeout(() => setLockWarning(null), 3500);
+      return;
+    }
     if (channel.isVip && !isSelfMaster && !self.vipPermissions?.hasVipBadge && self.voiceChannelId !== "voice-vip") {
       setLockWarning("Canal VIP restrito ao Dono e VIPs");
       setTimeout(() => setLockWarning(null), 3500);
@@ -356,8 +384,22 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
               )}
               <span>Canais de Voz</span>
             </div>
-            <span className="text-[10px] font-mono text-[#8B8F98]">
-              ({resolvedVoiceChannels.length})
+            <span className="flex items-center gap-1.5">
+              {onSortearTimes && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSortearTimes();
+                  }}
+                  className="p-0.5 rounded text-[#8B8F98] hover:text-[#5EEAD4] normal-case"
+                  title="Sortear times"
+                >
+                  <Dices className="w-3.5 h-3.5" />
+                </span>
+              )}
+              <span className="text-[10px] font-mono text-[#8B8F98]">({resolvedVoiceChannels.length})</span>
             </span>
           </button>
 
@@ -417,6 +459,9 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                       )}
 
                       <div className="flex items-center gap-2 min-w-0 pl-1">
+                        {channel.temporaria ? (
+                          <Clock className="w-4 h-4 shrink-0" style={{ color: channel.cor || (isActiveVoice ? "#5EEAD4" : "#8B8F98") }} />
+                        ) : (
                         <Volume2
                           className={`w-4 h-4 shrink-0 ${
                             isActiveVoice
@@ -428,6 +473,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                               : "text-[#8B8F98] group-hover:text-[#ECECEC]"
                           }`}
                         />
+                        )}
                         <span className="truncate">{channel.name}</span>
                       </div>
 
@@ -438,13 +484,57 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                             <span>VIP</span>
                           </span>
                         )}
-                        {channelParticipants.length > 0 && (
+                        {channel.temporaria && channel.privada && (
+                          <Lock className="w-3 h-3 text-[#8B8F98]" />
+                        )}
+                        {channel.temporaria && !channel.cor && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#5EEAD4]/15 text-[#5EEAD4] border border-[#5EEAD4]/30">
+                            temporária
+                          </span>
+                        )}
+                        {(channelParticipants.length > 0 || channel.temporaria) && (
                           <span className="text-[10px] font-mono px-2 py-0.2 rounded-full font-bold bg-[#16171B] text-[#ECECEC] border border-[#2A2D35]">
-                            {channelParticipants.length}
+                            {channelParticipants.length}{channel.temporaria && channel.userLimit ? `/${channel.userLimit}` : ""}
                           </span>
                         )}
                       </div>
                     </button>
+
+                    {/* Sala temporária em que estou: chamar alguém */}
+                    {channel.temporaria && isActiveVoice && onChamarParaSala && (
+                      <div className="pl-3 pr-1 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setChamarEm(chamarEm === channel.id ? null : channel.id)}
+                          className="flex items-center gap-1 text-[10.5px] font-semibold text-[#5EEAD4] hover:underline cursor-pointer"
+                        >
+                          <UserPlus className="w-3 h-3" /> Chamar alguém pra cá
+                        </button>
+                        {chamarEm === channel.id && (
+                          <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-[#2A2D35] bg-[#16171B] p-1 space-y-0.5">
+                            {participants.filter((pp) => pp.id !== self.id && (pp.voiceChannelId || "voice-geral") !== channel.id).length === 0 ? (
+                              <div className="text-[10.5px] text-[#8B8F98] p-1.5">Ninguém de fora pra chamar.</div>
+                            ) : (
+                              participants
+                                .filter((pp) => pp.id !== self.id && (pp.voiceChannelId || "voice-geral") !== channel.id)
+                                .map((pp) => (
+                                  <button
+                                    type="button"
+                                    key={pp.id}
+                                    onClick={() => {
+                                      onChamarParaSala(channel.id, pp.id);
+                                      setChamarEm(null);
+                                    }}
+                                    className="w-full text-left px-2 py-1 rounded-md text-[11px] text-[#ECECEC] hover:bg-[#252830] cursor-pointer truncate"
+                                  >
+                                    {pp.name}
+                                  </button>
+                                ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Membros conectados no canal de voz */}
                     {channelParticipants.length > 0 && (
@@ -526,6 +616,69 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                   </div>
                 );
               })}
+
+              {/* Criar sala temporária */}
+              {onCriarSalaTemp && !recolhida && (
+                criandoSala ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      onCriarSalaTemp({ nome: nomeSala.trim(), limite: limiteSala, privada: salaPrivada });
+                      setCriandoSala(false);
+                      setNomeSala("");
+                    }}
+                    className="rounded-xl border border-[#2A2D35] bg-[#16171B] p-2.5 space-y-2"
+                  >
+                    <input
+                      autoFocus
+                      value={nomeSala}
+                      onChange={(e) => setNomeSala(e.target.value)}
+                      maxLength={32}
+                      placeholder={`Squad do ${(self.name || "").split(" ")[0] || "time"}`}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-[#1E2026] border border-[#2A2D35] text-xs text-[#ECECEC] placeholder-[#8B8F98] focus:outline-none focus:border-[#5EEAD4]/60"
+                    />
+                    <div className="flex items-center justify-between text-[11px] text-[#8B8F98]">
+                      <span>Limite</span>
+                      <select
+                        value={limiteSala}
+                        onChange={(e) => setLimiteSala(Number(e.target.value))}
+                        className="bg-[#1E2026] border border-[#2A2D35] rounded-md px-1.5 py-0.5 text-[#ECECEC] focus:outline-none"
+                      >
+                        {[2, 3, 4, 5, 6, 8, 10, 15, 20].map((n) => (
+                          <option key={n} value={n}>{n} pessoas</option>
+                        ))}
+                      </select>
+                    </div>
+                    <label className="flex items-center justify-between text-[11px] text-[#8B8F98] cursor-pointer">
+                      <span>Só quem eu chamar</span>
+                      <button
+                        type="button"
+                        onClick={() => setSalaPrivada((v) => !v)}
+                        className={`w-8 h-4.5 h-[18px] rounded-full relative transition-colors ${salaPrivada ? "bg-[#5EEAD4]" : "bg-[#2A2D35]"}`}
+                      >
+                        <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white transition-all ${salaPrivada ? "left-[16px]" : "left-0.5"}`} />
+                      </button>
+                    </label>
+                    <p className="text-[10px] text-[#8B8F98]">Some sozinha quando todo mundo sair.</p>
+                    <div className="flex gap-1.5">
+                      <button type="button" onClick={() => setCriandoSala(false)} className="flex-1 py-1.5 rounded-lg bg-[#2A2D35] text-[#ECECEC] text-xs font-semibold cursor-pointer">
+                        Cancelar
+                      </button>
+                      <button type="submit" className="flex-1 py-1.5 rounded-lg bg-[#5EEAD4] text-[#16171B] text-xs font-bold cursor-pointer">
+                        Criar e entrar
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setCriandoSala(true)}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-[#2A2D35] text-[11px] font-semibold text-[#8B8F98] hover:text-[#5EEAD4] hover:border-[#5EEAD4]/50 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Criar sala temporária
+                  </button>
+                )
+              )}
             </div>
           )}
         </div>

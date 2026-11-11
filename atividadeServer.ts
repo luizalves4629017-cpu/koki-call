@@ -197,6 +197,17 @@ export function registrarAtividade(io: Server, socket: Socket, ctx: Ctx) {
     responder({ ok: true });
   });
 
+  // Modo Desempenho: quem está jogando pede uma tela compartilhada mais leve (15 fps, ~540p)
+  socket.on("desempenho:leve", (data: { ativo?: boolean }) => {
+    const p = eu();
+    const sala = ctx.salaAtual();
+    if (!p || !sala) return;
+    const ativo = Boolean(data?.ativo);
+    if (Boolean(p.modoLeve) === ativo) return;
+    p.modoLeve = ativo;
+    io.to(sala).emit("room:user-updated", p);
+  });
+
   socket.on("jogos:stats", async (data: { alvoId?: string }, cb?: any) => {
     if (typeof cb !== "function") return;
     const sala = ctx.salaAtual();
