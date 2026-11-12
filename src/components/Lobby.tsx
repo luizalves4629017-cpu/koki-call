@@ -81,33 +81,64 @@ type TabType = "join" | "create" | "master";
 
 // Fundo da tela inicial (tema Sala de estar sakura)
 const FUNDO_SAKURA: React.CSSProperties = {
-  backgroundColor: "#0B0D12",
-  backgroundImage: "linear-gradient(90deg, rgba(11,13,18,0.85) 0%, rgba(11,13,18,0.35) 38%, rgba(11,13,18,0) 60%), url('/lobby/sakura.webp')",
-  backgroundSize: "cover",
-  backgroundPosition: "70% center",
-  backgroundRepeat: "no-repeat",
+  backgroundColor: "#07080C",
+  backgroundImage: "radial-gradient(ellipse at 70% 50%, rgba(249,168,212,0.07), transparent 55%), radial-gradient(ellipse at 20% 80%, rgba(94,234,212,0.05), transparent 50%)",
 };
 
-/** Pétalas de sakura caindo devagar (só CSS; somem no Modo Desempenho e com "reduzir movimento"). */
-const PETALAS = Array.from({ length: 16 }, (_, i) => ({
+/** Pétalas, estrelas e brilhos: só somem com o Modo Desempenho ligado (Sempre). */
+const PETALAS = Array.from({ length: 26 }, (_, i) => ({
   left: (i * 37 + 11) % 100,
-  dur: 11 + ((i * 7) % 9),
+  dur: 9 + ((i * 7) % 8),
   delay: -((i * 13) % 17),
-  tam: 8 + ((i * 5) % 7),
+  tam: 10 + ((i * 5) % 9),
   giro: (i * 47) % 360,
 }));
-const PetalasSakura: React.FC = () => {
+const ESTRELAS = Array.from({ length: 34 }, (_, i) => ({
+  left: (i * 53 + 7) % 100,
+  top: (i * 29 + 5) % 100,
+  tam: 1 + (i % 3),
+  dur: 2.5 + ((i * 3) % 4),
+  delay: -((i * 7) % 5),
+}));
+
+const CenaSakura: React.FC = () => {
   const modo = useModoDesempenho();
-  if (modo === "on") return null;
+  const animado = modo !== "on";
   return (
-    <div className="eco-petalas pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+    <div className={`pointer-events-none absolute inset-0 overflow-hidden ${animado ? "eco-cena-animada" : ""}`} aria-hidden>
       <style>{`
-        @keyframes ecoPetala { 0% { transform: translate3d(0,-8vh,0) rotate(0deg); opacity: 0 } 8% { opacity: .9 } 50% { transform: translate3d(-6vw,50vh,0) rotate(180deg) } 92% { opacity: .8 } 100% { transform: translate3d(-12vw,108vh,0) rotate(360deg); opacity: 0 } }
-        .eco-petala { position:absolute; top:0; border-radius: 80% 0 80% 0; background: linear-gradient(135deg,#FBCFE8,#F9A8D4 60%,#F472B6); box-shadow: 0 0 6px rgba(249,168,212,.5); animation: ecoPetala linear infinite; will-change: transform; }
-        @media (prefers-reduced-motion: reduce) { .eco-petalas { display:none } }
+        @keyframes ecoPetala { 0% { transform: translate3d(0,-8vh,0) rotate(0deg); opacity: 0 } 8% { opacity: .95 } 50% { transform: translate3d(-7vw,50vh,0) rotate(200deg) } 92% { opacity: .85 } 100% { transform: translate3d(-14vw,108vh,0) rotate(400deg); opacity: 0 } }
+        @keyframes ecoBalanca { 0%,100% { margin-left: 0 } 50% { margin-left: 22px } }
+        @keyframes ecoFlutua { 0%,100% { transform: translateY(-50%) } 50% { transform: translateY(calc(-50% - 12px)) } }
+        @keyframes ecoPisca { 0%,100% { opacity: .25 } 50% { opacity: 1 } }
+        @keyframes ecoLanterna { 0%,100% { opacity: .55; transform: translate(-50%,-50%) scale(1) } 30% { opacity: .8 } 55% { opacity: .62; transform: translate(-50%,-50%) scale(1.06) } 80% { opacity: .85 } }
+        @keyframes ecoTela { 0%,100% { opacity: .35 } 50% { opacity: .75 } }
+        .eco-petala { position:absolute; top:0; border-radius: 80% 0 80% 0; background: linear-gradient(135deg,#FDE2F0,#F9A8D4 55%,#EC4899); box-shadow: 0 0 8px rgba(249,168,212,.55); opacity: 0; }
+        .eco-cena-animada .eco-petala { animation: ecoPetala linear infinite, ecoBalanca 3.2s ease-in-out infinite; }
+        .eco-estrela { position:absolute; border-radius:9999px; background:#fff; opacity:.5 }
+        .eco-cena-animada .eco-estrela { animation: ecoPisca ease-in-out infinite; }
+        .eco-quarto { position:absolute; right: 0; top: 52%; transform: translateY(-50%); width: min(62vw, 1000px, calc(100vw - 540px)); aspect-ratio: 1920 / 1072; }
+        .eco-cena-animada .eco-quarto { animation: ecoFlutua 7s ease-in-out infinite; }
+        .eco-quarto img { width:100%; height:100%; object-fit: contain; -webkit-mask-image: radial-gradient(ellipse 48% 52% at 58% 52%, #000 70%, transparent 100%); mask-image: radial-gradient(ellipse 48% 52% at 58% 52%, #000 70%, transparent 100%); }
+        .eco-brilho { position:absolute; border-radius:9999px; transform: translate(-50%,-50%); mix-blend-mode: screen; filter: blur(18px); }
+        .eco-cena-animada .eco-brilho-lanterna { animation: ecoLanterna 3.4s ease-in-out infinite; }
+        .eco-cena-animada .eco-brilho-tela { animation: ecoTela 4.5s ease-in-out infinite; }
+        .eco-cena-animada .eco-brilho-lua { animation: ecoTela 6s ease-in-out infinite; }
       `}</style>
+      {ESTRELAS.map((e, i) => (
+        <span key={`e${i}`} className="eco-estrela" style={{ left: `${e.left}%`, top: `${e.top}%`, width: e.tam, height: e.tam, animationDuration: `${e.dur}s`, animationDelay: `${e.delay}s` }} />
+      ))}
+      <div className="eco-quarto hidden lg:block">
+        <img src="/lobby/sakura.webp" alt="" draggable={false} />
+        <span className="eco-brilho eco-brilho-lanterna" style={{ left: "55%", top: "32%", width: "12%", height: "18%", background: "radial-gradient(circle, rgba(255,196,120,.9), transparent 70%)" }} />
+        <span className="eco-brilho eco-brilho-tela" style={{ left: "58.5%", top: "57%", width: "11%", height: "14%", background: "radial-gradient(circle, rgba(94,234,212,.85), transparent 70%)" }} />
+        <span className="eco-brilho eco-brilho-tela" style={{ left: "63%", top: "60%", width: "6%", height: "8%", background: "radial-gradient(circle, rgba(94,234,212,.8), transparent 70%)", animationDelay: "-2s" }} />
+        <span className="eco-brilho eco-brilho-lua" style={{ left: "68.5%", top: "32%", width: "8%", height: "11%", background: "radial-gradient(circle, rgba(220,230,255,.7), transparent 70%)" }} />
+      </div>
+      {/* No celular, o quarto aparece suave ao fundo */}
+      <div className="lg:hidden absolute inset-0 opacity-25 bg-center bg-cover" style={{ backgroundImage: "url('/lobby/sakura.webp')" }} />
       {PETALAS.map((p, i) => (
-        <span key={i} className="eco-petala" style={{ left: `${p.left}%`, width: p.tam, height: p.tam * 0.75, animationDuration: `${p.dur}s`, animationDelay: `${p.delay}s`, rotate: `${p.giro}deg` }} />
+        <span key={i} className="eco-petala" style={{ left: `${p.left}%`, width: p.tam, height: p.tam * 0.75, animationDuration: `${p.dur}s, ${2.6 + (i % 4) * 0.5}s`, animationDelay: `${p.delay}s, ${-(i % 3)}s`, rotate: `${p.giro}deg` }} />
       ))}
     </div>
   );
@@ -349,13 +380,13 @@ export const Lobby: React.FC<LobbyProps> = ({
 
   return (
     <div className="relative min-h-screen w-full flex flex-col lg:flex-row items-center justify-center lg:justify-start gap-6 lg:gap-0 p-4 lg:pl-[6vw] bg-[#0B0D12] text-[#ECECEC] select-none overflow-x-hidden font-sans" style={FUNDO_SAKURA}>
-      <PetalasSakura />
+      <CenaSakura />
       <AmigosOnlineLobby socket={socket} />
 
       {/* Card principal (vidro) com o título "Sala de estar" em cima */}
       <div className="relative z-10 w-full max-w-[440px] flex flex-col">
         <div className="hidden sm:block mb-5 px-1">
-          <h2 className="text-4xl lg:text-5xl font-extrabold tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]">Sala de estar</h2>
+          <h2 className="text-3xl lg:text-4xl font-extrabold tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]">Sala de estar</h2>
           <p className="text-sm text-[#FBCFE8]/90 mt-1.5">Sua galera te espera.</p>
         </div>
       <div className="relative w-full bg-[#1E2026]/80 backdrop-blur-xl border border-[#F9A8D4]/20 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.55)] p-6 sm:p-7 flex flex-col transition-all duration-150">
