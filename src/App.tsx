@@ -1,9 +1,10 @@
+import { ChamadaDireta } from "./components/ChamadaDireta";
 import { definirSocketConta, lembrarSala, aoMudarConta, provavelmenteLogado, getMinhasSalas } from "./utils/conta";
 import { BanidoTela, InfoBan } from "./components/BanidoTela";
 import { getMemberSince, getSavedUserProfile, resolveUserTag, MASTER_DEFAULT_TAG } from "./utils/storage";
 import { SalasDock, AdicionarSalaModal } from "./components/SalasDock";
 import { MasterLoginModal } from "./components/MasterLoginModal";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import { AvisoAtualizacao } from "./components/AvisoAtualizacao";
 import { setAjustesLoja } from "./utils/lojaAjustes";
@@ -944,12 +945,29 @@ export default function App() {
       selfParticipant.purchasedPerks["vip_role"] > Date.now())
   );
 
+  // Chamada direta: handlers estáveis que sempre usam a versão mais nova das funções
+  const criarSalaRef = useRef(criarSalaNova);
+  criarSalaRef.current = criarSalaNova;
+  const entrarSalaRef = useRef(abrirSalaSalva);
+  entrarSalaRef.current = abrirSalaSalva;
+  const criarSalaChamada = useCallback((n: string, c: string, s: string) => criarSalaRef.current(n, c, s), []);
+  const entrarSalaChamada = useCallback((c: string, s: string) => entrarSalaRef.current(c, s), []);
+  // Ao sair da sala de uma chamada direta, avisa o servidor pra gravar a duração no chat
+  const salaChamadaRef = useRef<string | null>(null);
+  useEffect(() => {
+    const id = inCall ? currentRoom?.roomId || null : null;
+    const antes = salaChamadaRef.current;
+    if (antes && antes !== id) socket?.emit("dm:chamada-saiu", { sala: antes });
+    salaChamadaRef.current = id && id.startsWith("dm-") ? id : null;
+  }, [inCall, currentRoom?.roomId, socket]);
+
   return (
     <div
       className={`min-h-screen font-sans antialiased select-none transition-colors duration-200 ${
         isDarkTheme ? "bg-[#070b14] text-slate-100" : "bg-[#f0f6ff] text-slate-800"
       }`}
     >
+      <ChamadaDireta socket={socket} onCriarSala={criarSalaChamada} onEntrarSala={entrarSalaChamada} />
       {/* Aviso "Nova atualização do Eco" (pra todo mundo, no lobby e na call) */}
       <AvisoAtualizacao socket={socket} baseUrl={BACKEND_SOCKET_URL} />
 

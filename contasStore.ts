@@ -36,15 +36,21 @@ function limparDados(d: any, atual: any) {
   const moedas = Number(d.moedas);
   if (Number.isFinite(moedas) && moedas >= 0 && moedas < 999999) {
     out.moedas = Math.floor(moedas);
-    // Marco de início da semana/mês, pra calcular quanto cada um ganhou no período
     const anterior = Number.isFinite(Number(atual?.moedas)) ? Number(atual.moedas) : out.moedas;
     const sem = chaveSemana();
     const mes = chaveMes();
+    // Ganho do período = soma só do que ENTROU (gastar na Loja não apaga o que a pessoa ganhou)
+    const entrou = Math.max(0, out.moedas - anterior);
+    const rb = atual?.rankBase || {};
+    // Contas antigas só tinham o "marco" (base); converte pra ganho na primeira vez
+    const ganhoAntigo = (base: any) => (base == null || !Number.isFinite(Number(base)) ? 0 : Math.max(0, anterior - Number(base)));
+    const gSem = rb.semana === sem ? (Number.isFinite(Number(rb.ganhoSemana)) ? Number(rb.ganhoSemana) : ganhoAntigo(rb.baseSemana)) : 0;
+    const gMes = rb.mes === mes ? (Number.isFinite(Number(rb.ganhoMes)) ? Number(rb.ganhoMes) : ganhoAntigo(rb.baseMes)) : 0;
     out.rankBase = {
-      semana: atual?.rankBase?.semana === sem ? atual.rankBase.semana : sem,
-      baseSemana: atual?.rankBase?.semana === sem ? Number(atual.rankBase.baseSemana) || 0 : anterior,
-      mes: atual?.rankBase?.mes === mes ? atual.rankBase.mes : mes,
-      baseMes: atual?.rankBase?.mes === mes ? Number(atual.rankBase.baseMes) || 0 : anterior,
+      semana: sem,
+      ganhoSemana: Math.min(999999, gSem + entrou),
+      mes,
+      ganhoMes: Math.min(999999, gMes + entrou),
     };
   }
 
@@ -104,6 +110,12 @@ export function definirChecagemBanConta(fn: (socket: Socket, uid: string) => { m
 type LinhaRank = { uid: string; nome: string; avatarUrl?: string; avatarColor?: string; moedas: number; semana: number; mes: number };
 let cacheRank: { em: number; linhas: LinhaRank[] } | null = null;
 
+function ganhoPeriodo(ganho: any, base: any, moedas: number) {
+  if (Number.isFinite(Number(ganho))) return Math.max(0, Number(ganho));
+  if (base == null || !Number.isFinite(Number(base))) return 0;
+  return Math.max(0, moedas - Number(base)); // formato antigo
+}
+
 async function montarRank(): Promise<LinhaRank[]> {
   if (cacheRank && Date.now() - cacheRank.em < 60_000) return cacheRank.linhas;
   const docs = await lerColecao<any>("usuarios", 2000);
@@ -123,8 +135,8 @@ async function montarRank(): Promise<LinhaRank[]> {
       avatarUrl: typeof dados.perfil?.avatarUrl === "string" && !dados.perfil.avatarUrl.startsWith("data:") ? dados.perfil.avatarUrl : undefined,
       avatarColor: dados.perfil?.avatarColor,
       moedas,
-      semana: rb.semana === sem ? Math.max(0, moedas - (Number(rb.baseSemana) || 0)) : 0,
-      mes: rb.mes === mes ? Math.max(0, moedas - (Number(rb.baseMes) || 0)) : 0,
+      semana: rb.semana === sem ? ganhoPeriodo(rb.ganhoSemana, rb.baseSemana, moedas) : 0,
+      mes: rb.mes === mes ? ganhoPeriodo(rb.ganhoMes, rb.baseMes, moedas) : 0,
     });
   }
   cacheRank = { em: Date.now(), linhas };

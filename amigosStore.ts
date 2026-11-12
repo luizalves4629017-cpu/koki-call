@@ -25,6 +25,8 @@ export interface MensagemDM {
   de: string;
   texto: string;
   em: number;
+  /** Registro de chamada direta: "feita" (com duração) ou "perdida". */
+  chamada?: { status: "feita" | "perdida"; segundos?: number };
 }
 interface Conversa {
   participantes: [string, string];
@@ -366,7 +368,90 @@ export function registrarAmigosSocket(io: SocketIOServer, socket: Socket, ctx: C
     if (meus) for (const sid of meus) if (sid !== socket.id) io.to(sid).emit("dm:mensagem", { com: alvo, msg });
     responder({ ok: true, msg });
   });
+
+  // ---------- Chamada direta entre amigos ----------
+  const registrarChamada = async (c: ChamadaDireta, chamada: MensagemDM["chamada"]) => {
+    const conv = await lerConversa(c.de, c.para);
+    const msg: MensagemDM = { id: `call-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, de: c.de, texto: "", em: Date.now(), chamada };
+    conv.mensagens.push(msg);
+    if (chamada?.status === "perdida") conv.naoLidas = { ...(conv.naoLidas || {}), [c.para]: (Number(conv.naoLidas?.[c.para]) || 0) + 1 };
+    conv.atualizadoEm = msg.em;
+    salvarConversa(conv);
+    avisar(c.para, "dm:mensagem", { com: c.de, msg });
+    avisar(c.de, "dm:mensagem", { com: c.para, msg });
+    return msg;
+  };
+  const encerrarTocando = (c: ChamadaDireta, motivo: string) => {
+    if (c.timer) clearTimeout(c.timer);
+    chamadas.delete(c.id);
+    avisar(c.de, "dm:chamada-fim", { id: c.id, motivo });
+    avisar(c.para, "dm:chamada-fim", { id: c.id, motivo });
+  };
+
+  socket.on("dm:ligar", async (p: { uid: string }, cb: any) => {
+    const responder = (v: any) => typeof cb === "function" && cb(v);
+    const eu = meuUid();
+    if (!eu) return semConta(cb);
+    const alvo = String(p?.uid || "");
+    const minhas = await lerAmizades(eu);
+    if (!minhas.amigos.includes(alvo)) return responder({ ok: false, mensagem: "Só dá pra ligar pra amigos." });
+    if (!online.get(alvo)?.size) return responder({ ok: false, mensagem: "Seu amigo está offline agora." });
+    for (const c of chamadas.values()) if (!c.inicio && (c.de === eu || c.para === eu || c.para === alvo)) return responder({ ok: false, mensagem: "Já tem uma chamada tocando." });
+    const r = () => Math.random().toString(36).slice(2, 8);
+    const c: ChamadaDireta = { id: `ch-${Date.now().toString(36)}${r()}`, de: eu, para: alvo, sala: `dm-${r()}${r()}`, senha: r() + r() };
+    chamadas.set(c.id, c);
+    const quem = await perfil(eu);
+    const dest = await perfil(alvo);
+    avisar(alvo, "dm:chamada", { id: c.id, de: eu, nome: quem.nome, avatarUrl: (quem as any).avatarUrl, avatarColor: (quem as any).avatarColor });
+    c.timer = setTimeout(() => {
+      if (!chamadas.has(c.id) || c.inicio) return;
+      encerrarTocando(c, "sem-resposta");
+      registrarChamada(c, { status: "perdida" });
+    }, 30_000);
+    responder({ ok: true, id: c.id, nome: dest.nome });
+  });
+
+  socket.on("dm:chamada-responder", (p: { id: string; aceitar: boolean }) => {
+    const eu = meuUid();
+    const c = chamadas.get(String(p?.id || ""));
+    if (!c || c.para !== eu || c.inicio) return;
+    if (!p.aceitar) {
+      encerrarTocando(c, "recusada");
+      registrarChamada(c, { status: "perdida" });
+      return;
+    }
+    if (c.timer) clearTimeout(c.timer);
+    c.inicio = Date.now();
+    const dados = { id: c.id, sala: c.sala, senha: c.senha };
+    avisar(c.de, "dm:chamada-aceita", { ...dados, criar: true });
+    avisar(c.para, "dm:chamada-aceita", { ...dados, criar: false });
+    // fecha o pop-up nas outras abas de quem atendeu
+    const meus = online.get(eu);
+    if (meus) for (const sid of meus) if (sid !== socket.id) io.to(sid).emit("dm:chamada-fim", { id: c.id, motivo: "atendida" });
+  });
+
+  socket.on("dm:chamada-cancelar", (p: { id: string }) => {
+    const eu = meuUid();
+    const c = chamadas.get(String(p?.id || ""));
+    if (!c || c.de !== eu || c.inicio) return;
+    encerrarTocando(c, "cancelada");
+    registrarChamada(c, { status: "perdida" });
+  });
+
+  /** Quem sai da sala da chamada avisa; o primeiro aviso grava a duração. */
+  socket.on("dm:chamada-saiu", (p: { sala: string }) => {
+    const eu = meuUid();
+    for (const c of chamadas.values()) {
+      if (c.sala !== String(p?.sala || "") || !c.inicio || (c.de !== eu && c.para !== eu)) continue;
+      chamadas.delete(c.id);
+      registrarChamada(c, { status: "feita", segundos: Math.max(1, Math.round((Date.now() - c.inicio) / 1000)) });
+    }
+  });
 }
+
+/** Chamadas diretas tocando ou em andamento (só na memória do servidor). */
+interface ChamadaDireta { id: string; de: string; para: string; sala: string; senha: string; timer?: ReturnType<typeof setTimeout>; msgId?: string; inicio?: number }
+const chamadas = new Map<string, ChamadaDireta>();
 
 /** Avisa os amigos online que alguém entrou/saiu (pra bolinha verde atualizar). */
 export async function avisarPresenca(io: SocketIOServer, uid: string | undefined) {

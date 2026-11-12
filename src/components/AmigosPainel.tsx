@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { X, ArrowLeft, MessageSquare, UserMinus, Check, SendHorizontal, UserPlus, Users } from "lucide-react";
+import { X, ArrowLeft, MessageSquare, UserMinus, Check, SendHorizontal, UserPlus, Users, Phone, PhoneMissed } from "lucide-react";
 import { aoMudarConta } from "../utils/conta";
 import { useContagem, textoCalma } from "../utils/useContagem";
 import { notify } from "./Toast";
@@ -17,6 +17,7 @@ interface MensagemDM {
   de: string;
   texto: string;
   em: number;
+  chamada?: { status: "feita" | "perdida"; segundos?: number };
 }
 interface Estado {
   logado: boolean;
@@ -221,6 +222,14 @@ export const AmigosPainel: React.FC<AmigosPainelProps> = ({ socket, aberto, onFe
                       <div className="text-sm font-extrabold truncate">{p.nome}</div>
                       <div className="text-[11px] text-[#8B8E98]">{p.online ? "Online" : "Offline"}</div>
                     </div>
+                    <button
+                      onClick={() => window.dispatchEvent(new CustomEvent("eco:ligar", { detail: { uid: conversa.uid } }))}
+                      disabled={!p.online}
+                      className="ml-1 p-2 rounded-xl text-[#5EEAD4] hover:bg-[#5EEAD4]/10 disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+                      title={p.online ? `Ligar pra ${p.nome}` : "Seu amigo está offline"}
+                    >
+                      <Phone className="w-4 h-4" />
+                    </button>
                   </>
                 );
               })()}
@@ -252,6 +261,25 @@ export const AmigosPainel: React.FC<AmigosPainelProps> = ({ socket, aberto, onFe
               )}
               {mensagens.map((m) => {
                 const minha = m.de !== conversa.uid;
+                if (m.chamada) {
+                  const quem = minha ? "Você" : conversa.nome;
+                  const perdida = m.chamada.status === "perdida";
+                  const dur = (seg = 0) => (seg < 60 ? "poucos segundos" : seg < 3600 ? `${Math.round(seg / 60)} min` : `${Math.floor(seg / 3600)} h ${Math.round((seg % 3600) / 60)} min`);
+                  return (
+                    <div key={m.id} className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] ${perdida ? "bg-[#F43F5E]/5" : ""}`}>
+                      {perdida ? <PhoneMissed className="w-4 h-4 text-[#F43F5E] shrink-0" /> : <Phone className="w-4 h-4 text-[#5EEAD4] shrink-0" />}
+                      <div className="flex-1 min-w-0 text-[#B5B8C0]">
+                        {perdida ? (minha ? <>Você ligou e {conversa.nome} não atendeu.</> : <>Chamada perdida de <b className="text-[#ECECEC]">{conversa.nome}</b>.</>) : <><b className="text-[#ECECEC]">{quem}</b> iniciou uma chamada que durou {dur(m.chamada.segundos)}.</>}
+                        <span className="ml-1.5 text-[10px] text-[#8B8E98]">{hora(m.em)}</span>
+                      </div>
+                      {perdida && !minha && (
+                        <button onClick={() => window.dispatchEvent(new CustomEvent("eco:ligar", { detail: { uid: conversa.uid } }))} className="shrink-0 rounded-lg bg-[#2A2D35] px-2.5 py-1 text-[11px] font-semibold text-[#ECECEC] hover:bg-[#33363F] cursor-pointer">
+                          Ligar de volta
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
                 return (
                   <div key={m.id} className={`flex ${minha ? "justify-end" : "justify-start"}`}>
                     <div

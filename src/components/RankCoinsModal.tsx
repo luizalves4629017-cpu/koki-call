@@ -44,7 +44,7 @@ const ABAS: { id: AbaRank; rotulo: string }[] = [
   { id: "mes", rotulo: "Mês" },
 ];
 
-const OrbeTop: React.FC<{ l?: LinhaRank; tamanho: "g" | "p"; className?: string }> = ({ l, tamanho, className = "" }) => {
+const OrbeTop: React.FC<{ l?: LinhaRank; tamanho: "g" | "p"; className?: string; valor?: (l: LinhaRank) => number }> = ({ l, tamanho, className = "", valor }) => {
   const grande = tamanho === "g";
   return (
     <div className={`flex flex-col items-center ${className}`}>
@@ -67,7 +67,7 @@ const OrbeTop: React.FC<{ l?: LinhaRank; tamanho: "g" | "p"; className?: string 
       <div className={`mt-2 text-center font-bold text-[#F5E6B8] ${grande ? "text-base" : "text-sm"}`} style={{ textShadow: "0 0 8px rgba(56,139,253,0.8)" }}>
         #{l?.pos ?? (grande ? 1 : "–")}: {l ? l.nome : "—"}
       </div>
-      <div className="text-xs font-semibold text-[#F5E6B8]/90">{l ? fmt(l.moedas) : "0"}</div>
+      <div className="text-xs font-semibold text-[#F5E6B8]/90">{l ? fmt(valor ? valor(l) : l.moedas) : "0"}</div>
     </div>
   );
 };
@@ -124,13 +124,15 @@ export const RankCoinsModal: React.FC<Props> = ({ socket, onClose }) => {
           {/* Lado esquerdo: top 3 nas esferas de aura */}
           <div className="relative md:w-[48%] min-h-[360px] overflow-hidden flex flex-col items-center justify-center py-6">
             <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(30,64,175,0.35), transparent 65%)" }} />
-            {/* Silhueta de aura ao fundo (orelhas de chacal) */}
-            <svg viewBox="0 0 200 260" className="absolute right-2 top-6 w-56 opacity-25 pointer-events-none" aria-hidden>
-              <path d="M70 120 L52 20 L88 92 Q100 86 112 92 L148 20 L130 120 Q150 150 140 200 L120 250 L80 250 L60 200 Q50 150 70 120Z" fill="#1E3A8A" stroke="#60A5FA" strokeWidth="2" />
-              <circle cx="88" cy="128" r="4" fill="#93C5FD" />
-              <circle cx="112" cy="128" r="4" fill="#93C5FD" />
-              <circle cx="100" cy="185" r="6" fill="#BFDBFE" />
-            </svg>
+            {/* Lucario de fundo (a parte preta some com mix-blend screen) */}
+            <img
+              src="/rank/lucario.webp"
+              alt=""
+              aria-hidden
+              draggable={false}
+              className="absolute right-0 top-2 h-[92%] w-auto object-contain opacity-45 pointer-events-none select-none"
+              style={{ mixBlendMode: "screen" }}
+            />
             {/* Chamas de aura */}
             <div className="absolute bottom-0 left-0 right-0 h-28 flex items-end justify-around pointer-events-none">
               {[0, 1, 2, 3, 4, 5, 6].map((i) => (
@@ -147,10 +149,10 @@ export const RankCoinsModal: React.FC<Props> = ({ socket, onClose }) => {
                 <div className="text-[#93C5FD] text-sm">Carregando aura…</div>
               ) : (
                 <>
-                  <OrbeTop l={p1} tamanho="g" />
+                  <OrbeTop l={p1} tamanho="g" valor={aba === "geral" ? undefined : valorPeriodo} />
                   <div className="flex justify-center gap-10 sm:gap-16">
-                    <OrbeTop l={p2} tamanho="p" />
-                    <OrbeTop l={p3} tamanho="p" />
+                    <OrbeTop l={p2} tamanho="p" valor={aba === "geral" ? undefined : valorPeriodo} />
+                    <OrbeTop l={p3} tamanho="p" valor={aba === "geral" ? undefined : valorPeriodo} />
                   </div>
                 </>
               )}
