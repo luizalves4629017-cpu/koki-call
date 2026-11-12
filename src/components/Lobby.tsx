@@ -24,8 +24,11 @@ import { MasterLoginModal } from "./MasterLoginModal";
 import { EcoAvatar } from "./EcoAvatar";
 import { EditOwnerProfileModal } from "./EditOwnerProfileModal";
 import { generateUniqueRoomId } from "../utils/roomId";
+import { useModoDesempenho } from "../utils/desempenho";
+import { AmigosOnlineLobby } from "./AmigosOnlineLobby";
 
 interface LobbyProps {
+  socket?: import("socket.io-client").Socket | null;
   initialRoomId?: string;
   initialRole?: string;
   isMaster?: boolean;
@@ -76,7 +79,41 @@ interface LobbyProps {
 
 type TabType = "join" | "create" | "master";
 
-// Fundo da tela inicial: buraco negro verde-água/lilás
+// Fundo da tela inicial (tema Sala de estar sakura)
+const FUNDO_SAKURA: React.CSSProperties = {
+  backgroundColor: "#0B0D12",
+  backgroundImage: "linear-gradient(90deg, rgba(11,13,18,0.85) 0%, rgba(11,13,18,0.35) 38%, rgba(11,13,18,0) 60%), url('/lobby/sakura.webp')",
+  backgroundSize: "cover",
+  backgroundPosition: "70% center",
+  backgroundRepeat: "no-repeat",
+};
+
+/** Pétalas de sakura caindo devagar (só CSS; somem no Modo Desempenho e com "reduzir movimento"). */
+const PETALAS = Array.from({ length: 16 }, (_, i) => ({
+  left: (i * 37 + 11) % 100,
+  dur: 11 + ((i * 7) % 9),
+  delay: -((i * 13) % 17),
+  tam: 8 + ((i * 5) % 7),
+  giro: (i * 47) % 360,
+}));
+const PetalasSakura: React.FC = () => {
+  const modo = useModoDesempenho();
+  if (modo === "on") return null;
+  return (
+    <div className="eco-petalas pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+      <style>{`
+        @keyframes ecoPetala { 0% { transform: translate3d(0,-8vh,0) rotate(0deg); opacity: 0 } 8% { opacity: .9 } 50% { transform: translate3d(-6vw,50vh,0) rotate(180deg) } 92% { opacity: .8 } 100% { transform: translate3d(-12vw,108vh,0) rotate(360deg); opacity: 0 } }
+        .eco-petala { position:absolute; top:0; border-radius: 80% 0 80% 0; background: linear-gradient(135deg,#FBCFE8,#F9A8D4 60%,#F472B6); box-shadow: 0 0 6px rgba(249,168,212,.5); animation: ecoPetala linear infinite; will-change: transform; }
+        @media (prefers-reduced-motion: reduce) { .eco-petalas { display:none } }
+      `}</style>
+      {PETALAS.map((p, i) => (
+        <span key={i} className="eco-petala" style={{ left: `${p.left}%`, width: p.tam, height: p.tam * 0.75, animationDuration: `${p.dur}s`, animationDelay: `${p.delay}s`, rotate: `${p.giro}deg` }} />
+      ))}
+    </div>
+  );
+};
+
+// Fundo antigo: buraco negro verde-água/lilás (ainda usado na tela de aprovação)
 const FUNDO_BURACO_NEGRO: React.CSSProperties = {
   backgroundImage: "linear-gradient(rgba(22,23,27,0.25), rgba(22,23,27,0.45)), url('/fundo-call.jpg')",
   backgroundSize: "cover",
@@ -85,6 +122,7 @@ const FUNDO_BURACO_NEGRO: React.CSSProperties = {
 };
 
 export const Lobby: React.FC<LobbyProps> = ({
+  socket = null,
   initialRoomId = "",
   initialRole = "",
   isMaster = false,
@@ -310,15 +348,17 @@ export const Lobby: React.FC<LobbyProps> = ({
   }
 
   return (
-    <div className="relative min-h-screen w-full flex flex-col items-center justify-center p-4 bg-[#16171B] text-[#ECECEC] select-none overflow-x-hidden font-sans" style={FUNDO_BURACO_NEGRO}>
-      {/* Background radial ambient glow: Cyan-teal on left, Lavender on right (matching Image 3) */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
-        <div className="w-[420px] sm:w-[540px] h-[420px] sm:h-[540px] -translate-x-32 bg-[#5EEAD4]/15 rounded-full blur-[130px]" />
-        <div className="w-[420px] sm:w-[540px] h-[420px] sm:h-[540px] translate-x-32 bg-[#C4B5FD]/15 rounded-full blur-[130px]" />
-      </div>
+    <div className="relative min-h-screen w-full flex flex-col lg:flex-row items-center justify-center lg:justify-start gap-6 lg:gap-0 p-4 lg:pl-[6vw] bg-[#0B0D12] text-[#ECECEC] select-none overflow-x-hidden font-sans" style={FUNDO_SAKURA}>
+      <PetalasSakura />
+      <AmigosOnlineLobby socket={socket} />
 
-      {/* Main Centered Card (Matches Image 3) */}
-      <div className="relative z-10 w-full max-w-[440px] bg-[#1E2026] border border-[#2A2D35] rounded-2xl shadow-2xl p-6 sm:p-7 flex flex-col transition-all duration-150">
+      {/* Card principal (vidro) com o título "Sala de estar" em cima */}
+      <div className="relative z-10 w-full max-w-[440px] flex flex-col">
+        <div className="hidden sm:block mb-5 px-1">
+          <h2 className="text-4xl lg:text-5xl font-extrabold tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]">Sala de estar</h2>
+          <p className="text-sm text-[#FBCFE8]/90 mt-1.5">Sua galera te espera.</p>
+        </div>
+      <div className="relative w-full bg-[#1E2026]/80 backdrop-blur-xl border border-[#F9A8D4]/20 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.55)] p-6 sm:p-7 flex flex-col transition-all duration-150">
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-6">
           <div onClick={handleLogoClick} className="cursor-default">
@@ -640,6 +680,7 @@ export const Lobby: React.FC<LobbyProps> = ({
           </form>
         )}
 
+      </div>
       </div>
 
       {/* Edit Owner Profile Modal */}

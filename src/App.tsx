@@ -1026,6 +1026,7 @@ export default function App() {
             // Tela inicial com login: a mesma do eco (fundo cósmico, Minhas salas, Criar sala)
             <div className="flex-1 min-w-0 h-screen overflow-y-auto">
               <Lobby
+                socket={socket}
                 initialRoomId={urlRoomId}
                 initialRole={urlRole}
                 isMaster={isMaster}
@@ -1075,6 +1076,7 @@ export default function App() {
         />
       ) : (
         <Lobby
+          socket={socket}
           initialRoomId={urlRoomId}
           initialRole={urlRole}
           isMaster={isMaster}
