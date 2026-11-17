@@ -922,9 +922,52 @@ body{background:#fdeef3}
 .pet{background:radial-gradient(circle at 30% 30%,#fff0f5,#f59bbd 70%)}
 @media(max-width:600px){.x-galho{width:190px;right:-34px}}
 @media (prefers-reduced-motion:reduce){.x-galho{animation:none}}
+
+/* fundo com fotos */
+body,:root[data-theme="dark"] body{background:transparent!important}
+html{background:#fdeef3}:root[data-theme="dark"]{background:#1b1218}
+#fundo{position:fixed;inset:0;z-index:-1;pointer-events:none}
+#fundo i{position:absolute;inset:0;background-size:cover;background-position:center;opacity:0;transition:opacity 2.5s ease}
+#fundo i.on{opacity:1}
+#fundo::after{content:"";position:absolute;inset:0;background:rgba(255,240,245,.30)}
+:root[data-theme="dark"] #fundo::after{background:rgba(20,10,16,.45)}
+.x-wrap{background:rgba(255,246,248,.78)!important;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+:root[data-theme="dark"] .x-wrap{background:rgba(37,26,34,.86)!important}
+.foot{background:rgba(255,246,248,.75);border-radius:16px;padding:12px 16px!important;color:#86677a!important}
+:root[data-theme="dark"] .foot{background:rgba(37,26,34,.8);color:#d3b2c2!important}
+#paz{position:fixed;inset:0;z-index:60;display:none;align-items:flex-end;justify-content:center;padding:0 20px calc(40px + env(safe-area-inset-bottom));background:linear-gradient(transparent 55%,rgba(40,20,30,.55))}
+html.paz #paz{display:flex}
+html.paz .page,html.paz .x-nav{opacity:0;pointer-events:none}
+html.paz #fundo::after{background:transparent}
+.page,.x-nav{transition:opacity .6s}
+.paz-c{text-align:center;color:#fff;max-width:420px}
+.paz-o{width:70px;height:70px;margin:0 auto 14px;border-radius:50%;background:rgba(255,214,228,.55);border:2px solid rgba(255,255,255,.8);animation:respira 8s ease-in-out infinite}
+@keyframes respira{0%,100%{transform:scale(.7)}50%{transform:scale(1.25)}}
+.paz-t{font:600 22px/1.3 var(--sans);margin:0 0 4px;text-shadow:0 1px 8px rgba(0,0,0,.4)}
+.paz-s{font-size:15px;margin:0 0 14px;opacity:.9;text-shadow:0 1px 8px rgba(0,0,0,.4)}
+/* redação */
+.x-red-tx{min-height:320px;line-height:1.7;font-size:16px;resize:vertical}
+.x-red-ap{margin:0;padding-left:20px}.x-red-ap li{margin:2px 0}
+.x-red-nota .x-big{font:600 44px/1.1 var(--sans);color:#c2416f;margin:4px 0}
+.x-red-nota .x-big span{font-size:18px;color:var(--x-tx2)}
+:root[data-theme="dark"] .x-red-nota .x-big{color:#ffb3cd}
+.x-card ul{padding-left:20px;margin:0}.x-card li{margin:6px 0}
+.x-nav{gap:2px!important;padding-left:4px!important;padding-right:4px!important}
+.x-nav button{font-size:11px!important}
+@media (prefers-reduced-motion:reduce){.paz-o{animation:none}}
+.x-ics{display:flex;gap:10px;margin:16px 0 4px;overflow-x:auto;padding:4px 2px 8px;scrollbar-width:none;position:relative;z-index:1}
+.x-ics::-webkit-scrollbar{display:none}
+.x-ic-b{position:relative;flex:0 0 auto;width:62px;height:62px;padding:3px;border-radius:50%;border:0;cursor:pointer;background:linear-gradient(135deg,#ff9fc1,#ffd6e4,#c9b6ff);box-shadow:0 3px 10px rgba(214,90,130,.25);animation:icF 3.5s ease-in-out infinite;overflow:visible}
+.x-ic-b img{width:100%;height:100%;border-radius:50%;object-fit:cover;border:2px solid #fff;display:block}
+:root[data-theme="dark"] .x-ic-b img{border-color:#31232d}
+@keyframes icF{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@media (prefers-reduced-motion:reduce){.x-ic-b{animation:none}}
+.paz-c .x-b{background:#fff!important;color:#b8385f!important;border:0!important;padding:10px 22px}
 </style>
   </head>
   <body>
+    <div id="fundo" aria-hidden="true"><i style="background-image:url(fundo1.jpg)"></i><i style="background-image:url(fundo2.jpg)"></i><i style="background-image:url(fundo3.jpg)"></i></div>
+    <div id="paz" onclick="UI.pazNext()" role="dialog" aria-label="Momento de paz"><div class="paz-c"><div class="paz-o"></div><p class="paz-t">Respira fundo… 🌸</p><p class="paz-s">Você está indo muito bem. Toque para trocar a imagem.</p><button class="x-b" onclick="event.stopPropagation();UI.paz(0)">Voltar a estudar</button></div></div>
     <div class="page" id="top">
       <main class="main">
         <div class="x-wrap">
@@ -933,8 +976,9 @@ body{background:#fdeef3}
               <h1>Seja feliz com todas as suas escolhas e provas</h1>
               <p class="x-subt" id="x-subt"></p>
             </div>
-            <button class="x-b" id="x-theme" onclick="UI.theme()" aria-label="Ativar modo escuro">🌙</button>
+            <div class="x-row" style="gap:8px;flex-wrap:nowrap"><button class="x-b" onclick="UI.paz(1)" aria-label="Momento de paz">🌸</button><button class="x-b" id="x-theme" onclick="UI.theme()" aria-label="Ativar modo escuro">🌙</button></div>
           </header>
+          <div class="x-ics" aria-hidden="true"><button class="x-ic-b" tabindex="-1" onclick="UI.hug(this)" style="animation-delay:0.5s"><img src="ic1.jpg" alt=""></button><button class="x-ic-b" tabindex="-1" onclick="UI.hug(this)" style="animation-delay:1.0s"><img src="ic2.jpg" alt=""></button><button class="x-ic-b" tabindex="-1" onclick="UI.hug(this)" style="animation-delay:1.5s"><img src="ic3.jpg" alt=""></button><button class="x-ic-b" tabindex="-1" onclick="UI.hug(this)" style="animation-delay:2.0s"><img src="ic4.jpg" alt=""></button><button class="x-ic-b" tabindex="-1" onclick="UI.hug(this)" style="animation-delay:2.5s"><img src="ic5.jpg" alt=""></button></div>
           <section id="app" aria-live="polite"></section>
           <nav class="x-nav" aria-label="Menu">
             <button data-n="home" onclick="UI.home()"><span>🏠</span>Início</button>
@@ -942,6 +986,7 @@ body{background:#fdeef3}
             <button data-n="prov" onclick="UI.provas()"><span>📄</span>Provas</button>
             <button data-n="err" onclick="UI.errors()"><span>📒</span>Erros</button>
             <button data-n="sim" onclick="UI.sim()"><span>📝</span>Simulado</button>
+            <button data-n="red" onclick="UI.redacao()"><span>✍️</span>Redação</button>
           </nav>
         </div>
       </main>
@@ -2151,11 +2196,179 @@ document.addEventListener('keydown',e=>{const t=e.target.tagName;if(t==='TEXTARE
   if(/^[1-4]$/.test(e.key)){const b=app.querySelector(`[data-k="${e.key}"]:not(:disabled)`);if(b){e.preventDefault();b.click()}}
   else if(e.key==='Enter'&&!(t==='BUTTON'&&!e.target.disabled)){const b=app.querySelector('[data-enter]:not(:disabled)');if(b){e.preventDefault();b.click()}}});
 try{const d=document.documentElement.dataset.theme==='dark';document.getElementById('x-theme').textContent=d?'☀️':'🌙'}catch(e){}
-window.UI=UI;UI.home();
+UI._show=show;window.UI=UI;UI.home();
 })();
     </script>
+<script>
+// ===== Redação: temas + corretor =====
+(function(){
+const RK='redacao-agatha';
+let R2={i:0,txt:{},h:[]};
+try{const s=localStorage.getItem(RK);if(s)R2=Object.assign(R2,JSON.parse(s))}catch(e){}
+const rsave=()=>{try{localStorage.setItem(RK,JSON.stringify(R2))}catch(e){}};
+const TEMAS=[
+ {t:"Os desafios da saúde mental dos jovens no Brasil",kw:["saúde mental","jovens","ansiedade","depressão","psicológ","apoio"],ap:["Ansiedade e depressão estão entre os problemas de saúde mais comuns na juventude.","O acesso a psicólogos pela rede pública ainda é limitado em muitas cidades.","Redes sociais, pressão por desempenho e incerteza sobre o futuro afetam o bem-estar."]},
+ {t:"O impacto das redes sociais na formação da opinião pública",kw:["redes sociais","opinião","informação","notícias falsas","algoritmo","fake news"],ap:["Algoritmos mostram mais do que a pessoa já concorda, criando bolhas.","Notícias falsas se espalham mais rápido que as verdadeiras.","A educação midiática ajuda a checar fontes."]},
+ {t:"Caminhos para combater a evasão escolar no Brasil",kw:["evasão","escola","estudantes","ensino","abandono","educação"],ap:["Muitos jovens deixam a escola para trabalhar e ajudar em casa.","Falta de transporte e de interesse pelas aulas pesa na decisão.","Programas de bolsa e ensino em tempo integral tentam reverter o quadro."]},
+ {t:"Desafios para a valorização da cultura nordestina",kw:["cultura","nordest","tradição","identidade","preconceito","valoriza"],ap:["Cordel, forró, xilogravura e festas juninas são patrimônio cultural.","O preconceito regional ainda aparece em piadas e na mídia.","Turismo e escolas podem divulgar artistas locais."]},
+ {t:"O combate à violência contra a mulher na sociedade brasileira",kw:["violência","mulher","feminicídio","machismo","denúncia","Maria da Penha"],ap:["A Lei Maria da Penha (2006) criou mecanismos de proteção.","Muitas vítimas não denunciam por medo ou dependência financeira.","A educação para o respeito começa na escola e na família."]},
+ {t:"A escassez de água no semiárido brasileiro",kw:["água","seca","semiárido","cisterna","recursos hídricos","escassez"],ap:["O semiárido tem chuvas irregulares e longos períodos de estiagem.","Cisternas e açudes ajudam famílias rurais a armazenar água.","O desperdício e a má gestão agravam o problema."]},
+ {t:"Os efeitos do uso excessivo de celulares na vida dos adolescentes",kw:["celular","adolescentes","tela","tecnologia","atenção","sono"],ap:["O tempo de tela diário de adolescentes cresceu muito na última década.","O uso à noite prejudica o sono e a concentração.","Escolas discutem limites ao uso em sala de aula."]},
+ {t:"Desafios para a inclusão de pessoas com deficiência no mercado de trabalho",kw:["deficiência","inclusão","trabalho","acessibilidade","emprego","cotas"],ap:["A Lei de Cotas obriga empresas maiores a contratar pessoas com deficiência.","Falta de acessibilidade física e de capacitação ainda exclui muitos.","O preconceito (capacitismo) limita oportunidades."]},
+ {t:"A importância da leitura na formação dos jovens",kw:["leitura","livros","ler","jovens","formação","bibliotecas"],ap:["Muitos brasileiros dizem não ter lido nenhum livro no último ano.","Bibliotecas públicas e escolares são poucas ou pouco usadas.","Ler melhora vocabulário, escrita e senso crítico."]},
+ {t:"O desperdício de alimentos e a fome no Brasil",kw:["desperdício","alimentos","fome","comida","insegurança alimentar","doação"],ap:["Grande parte dos alimentos produzidos se perde no transporte e no consumo.","Ao mesmo tempo, milhões de pessoas vivem com insegurança alimentar.","Bancos de alimentos ligam supermercados a quem precisa."]},
+ {t:"Os desafios do envelhecimento da população brasileira",kw:["idosos","envelhecimento","terceira idade","aposentadoria","cuidado","longevidade"],ap:["A proporção de idosos no país cresce a cada censo.","O Estatuto da Pessoa Idosa garante direitos, nem sempre cumpridos.","Solidão e falta de cuidadores são problemas comuns."]},
+ {t:"Caminhos para reduzir o lixo plástico no meio ambiente",kw:["plástico","lixo","meio ambiente","reciclagem","oceanos","descarte"],ap:["Boa parte do plástico descartado não é reciclado.","Microplásticos já aparecem em peixes e na água.","Coleta seletiva e embalagens reutilizáveis reduzem o problema."]},
+ {t:"O combate ao racismo estrutural no Brasil",kw:["racismo","negros","preconceito","desigualdade","discriminação","racial"],ap:["Pessoas negras são maioria da população e minoria em cargos de liderança.","Racismo é crime inafiançável segundo a Constituição de 1988.","Cotas raciais ampliaram o acesso às universidades."]},
+ {t:"Os impactos da inteligência artificial no trabalho e na educação",kw:["inteligência artificial","tecnologia","trabalho","educação","automação","IA"],ap:["Ferramentas de IA já escrevem textos e respondem perguntas.","Algumas profissões mudam e outras surgem.","Escolas debatem como usar a IA sem prejudicar o aprendizado."]},
+ {t:"A persistência do trabalho infantil no Brasil",kw:["trabalho infantil","crianças","infância","exploração","escola","ECA"],ap:["O ECA proíbe o trabalho antes dos 14 anos (salvo aprendiz, a partir dessa idade).","A pobreza empurra crianças para o trabalho informal.","O trabalho infantil afasta da escola e prejudica a saúde."]},
+ {t:"A democratização do acesso ao cinema e à arte no país",kw:["cinema","arte","cultura","acesso","democratiza","cidades"],ap:["Muitos municípios não têm nenhuma sala de cinema.","Ingressos caros afastam a população de baixa renda.","Projetos itinerantes levam filmes e teatro ao interior."]},
+ {t:"Os desafios do combate à desinformação sobre vacinas",kw:["vacina","desinformação","saúde","imunização","fake news","ciência"],ap:["A cobertura vacinal de algumas doenças caiu nos últimos anos.","Boatos sobre vacinas circulam em aplicativos de mensagem.","Campanhas e agentes de saúde reforçam a confiança na ciência."]},
+ {t:"A mobilidade urbana e a qualidade de vida nas cidades",kw:["mobilidade","transporte","trânsito","cidades","ônibus","qualidade de vida"],ap:["Trabalhadores passam horas por dia no transporte público.","O excesso de carros aumenta poluição e acidentes.","Ciclovias e corredores de ônibus melhoram os deslocamentos."]},
+ {t:"O papel da família na educação de crianças e adolescentes",kw:["família","educação","crianças","adolescentes","escola","pais"],ap:["A Constituição diz que educação é dever do Estado e da família.","Acompanhar a vida escolar melhora o desempenho.","Rotinas longas de trabalho reduzem o tempo de convivência."]},
+ {t:"Bullying e cyberbullying nas escolas brasileiras",kw:["bullying","cyberbullying","escola","violência","estudantes","respeito"],ap:["Desde 2024, bullying e cyberbullying são crimes no Código Penal.","As agressões online seguem a vítima para fora da escola.","Projetos de convivência e escuta ajudam a prevenir."]}
+];
+const CON=["além disso","ademais","outrossim","também","ainda","não só","mas também","portanto","logo","assim","dessa forma","desse modo","sendo assim","por conseguinte","consequentemente","porém","contudo","entretanto","todavia","no entanto","embora","apesar de","ainda que","mesmo que","porque","pois","visto que","uma vez que","já que","isso porque","por exemplo","ou seja","isto é","em primeiro lugar","em segundo lugar","por fim","finalmente","em suma","diante disso","nesse sentido","nesse contexto","sob essa ótica","por outro lado","inicialmente","primeiramente","em síntese","conforme","segundo","de acordo com","à medida que","enquanto","tendo em vista"];
+const REP=["constituição","artigo","lei ","estatuto","eca","segundo","de acordo com","conforme","ibge","oms","unesco","onu","pesquisa","dados","%","filósof","sociólog","pensador","autor","obra","livro","filme","série","música","século","histori","kant","aristóteles","platão","sócrates","descartes","foucault","bauman","durkheim","weber","marx","freud","beauvoir","paulo freire","rousseau","hobbes","locke","maquiavel","nietzsche","sartre","hannah arendt","djamila","milton santos","sérgio buarque","gilberto freyre","darcy ribeiro","rachel de queiroz","graciliano","machado de assis","patativa","drummond"];
+const AGE=["governo","ministério","estado","poder público","poder executivo","poder legislativo","congresso","prefeitura","secretaria","escola","instituições de ensino","ong","mídia","imprensa","família","sociedade civil","empresas","sus","universidades","escolas"];
+const ACA=["criar","crie","promover","promova","implementar","implemente","investir","invista","realizar","realize","ampliar","amplie","fiscalizar","fiscalize","desenvolver","desenvolva","garantir","garanta","incentivar","incentive","elaborar","elabore","oferecer","ofereça","divulgar","divulgue","capacitar","capacite","destinar","destine"];
+const MEI=["por meio de","mediante","através de","por intermédio de","com o auxílio de","com o apoio de","via ","utilizando","com a criação de"];
+const FIM=["a fim de","para que","com o intuito de","com o objetivo de","com a finalidade de","de modo a","visando","objetivando","para assim","de forma a"];
+const DET=["como ","por exemplo","ou seja","isto é","que ","as quais","os quais","nas quais"];
+const ERR=[
+ [/\bconcerteza\b/gi,"“concerteza” → com certeza"],[/\bderrepente\b/gi,"“derrepente” → de repente"],[/\bporisso\b/gi,"“porisso” → por isso"],
+ [/\bapartir\b/gi,"“apartir” → a partir"],[/\bà partir\b/gi,"“à partir” → a partir (sem crase antes de verbo)"],[/\bafim de\b/gi,"“afim de” (com o objetivo) → a fim de"],
+ [/\bmenas\b/gi,"“menas” → menos"],[/\bseje\b/gi,"“seje” → seja"],[/\besteje\b/gi,"“esteje” → esteja"],[/\bexcess[ãa]o\b/gi,"“excessão” → exceção"],
+ [/\bprevil[ée]gio/gi,"“previlégio” → privilégio"],[/\bbeneficiente\b/gi,"“beneficiente” → beneficente"],[/\bimpecilho/gi,"“impecilho” → empecilho"],
+ [/\bmendingo/gi,"“mendingo” → mendigo"],[/\bancios/gi,"“ancioso” → ansioso"],[/\bcidad[õo]es\b/gi,"“cidadões” → cidadãos"],[/\batrav[ée]z\b/gi,"“atravéz” → através"],
+ [/\bconci[êe]ncia/gi,"“conciência” → consciência"],[/\bhouveram\b/gi,"“houveram” (sentido de existir) → houve"],[/\bfazem (\d+|muitos|v[áa]rios) anos\b/gi,"“fazem anos” → faz anos (tempo decorrido)"],
+ [/\ba muito tempo\b/gi,"“a muito tempo” (passado) → há muito tempo"],[/\ba medida que\b/gi,"“a medida que” → à medida que"],[/\bas vezes\b/gi,"“as vezes” → às vezes"],
+ [/\bà (ele|eles|ela|elas|voc[êe]|um|uma|todos|todas|esse|essa|este|esta|isso|isto|cada|qualquer|nenhum)\b/gi,"crase antes de pronome ou artigo indefinido não existe: use “a”"],
+ [/\bà (fazer|ser|ter|ir|estudar|trabalhar|partir|combater|garantir|criar|promover)\b/gi,"não há crase antes de verbo: use “a”"],
+ [/\bmim (fazer|ser|ter|ir|estudar|ler|escrever)\b/gi,"“para mim fazer” → para eu fazer"],[/\bmais (bom|ruim)\b/gi,"“mais bom/ruim” → melhor/pior"],
+ [/\btodos tem\b/gi,"“todos tem” → todos têm (plural com acento)"],[/\beles tem\b/gi,"“eles tem” → eles têm"],[/\bvem (sendo|tendo)\b/gi,"se o sujeito é plural, use “vêm”"],
+ [/\bmal (entendido|educado)\b/gi,"confira: “mal-entendido”, “mal-educado” (com hífen)"],[/\bpor que\b(?=[^?]*[.!]|$)/gi,"“por que” no meio de afirmação costuma ser “porque” (explicação)"],
+ [/\bonde\b(?!\s+(fica|ficam|mora|moram|vive|vivem|estão|está))/gi,"“onde” só para lugar físico; para ideias use “em que/no qual”"]
+];
+const INF=[[/\bpra\b|\bpro\b|\bpras\b|\bpros\b/gi,"“pra/pro” é oral: use para/para o"],[/\bt[áa]\b|\bn[ée]\b|\bvc\b|\btb\b|\bq\b/gi,"abreviação/oralidade: escreva por extenso"],[/\ba gente\b/gi,"“a gente” é informal: prefira “nós” ou impessoal"],[/\btipo\b(?! de)/gi,"“tipo” como bengala é informal"],[/\bcoisas?\b/gi,"“coisa” é vago: troque por uma palavra precisa"],[/\b(galera|tipo assim|enfim)\b/gi,"expressão informal"]];
+const PES=[[/\b(eu acho|eu penso|eu acredito|na minha opini[ãa]o|eu concordo|eu discordo)\b/gi,"evite 1ª pessoa do singular: o texto dissertativo é impessoal"]];
+const STOP=new Set("a o e é de da do das dos em no na nos nas um uma uns umas que se por para com como mais mas ao aos à às ou seu sua seus suas ele ela eles elas isso isto esse essa este esta não sim há foi ser são está estão também muito pela pelo pelas pelos entre sobre já quando onde ainda".split(" "));
+const norm=s=>s.toLowerCase();
+function analisa(tx,tema){
+ const raw=tx.replace(/\r/g,'').trim(),low=norm(raw);
+ const par=raw.split(/\n\s*\n|\n/).map(p=>p.trim()).filter(p=>p.length>0);
+ const words=(raw.match(/[A-Za-zÀ-ÿ0-9]+/g)||[]),nw=words.length,linhas=Math.ceil(nw/10.5);
+ const frases=raw.split(/(?<=[.!?])\s+/).filter(f=>f.trim());
+ const pos=[],mel=[],errs=[];
+ const hit=(re,msg,lista)=>{re.lastIndex=0;let m,c=0;while((m=re.exec(raw))&&c<3){lista.push({tr:m[0],msg});c++}};
+ ERR.forEach(([re,msg])=>hit(re,msg,errs));INF.forEach(([re,msg])=>hit(re,msg,errs));PES.forEach(([re,msg])=>hit(re,msg,errs));
+ // pontuação/forma
+ if(/ ,|,(?=[^\s\d])/.test(raw))errs.push({tr:"vírgula",msg:"confira os espaços: sem espaço antes da vírgula e com espaço depois"});
+ if(/[.!?]\s+[a-zà-ÿ]/.test(raw))errs.push({tr:"maiúscula",msg:"depois de ponto final, comece a frase com letra maiúscula"});
+ if(/\?/.test(raw))mel.push("Evite perguntas retóricas na dissertação: transforme-as em afirmações.");
+ if(/!/.test(raw))mel.push("Evite pontos de exclamação: o tom deve ser objetivo.");
+ if(/\.\.\./.test(raw))mel.push("Evite reticências: deixe as ideias completas.");
+ const longas=frases.filter(f=>(f.match(/\S+/g)||[]).length>45);
+ if(longas.length)mel.push(`${longas.length} frase(s) com mais de 45 palavras. Divida em períodos menores para ganhar clareza.`);
+ // repetição
+ const cnt={};words.forEach(w=>{w=norm(w);if(w.length>3&&!STOP.has(w))cnt[w]=(cnt[w]||0)+1});
+ const rep=Object.entries(cnt).filter(([w,c])=>c>=5).sort((a,b)=>b[1]-a[1]).slice(0,4);
+ if(rep.length)mel.push("Palavras muito repetidas: "+rep.map(([w,c])=>`“${w}” (${c}x)`).join(", ")+". Use sinônimos ou pronomes.");
+ // conectivos
+ const conU=CON.filter(c=>low.includes(c));
+ const iniCon=par.slice(1).filter(p=>CON.some(c=>norm(p).startsWith(c))).length;
+ // tema
+ const kwHit=tema.kw.filter(k=>low.includes(norm(k)));
+ const intro=norm(par[0]||''),kwIntro=tema.kw.filter(k=>intro.includes(norm(k)));
+ // repertório
+ const repU=[...new Set(REP.filter(r=>low.includes(r)))];
+ // C5
+ const fim=norm(par[par.length-1]||'');
+ const c5={agente:AGE.some(a=>fim.includes(a)),acao:ACA.some(a=>new RegExp('\\b'+a+'\\b').test(fim)),meio:MEI.some(a=>fim.includes(a)),finalidade:FIM.some(a=>fim.includes(a)),detalhe:DET.some(a=>fim.includes(a))&&fim.length>220};
+ // notas
+ let C1=200-Math.min(160,errs.length*20)-(longas.length?20:0);if(nw<150)C1=Math.min(C1,80);
+ let C2=40;if(kwHit.length>=2)C2+=40;if(kwIntro.length)C2+=40;if(repU.length>=1)C2+=40;if(repU.length>=3)C2+=40;
+ let C3=40;if(par.length>=4)C3+=40;if(par.length>=4&&par.length<=6)C3+=40;if(nw>=250)C3+=40;if(/isso porque|visto que|uma vez que|já que|por exemplo|haja vista|tendo em vista/.test(low))C3+=40;
+ let C4=Math.min(200,40+conU.length*20+iniCon*10)-(rep.length?20:0);
+ let C5=Object.values(c5).filter(Boolean).length*40;
+ if(nw<150){C2=Math.min(C2,120);C3=Math.min(C3,80);C4=Math.min(C4,120);C5=Math.min(C5,120)}else if(nw<250){C3=Math.min(C3,120);C4=Math.min(C4,160)}
+ const cap=v=>Math.max(0,Math.min(200,Math.round(v/40)*40));
+ [C1,C2,C3,C4,C5]=[C1,C2,C3,C4,C5].map(cap);
+ if(nw<70){C1=C2=C3=C4=C5=0;mel.unshift("Texto muito curto: com menos de 7 linhas a redação do ENEM recebe nota zero.")}
+ // positivos
+ if(par.length>=4&&par.length<=5)pos.push(`Estrutura clara com ${par.length} parágrafos (introdução, desenvolvimento e conclusão).`);
+ if(nw>=250&&nw<=420)pos.push(`Bom tamanho: cerca de ${nw} palavras (umas ${linhas} linhas).`);
+ if(kwIntro.length)pos.push("O tema aparece já na introdução. Ótimo para a Competência 2.");
+ if(repU.length)pos.push("Usou repertório ("+repU.slice(0,4).join(", ")+"). Isso valoriza o texto.");
+ if(conU.length>=6)pos.push(`Boa variedade de conectivos (${conU.length} diferentes).`);
+ if(iniCon>=2)pos.push("Os parágrafos estão ligados por conectivos. Isso dá coesão.");
+ if(Object.values(c5).filter(Boolean).length>=4)pos.push("Proposta de intervenção bem completa.");
+ if(!errs.length&&nw>=150)pos.push("Não encontrei os erros mais comuns de gramática e informalidade.");
+ // melhorias
+ if(par.length<4)mel.push(`Só ${par.length} parágrafo(s). O ideal são 4 ou 5: introdução, 2 ou 3 de desenvolvimento e conclusão (separe com linha em branco ou Enter).`);
+ if(par.length>6)mel.push("Parágrafos demais. Junte ideias parecidas em 4 ou 5 parágrafos.");
+ if(nw>=70&&nw<200)mel.push(`Texto curto (${nw} palavras). Desenvolva mais os argumentos: mire em 250 a 380 palavras.`);
+ if(nw>450)mel.push("Texto longo demais: na folha oficial cabem 30 linhas (cerca de 380 palavras manuscritas).");
+ if(!kwIntro.length)mel.push("Deixe o tema explícito na introdução, usando palavras do próprio tema.");
+ if(kwHit.length<2)mel.push("O texto parece fugir um pouco do tema. Retome as palavras-chave: "+tema.kw.slice(0,4).join(", ")+".");
+ if(!repU.length)mel.push("Falta repertório: cite uma lei, um dado, um pensador, um fato histórico ou uma obra, e explique a relação com o tema.");
+ if(conU.length<4)mel.push("Use mais conectivos (além disso, portanto, nesse sentido, no entanto) para ligar ideias e parágrafos.");
+ const falta=[];if(!c5.agente)falta.push("QUEM faz (agente: Governo, escolas, mídia, ONGs…)");if(!c5.acao)falta.push("O QUE faz (ação: criar, promover, ampliar…)");if(!c5.meio)falta.push("COMO faz (meio: “por meio de…”)");if(!c5.finalidade)falta.push("PARA QUÊ (finalidade: “a fim de…”)");if(!c5.detalhe)falta.push("um DETALHAMENTO de um desses elementos");
+ if(falta.length)mel.push("Na conclusão, a proposta de intervenção precisa de: "+falta.join("; ")+".");
+ return {C:[C1,C2,C3,C4,C5],tot:C1+C2+C3+C4+C5,pos,mel,errs,nw,linhas,par:par.length};
+}
+const tema=()=>TEMAS[R2.i%TEMAS.length];
+const NOMES=["Domínio da escrita formal","Compreensão do tema e repertório","Organização dos argumentos","Coesão (conectivos)","Proposta de intervenção"];
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function tela(res){
+ const T=tema(),tx=R2.txt[R2.i]||'';
+ const ap=T.ap.map(a=>`<li>${esc(a)}</li>`).join('');
+ const hist=R2.h.slice(-5).reverse().map(h=>`<div class="x-rl"><span>${esc(h.t)}</span><b>${h.n}</b></div>`).join('');
+ return `<h2>Redação</h2>
+ <div class="x-card"><p class="x-tag">Tema ${R2.i%TEMAS.length+1} de ${TEMAS.length}</p><h3 style="margin-top:4px">${esc(T.t)}</h3>
+ <p class="x-mut" style="margin-bottom:6px">Para te ajudar a pensar:</p><ul class="x-red-ap">${ap}</ul>
+ <div class="x-row x-mt"><button class="x-b" onclick="UI.redSort()">🎲 Sortear outro tema</button><button class="x-b" onclick="UI.redLista()">📜 Ver todos</button></div></div>
+ <div class="x-card"><label class="x-lb" for="red-tx">Sua redação (separe os parágrafos com Enter)</label>
+ <textarea class="x-in x-red-tx" id="red-tx" rows="16" oninput="UI.redType(this)" placeholder="Escreva aqui. Texto dissertativo-argumentativo: introdução, 2 ou 3 parágrafos de desenvolvimento e conclusão com proposta de intervenção.">${esc(tx)}</textarea>
+ <p class="x-mut" id="red-ct" role="status">${cont(tx)}</p>
+ <div class="x-row"><button class="x-b x-p" onclick="UI.redCorr()">✨ Corrigir</button><button class="x-b" onclick="UI.redIA()">🤖 Copiar pedido pra corrigir com IA</button></div>
+ <p class="x-mut" id="red-ia" role="status"></p></div>
+ <div id="red-res">${res||''}</div>
+ ${hist?`<h3>Suas últimas notas</h3><div class="x-card">${hist}</div>`:''}`;
+}
+function cont(t){const n=(t.match(/[A-Za-zÀ-ÿ0-9]+/g)||[]).length,p=t.split(/\n/).filter(x=>x.trim()).length;return `${n} palavras · cerca de ${Math.ceil(n/10.5)} linhas · ${p} parágrafo(s)`}
+function resultado(r){
+ const bars=r.C.map((c,i)=>`<div class="x-rl"><span>C${i+1} · ${NOMES[i]}</span><b>${c}</b>${'<div class="x-bar"><i style="width:'+(c/2)+'%"></i></div>'}</div>`).join('');
+ const L=a=>a.map(x=>`<li>${esc(x)}</li>`).join('');
+ const E=r.errs.map(e=>`<li><mark class="x-hl x-hl-p">${esc(e.tr)}</mark> ${esc(e.msg)}</li>`).join('');
+ const frase=r.tot>=800?"Arrasou! 🌸 Tá no nível de nota alta.":r.tot>=600?"Muito bom! Mais uns ajustes e chega nos 800+. 💗":r.tot>=400?"Bom começo! Dá pra subir bastante com os pontos abaixo.":"Toda redação nota mil começou assim. Bora melhorar juntas! 🌱";
+ return `<div class="x-card x-red-nota"><p class="x-tag">Nota estimada (critérios do ENEM)</p><p class="x-big">${r.tot}<span> / 1000</span></p><p>${frase}</p>${bars}
+ <p class="x-mut" style="margin-top:10px">É uma estimativa automática para treinar. Para uma correção completa, use também o botão da IA ou mostre a um professor.</p></div>
+ ${r.pos.length?`<div class="x-card"><h3 style="margin-top:0">💚 Pontos positivos</h3><ul>${L(r.pos)}</ul></div>`:''}
+ ${r.mel.length?`<div class="x-card"><h3 style="margin-top:0">🌱 O que melhorar</h3><ul>${L(r.mel)}</ul></div>`:''}
+ <div class="x-card"><h3 style="margin-top:0">✏️ Erros e trechos para revisar</h3>${E?`<ul>${E}</ul>`:'<p class="x-mut">Nenhum dos erros comuns que eu procuro apareceu. Ainda assim, releia com calma: concordância e vírgulas pedem um olhar humano.</p>'}</div>`;
+}
+const UIx=window.UI;
+UIx.redacao=()=>{UIx._show(tela(),'red')};
+UIx.redType=el=>{R2.txt[R2.i]=el.value;rsave();const c=document.getElementById('red-ct');if(c)c.textContent=cont(el.value)};
+UIx.redSort=()=>{let n;do{n=Math.floor(Math.random()*TEMAS.length)}while(n===R2.i%TEMAS.length&&TEMAS.length>1);R2.i=n;rsave();UIx.redacao()};
+UIx.redPick=i=>{R2.i=i;rsave();UIx.redacao()};
+UIx.redLista=()=>UIx._show(`<button class="x-b x-back" onclick="UI.redacao()">← Redação</button><h2>Temas</h2>${TEMAS.map((t,i)=>`<button class="x-sc" style="width:100%;margin-bottom:8px;text-align:left" onclick="UI.redPick(${i})"><span class="x-sn">${i+1}. ${esc(t.t)}${R2.txt[i]?' ✍️':''}</span></button>`).join('')}`,'red');
+UIx.redCorr=()=>{const tx=(document.getElementById('red-tx')||{}).value||'';if(tx.trim().length<20){document.getElementById('red-res').innerHTML='<div class="x-card"><p>Escreva sua redação primeiro. 🌸</p></div>';return}
+ const r=analisa(tx,tema());R2.h.push({t:tema().t,n:r.tot,d:new Date().toISOString().slice(0,10)});R2.h=R2.h.slice(-30);rsave();
+ const box=document.getElementById('red-res');box.innerHTML=resultado(r);box.scrollIntoView({behavior:'smooth',block:'start'})};
+UIx.redIA=()=>{const tx=(document.getElementById('red-tx')||{}).value||'';const p=`Você é corretor de redação do ENEM. Corrija a redação abaixo com rigor e carinho.\nTema: "${tema().t}"\n\nDê: 1) nota de 0 a 200 em cada uma das 5 competências e a nota final; 2) pontos positivos; 3) cada erro de gramática, pontuação e concordância, com o trecho e a correção; 4) o que melhorar em argumentação, repertório, coesão e proposta de intervenção; 5) uma versão reescrita da introdução como exemplo.\n\nRedação:\n${tx}`;
+ const ok=()=>{document.getElementById('red-ia').textContent='Copiado! Cole no ChatGPT ou no Gemini e envie.'};
+ try{navigator.clipboard.writeText(p).then(ok,()=>fb(p))}catch(e){fb(p)}
+ function fb(t){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();try{document.execCommand('copy');ok()}catch(e){}a.remove()}};
+})();
+</script>
   <div id="sakura" aria-hidden="true"></div>
     <script>(function(){var b=document.getElementById("sakura");if(!b)return;var n=window.innerWidth<600?14:22;for(var i=0;i<n;i++){var p=document.createElement("i");p.className="pet";var s=.6+Math.random()*.8;p.style.left=(Math.random()*100)+"%";p.style.width=(14*s)+"px";p.style.height=(12*s)+"px";var d=9+Math.random()*10;p.style.animationDuration=d+"s,"+(2+Math.random()*3)+"s";p.style.animationDelay=(-Math.random()*d)+"s,0s";b.appendChild(p)}})();</script>
+    <script>(function(){var f=document.querySelectorAll("#fundo i"),k=0;if(!f.length)return;try{k=+(localStorage.getItem("fundo-i")||0)%f.length}catch(e){}f[k].classList.add("on");
+function go(n){f[k].classList.remove("on");k=(n+f.length)%f.length;f[k].classList.add("on");try{localStorage.setItem("fundo-i",k)}catch(e){}}
+setInterval(function(){if(!document.documentElement.classList.contains("paz"))go(k+1)},20000);
+window.UI.paz=function(on){document.documentElement.classList.toggle("paz",!!on)};window.UI.pazNext=function(){go(k+1)};})();</script>
     <script>if("serviceWorker" in navigator&&location.protocol.indexOf("http")===0){addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){})})}</script>
   </body>
 </html>
