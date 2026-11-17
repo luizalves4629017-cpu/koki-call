@@ -963,6 +963,39 @@ html.paz #fundo::after{background:transparent}
 @keyframes icF{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
 @media (prefers-reduced-motion:reduce){.x-ic-b{animation:none}}
 .paz-c .x-b{background:#fff!important;color:#b8385f!important;border:0!important;padding:10px 22px}
+.x-ckr{display:flex;gap:8px;align-items:stretch}
+.x-ckb{flex:0 0 52px;width:52px;justify-content:center;padding:0!important}
+.x-ckt{flex:1;flex-direction:column!important;align-items:flex-start!important;gap:2px!important}
+.x-ckn{font-weight:600}.x-ckm{font-size:12px}
+.x-as-ok{margin:4px 0 6px}.x-as-ok.on{background:var(--x-sage)!important}
+.x-as-tabs{display:grid!important;grid-template-columns:1fr 1fr;gap:6px}.x-as-tabs .x-tab{white-space:nowrap;font-size:15px}
+.x-card{background:var(--x-card);border:1px solid var(--x-line);border-radius:var(--r-l);padding:16px 18px;margin:10px 0}
+.x-as-aula p{margin:0 0 12px;line-height:1.7}.x-as-aula p:last-child{margin:0}
+.x-as-res{padding-left:34px!important}.x-as-res li{margin:6px 0;line-height:1.5}
+.x-wrap h3{margin:20px 0 6px;font-size:18px}
+details summary{cursor:pointer;color:#c2416f;font-weight:600;margin-top:6px}
+.x-as-alts{display:grid;gap:8px;margin-top:10px}
+.x-as-alt{display:flex;gap:10px;align-items:flex-start;text-align:left;width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--x-line);background:var(--x-card);color:var(--x-tx);font:inherit;cursor:pointer;line-height:1.45}
+.x-as-alt span{flex:0 0 26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#ffe1ec;color:#b8385f;font-weight:700;font-size:13px}
+.x-as-alt.ok{background:#e3f5e7;border-color:#7cc58d}.x-as-alt.bad{background:#fde3e3;border-color:#e59a9a}
+:root[data-theme="dark"] .x-as-alt.ok{background:#1f3a27}:root[data-theme="dark"] .x-as-alt.bad{background:#3d2023}
+.x-as-alt:disabled{cursor:default;opacity:1}
+.x-as-exp{margin-top:10px;padding:12px 14px;border-radius:12px;background:rgba(255,225,236,.6)}
+.x-as-exp p{margin:6px 0 0;line-height:1.6}
+:root[data-theme="dark"] .x-as-exp{background:rgba(80,40,60,.5)}
+.x-as-placar{text-align:center;font-size:16px}
+.x-rlb{width:100%;background:transparent;border:0;border-bottom:1px solid var(--x-line);font:inherit;color:inherit;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 4px}
+.x-rlb:last-child{border-bottom:0}.x-rlb:hover{background:rgba(255,225,236,.4)}.x-rlb small{display:block;font-size:12px;margin-top:2px}
+body>.x-nav{position:fixed!important;left:0;right:0;bottom:0;z-index:50;--x-card:#fff7fa;--x-line:#f3d6e0;--x-tx:#3b3842;--x-tx2:#615b6a;--x-lav2:#ffe1ec;background:rgba(255,247,250,.96)!important;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+:root[data-theme="dark"] body>.x-nav{--x-card:#29262f;--x-line:#3b3743;--x-tx:#ece8f1;--x-tx2:#b8b1c3;--x-lav2:#45333c;background:rgba(41,38,47,.96)!important}
+body>.x-nav button{font-family:inherit}
+#app{padding-bottom:96px}
+.x-mc summary{cursor:pointer;font-weight:700;font-size:17px;color:#b8385f;list-style:none}
+.x-mc summary::-webkit-details-marker{display:none}.x-mc summary::after{content:' ▾'}.x-mc[open] summary::after{content:' ▴'}
+.x-mc-p{margin-top:14px}.x-mc-p h4{margin:0 0 6px;font-size:16px}
+.x-mc-l{padding-left:22px;margin:8px 0}.x-mc-l li{margin:0 0 10px;line-height:1.45}.x-mc-l li span.x-mut{display:block;font-size:14px}
+.x-mc-f{font-size:12px;white-space:nowrap;color:#b8385f}
+.x-mc-d{background:rgba(255,225,236,.55);border-radius:10px;padding:10px 12px;margin:6px 0 0}
 </style>
   </head>
   <body>
@@ -2061,8 +2094,8 @@ UI.hug=el=>{for(let i=0;i<6;i++){const h=document.createElement('span');h.classN
 UI.subj=(id,tab=0)=>{const w=byId(id),pg=PG[id]||[];FE=null;
   show(`${btn('← Início','UI.home()',{c:'x-back'})}<h2 style="margin-top:8px">${w.icone} ${esc(w.nome)}</h2>${bar(wProg(w))}
   <div class="x-tabs" role="tablist">${['Conteúdo oficial','Tópicos'].map((t,i)=>`<button role="tab" class="x-tab" aria-selected="${i===tab}" onclick="UI.subj('${id}',${i})">${t}</button>`).join('')}</div>
-  ${tab===0?`<p class="x-mut">${['redenem','artes'].includes(id)?'Conteúdo cobrado no ENEM':'Programa do Edital 05/2026 CEV/UECE'} · toque para marcar como estudado</p><ul class="x-check">${pg.map((t,i)=>{const on=!!P.t[id+':'+i];
-    return `<li><button class="x-sc x-ck${on?' on':''}" aria-pressed="${on}" onclick="UI.tick('${id}',${i},this)"><span class="x-box">${on?'✓':''}</span><span>${esc(t)}</span></button></li>`}).join('')}</ul>`
+  ${tab===0?`<p class="x-mut">${['redenem','artes'].includes(id)?'Conteúdo cobrado no ENEM':'Programa do Edital 05/2026 CEV/UECE'} · toque no assunto para estudar, ou na caixinha para marcar como estudado</p><ul class="x-check">${pg.map((t,i)=>{const on=!!P.t[id+':'+i];
+    return `<li class="x-ckr"><button class="x-sc x-ck x-ckb${on?' on':''}" aria-pressed="${on}" aria-label="Marcar como estudado" onclick="UI.tick('${id}',${i},this)"><span class="x-box">${on?'✓':''}</span></button><button class="x-sc x-ck x-ckt" onclick="UI.assunto('${id}',${i})"><span class="x-ckn">${esc(t)}</span><span class="x-mut x-ckm">📖 Aula · 📝 Exercícios · 🎥 Vídeos · 📄 Provas ›</span></button></li>`}).join('')}</ul>`
   :`<div class="x-list">${w.fases.map((f,fi)=>{const d=P.d[id+'.'+fi];return `<button class="x-sc" onclick="UI.topic('${id}',${fi})"><span class="x-sn">${fi+1}. ${esc(f.titulo)}</span><span class="x-mut">${f.lessons.length} lições · ${f.cards.length} cartões · ${f.questions.length} questões${d!=null?' · melhor prática: '+d+'%':''}</span></button>`}).join('')}</div>`}
   <h2>Meus flashcards</h2><div id="fcs">${fcHTML(id)}</div>
   ${(DI[id]||[]).length?`<h2>Como aprender mais fácil</h2><ul class="x-tips">${DI[id].map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`:''}
@@ -2196,7 +2229,7 @@ document.addEventListener('keydown',e=>{const t=e.target.tagName;if(t==='TEXTARE
   if(/^[1-4]$/.test(e.key)){const b=app.querySelector(`[data-k="${e.key}"]:not(:disabled)`);if(b){e.preventDefault();b.click()}}
   else if(e.key==='Enter'&&!(t==='BUTTON'&&!e.target.disabled)){const b=app.querySelector('[data-enter]:not(:disabled)');if(b){e.preventDefault();b.click()}}});
 try{const d=document.documentElement.dataset.theme==='dark';document.getElementById('x-theme').textContent=d?'☀️':'🌙'}catch(e){}
-UI._show=show;window.UI=UI;UI.home();
+UI._show=show;UI._P=()=>P;UI._score=ok=>{P.a++;if(ok)P.r++;save()};UI._tickKey=k=>{if(P.t[k])delete P.t[k];else P.t[k]=1;save();return!!P.t[k]};window.UI=UI;UI.home();
 })();
     </script>
 <script>
@@ -2323,7 +2356,7 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 function tela(res){
  const T=tema(),tx=R2.txt[R2.i]||'';
  const ap=T.ap.map(a=>`<li>${esc(a)}</li>`).join('');
- const hist=R2.h.slice(-5).reverse().map(h=>`<div class="x-rl"><span>${esc(h.t)}</span><b>${h.n}</b></div>`).join('');
+ const hist=R2.h.map((h,k)=>[h,k]).slice(-5).reverse().map(([h,k])=>`<button class="x-rl x-rlb" onclick="UI.redVer(${k})"><span>${esc(h.t)}<small class="x-mut">${h.d?' · '+h.d.split('-').reverse().join('/'):''} · ver correção ›</small></span><b>${h.n}</b></button>`).join('');
  return `<h2>Redação</h2>
  <div class="x-card"><p class="x-tag">Tema ${R2.i%TEMAS.length+1} de ${TEMAS.length}</p><h3 style="margin-top:4px">${esc(T.t)}</h3>
  <p class="x-mut" style="margin-bottom:6px">Para te ajudar a pensar:</p><ul class="x-red-ap">${ap}</ul>
@@ -2334,7 +2367,7 @@ function tela(res){
  <div class="x-row"><button class="x-b x-p" onclick="UI.redCorr()">✨ Corrigir</button><button class="x-b" onclick="UI.redIA()">🤖 Copiar pedido pra corrigir com IA</button></div>
  <p class="x-mut" id="red-ia" role="status"></p></div>
  <div id="red-res">${res||''}</div>
- ${hist?`<h3>Suas últimas notas</h3><div class="x-card">${hist}</div>`:''}`;
+ ${hist?`<h3>Suas últimas notas</h3><div class="x-card">${hist}</div>${R2.h.length>5?`<button class="x-b" onclick="UI.redTodas()">📚 Ver todas as ${R2.h.length} redações</button>`:''}`:''}`;
 }
 function cont(t){const n=(t.match(/[A-Za-zÀ-ÿ0-9]+/g)||[]).length,p=t.split(/\n/).filter(x=>x.trim()).length;return `${n} palavras · cerca de ${Math.ceil(n/10.5)} linhas · ${p} parágrafo(s)`}
 function resultado(r){
@@ -2355,8 +2388,12 @@ UIx.redSort=()=>{let n;do{n=Math.floor(Math.random()*TEMAS.length)}while(n===R2.
 UIx.redPick=i=>{R2.i=i;rsave();UIx.redacao()};
 UIx.redLista=()=>UIx._show(`<button class="x-b x-back" onclick="UI.redacao()">← Redação</button><h2>Temas</h2>${TEMAS.map((t,i)=>`<button class="x-sc" style="width:100%;margin-bottom:8px;text-align:left" onclick="UI.redPick(${i})"><span class="x-sn">${i+1}. ${esc(t.t)}${R2.txt[i]?' ✍️':''}</span></button>`).join('')}`,'red');
 UIx.redCorr=()=>{const tx=(document.getElementById('red-tx')||{}).value||'';if(tx.trim().length<20){document.getElementById('red-res').innerHTML='<div class="x-card"><p>Escreva sua redação primeiro. 🌸</p></div>';return}
- const r=analisa(tx,tema());R2.h.push({t:tema().t,n:r.tot,d:new Date().toISOString().slice(0,10)});R2.h=R2.h.slice(-30);rsave();
+ const r=analisa(tx,tema());R2.h.push({t:tema().t,n:r.tot,d:new Date().toISOString().slice(0,10),x:tx,ti:R2.i%TEMAS.length});R2.h=R2.h.slice(-30);rsave();
  const box=document.getElementById('red-res');box.innerHTML=resultado(r);box.scrollIntoView({behavior:'smooth',block:'start'})};
+UIx.redVer=k=>{const e=R2.h[k];if(!e)return;let ti=e.ti!=null?e.ti:TEMAS.findIndex(t=>t.t===e.t);const T=TEMAS[ti]||{t:e.t,ap:[],kw:[]};const tx=e.x||(ti>=0?R2.txt[ti]:'')||'';
+ const corpo=tx?`<div class="x-card"><h3 style="margin-top:0">📝 O que você escreveu</h3>${tx.split(/\n/).filter(s=>s.trim()).map(s=>`<p style="text-indent:1.5em;line-height:1.7">${esc(s)}</p>`).join('')}</div>${resultado(analisa(tx,T))}`:'<div class="x-card"><p>Essa redação foi corrigida antes de o app guardar o texto. As próximas ficam salvas completinhas. 🌸</p></div>';
+ UIx._show(`<button class="x-b x-back" onclick="UI.redacao()">← Redação</button><h2>${esc(e.t)}</h2><p class="x-mut">Nota ${e.n}/1000${e.d?' · '+e.d.split('-').reverse().join('/'):''}</p>${corpo}${ti>=0?`<div class="x-row x-mt"><button class="x-b x-p" onclick="UI.redPick(${ti})">✍️ Reescrever esse tema</button></div>`:''}`,'red');try{scrollTo(0,0)}catch(_){}};
+UIx.redTodas=()=>UIx._show(`<button class="x-b x-back" onclick="UI.redacao()">← Redação</button><h2>Minhas redações</h2><div class="x-card">${R2.h.map((h,k)=>[h,k]).reverse().map(([h,k])=>`<button class="x-rl x-rlb" onclick="UI.redVer(${k})"><span>${esc(h.t)}<small class="x-mut">${h.d?' · '+h.d.split('-').reverse().join('/'):''} · ver correção ›</small></span><b>${h.n}</b></button>`).join('')}</div>`,'red');
 UIx.redIA=()=>{const tx=(document.getElementById('red-tx')||{}).value||'';const p=`Você é corretor de redação do ENEM. Corrija a redação abaixo com rigor e carinho.\nTema: "${tema().t}"\n\nDê: 1) nota de 0 a 200 em cada uma das 5 competências e a nota final; 2) pontos positivos; 3) cada erro de gramática, pontuação e concordância, com o trecho e a correção; 4) o que melhorar em argumentação, repertório, coesão e proposta de intervenção; 5) uma versão reescrita da introdução como exemplo.\n\nRedação:\n${tx}`;
  const ok=()=>{document.getElementById('red-ia').textContent='Copiado! Cole no ChatGPT ou no Gemini e envie.'};
  try{navigator.clipboard.writeText(p).then(ok,()=>fb(p))}catch(e){fb(p)}
@@ -2365,6 +2402,10 @@ UIx.redIA=()=>{const tx=(document.getElementById('red-tx')||{}).value||'';const 
 </script>
   <div id="sakura" aria-hidden="true"></div>
     <script>(function(){var b=document.getElementById("sakura");if(!b)return;var n=window.innerWidth<600?14:22;for(var i=0;i<n;i++){var p=document.createElement("i");p.className="pet";var s=.6+Math.random()*.8;p.style.left=(Math.random()*100)+"%";p.style.width=(14*s)+"px";p.style.height=(12*s)+"px";var d=9+Math.random()*10;p.style.animationDuration=d+"s,"+(2+Math.random()*3)+"s";p.style.animationDelay=(-Math.random()*d)+"s,0s";b.appendChild(p)}})();</script>
+    <script>(function(){var n=document.querySelector(".x-nav");if(n)document.body.appendChild(n)})();</script>
+    <script src="conteudo.js"></script>
+    <script src="maiscai.js"></script>
+    <script src="assunto.js"></script>
     <script>(function(){var f=document.querySelectorAll("#fundo i"),k=0;if(!f.length)return;try{k=+(localStorage.getItem("fundo-i")||0)%f.length}catch(e){}f[k].classList.add("on");
 function go(n){f[k].classList.remove("on");k=(n+f.length)%f.length;f[k].classList.add("on");try{localStorage.setItem("fundo-i",k)}catch(e){}}
 setInterval(function(){if(!document.documentElement.classList.contains("paz"))go(k+1)},20000);
