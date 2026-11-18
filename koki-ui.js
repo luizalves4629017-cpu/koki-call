@@ -72,7 +72,7 @@ function dot(){var d=document.getElementById('k-dot');if(d)d.hidden=!avisos().fi
 UI.avisos=function(){var a=avisos();show('<h2>🔔 Avisos</h2><div class="k-res">'+a.map(function(x){return'<button class="k-ra" onclick="'+x[2]+'"><span class="ic">'+x[0]+'</span><span>'+esc(x[1])+'</span></button>'}).join('')+'</div>'+(a.length?'':'<p class="x-mut">Tudo em dia. 🌸</p>'));mark('')};
 
 /* ---------- progresso e próximo assunto ---------- */
-function stats(){var p=P(),t=track(),ids=trIds(t),tot=0,chk=0;ids.forEach(function(id){(PG[id]||[]).forEach(function(_,i){tot++;if(p.t&&p.t[id+':'+i])chk++})});
+function EXN(){return track()==='enem'?'ENEM':'UECE'}function DAX(){return track()==='enem'?'do ENEM':'da UECE'}function stats(){var p=P(),t=track(),ids=trIds(t),tot=0,chk=0;ids.forEach(function(id){(PG[id]||[]).forEach(function(_,i){tot++;if(p.t&&p.t[id+':'+i])chk++})});
   return{tot:tot,chk:chk,pct:tot?Math.round(chk/tot*100):0,a:+p.a||0,r:+p.r||0,ac:p.a?Math.round(p.r/p.a*100):0,t:t}}
 function next(){var p=P(),l=jget(LAST,null),done=function(id,i){return p.t&&p.t[id+':'+i]};
   if(l&&PG[l.id]&&PG[l.id][l.i]!=null&&!done(l.id,l.i))return{id:l.id,i:l.i,t:PG[l.id][l.i],cont:1};
@@ -133,14 +133,14 @@ var NM={port:['portugu'],filo:['filosof'],socio:['sociolog'],mat:['matem'],bio:[
 function realHTML(id,cb){var key=NM[id];if(!key)return cb('');idx(function(L){var u=[],e=[];L.forEach(function(p){(p.materias||[]).forEach(function(m,k){var n=m.nome.toLowerCase();
   if(!key.some(function(x){return n.indexOf(x)>-1}))return;if(id==='edf'&&n.indexOf('física')>-1&&n.indexOf('educa')<0)return;if(id==='fis'&&n.indexOf('educa')>-1)return;
   if(p.exame==='UECE'&&n.indexOf('natureza')>-1)return;
-  (p.exame==='UECE'?u:e).push('<button class="x-b" onclick="UI.prova(\''+p.id+'\','+k+')">'+esc(p.nome)+' · '+esc(m.nome)+' (questões '+m.de+'–'+m.ate+')</button>')})});
+  if((track()==='enem')!==(p.exame!=='UECE'))return;(p.exame==='UECE'?u:e).push('<button class="x-b" onclick="UI.prova(\''+p.id+'\','+k+')">'+esc(p.nome)+' · '+esc(m.nome)+' (questões '+m.de+'–'+m.ate+')</button>')})});
   if(!u.length&&!e.length)return cb('');
   cb('<h3>🏫 Questões reais de provas oficiais</h3><div class="k-note"><span class="k-tag real">Provas oficiais</span> As provas oficiais não vêm separadas por assunto, então aqui ficam <b>todas as questões desta matéria</b> em cada prova. Você lê na prova, marca no cartão-resposta e corrige com o <b>gabarito oficial</b> (sem resolução comentada).</div>'
    +(u.length?'<p class="x-mut" style="margin:10px 0 6px">UECE</p><div class="k-prv">'+u.join('')+'</div>':'')+(e.length?'<p class="x-mut" style="margin:12px 0 6px">ENEM</p><div class="k-prv">'+e.join('')+'</div>':''))})}
 function extHTML(t,w){var nm=w?w.nome:'';return'<h3>🔎 Buscar na internet</h3><div class="k-res">'
-  +[['Questões da UECE sobre o assunto (QConcursos e site da UECE)','questões UECE "'+t+'" site:qconcursos.com OR site:uece.br'],['Busca geral: questões de vestibular UECE com gabarito','questões vestibular UECE '+t+' '+nm+' gabarito comentado']]
+  +(EXN()==='ENEM'?[['Questões do ENEM sobre o assunto (QConcursos e site do INEP)','questões ENEM "'+t+'" site:qconcursos.com OR site:gov.br/inep'],['Busca geral: questões do ENEM com gabarito','questões ENEM '+t+' '+nm+' gabarito comentado']]:[['Questões da UECE sobre o assunto (QConcursos e site da UECE)','questões UECE "'+t+'" site:qconcursos.com OR site:uece.br'],['Busca geral: questões de vestibular UECE com gabarito','questões vestibular UECE '+t+' '+nm+' gabarito comentado']])
    .map(function(x){return'<a class="k-ra" href="'+gg(x[1])+'" target="_blank" rel="noopener"><span class="ic">🔎</span><span>'+esc(x[0])+' ↗<span class="m">'+esc(x[1])+'</span></span></a>'}).join('')
-  +'<a class="k-ra" href="'+yt(t+' questão UECE resolvida')+'" target="_blank" rel="noopener"><span class="ic">🎥</span><span>Questões da UECE resolvidas em vídeo ↗<span class="m">'+esc(t)+' questão UECE resolvida</span></span></a></div>'}
+  +'<a class="k-ra" href="'+yt(t+' questão '+EXN()+' resolvida')+'" target="_blank" rel="noopener"><span class="ic">🎥</span><span>Questões '+DAX()+' resolvidas em vídeo ↗<span class="m">'+esc(t)+' questão '+EXN()+' resolvida</span></span></a></div>'}
 function qPage(id,t,back,own,head){build();var w=byId(id),r=related(id,t,own),mine=own?QB.filter(own):[];KUI._hl=r.k;
   var h='<button class="x-b x-back" onclick="'+back+'">← Voltar</button><p class="x-tag" style="margin-top:10px">'+(w?(w.icone||'')+' '+esc(w.nome):'')+'</p><h2 style="margin-top:4px">Questões sobre: '+esc(t)+'</h2>'
   +'<div class="k-note">As questões do app foram escritas <b>no estilo UECE</b> (4 alternativas, mesmo formato e assuntos do edital), com resolução. Não são questões de provas oficiais. As <b>questões reais</b> estão nas provas oficiais, logo abaixo. 💗</div>'
@@ -154,24 +154,24 @@ UI.qAssunto=function(id,i){var t=(PG[id]||[])[i]||'';qPage(id,t,'UI.assunto(\''+
 UI.qFase=function(id,fi){var w=byId(id),f=w&&w.fases[fi];if(!f)return;qPage(id,f.titulo,'UI.topic(\''+id+'\','+fi+')',function(o){return o.w===id&&o.fi===fi})};
 
 /* ---------- botão no fim de cada assunto ---------- */
-var qb=function(fn,t){return'<div class="k-qbtn"><div class="t"><b>🎯 Terminou este assunto?</b><small>Ache questões da UECE sobre “'+esc(t)+'”: do app (com resolução), das provas oficiais e na internet.</small></div><button class="k-btn" onclick="'+fn+'">Buscar questões da UECE sobre este assunto '+AR+'</button></div>'};
+var qb=function(fn,t){return'<div class="k-qbtn"><div class="t"><b>🎯 Terminou este assunto?</b><small>Ache questões '+DAX()+' sobre “'+esc(t)+'”: do app (com resolução), das provas oficiais e na internet.</small></div><button class="k-btn" onclick="'+fn+'">Buscar questões '+DAX()+' sobre este assunto '+AR+'</button></div>'};
 var app=function(){return document.getElementById('app')};
 wrap('assunto','materias',function(id,i){try{localStorage.setItem(LAST,JSON.stringify({id:id,i:i}))}catch(e){}var a=app();if(a)a.insertAdjacentHTML('beforeend',qb('UI.qAssunto(\''+id+'\','+i+')',(PG[id]||[])[i]||''));
-  var ok=a&&a.querySelector('.x-as-ok');if(ok&&ok.classList.contains('on'))ok.insertAdjacentHTML('afterend',' <button class="x-b k-asq" onclick="UI.qAssunto(\''+id+'\','+i+')">🎯 Buscar questões da UECE</button>')});
+  var ok=a&&a.querySelector('.x-as-ok');if(ok&&ok.classList.contains('on'))ok.insertAdjacentHTML('afterend',' <button class="x-b k-asq" onclick="UI.qAssunto(\''+id+'\','+i+')">🎯 Buscar questões '+DAX()+'</button>')});
 var _t=UI.topic;UI.topic=function(id,fi){var r=_t.apply(this,arguments);mark('materias');var w=byId(id),a=app();if(a&&w&&w.fases[fi])a.insertAdjacentHTML('beforeend',qb('UI.qFase(\''+id+'\','+fi+')',w.fases[fi].titulo));return r};
 var toastEl=document.createElement('div');toastEl.className='k-toast';toastEl.setAttribute('role','status');document.body.appendChild(toastEl);var TT=0;
 function toast(h){toastEl.innerHTML=h;toastEl.classList.add('on');clearTimeout(TT);TT=setTimeout(function(){toastEl.classList.remove('on')},7000)}
 KUI.toastOff=function(){toastEl.classList.remove('on')};
-function onDone(id,i){var p=P();if(!(p.t&&p.t[id+':'+i]))return;toast('<span>Assunto marcado como estudado! 💗</span><button onclick="KUI.toastOff();UI.qAssunto(\''+id+'\','+i+')">Buscar questões da UECE</button>')}
+function onDone(id,i){var p=P();if(!(p.t&&p.t[id+':'+i]))return;toast('<span>Assunto marcado como estudado! 💗</span><button onclick="KUI.toastOff();UI.qAssunto(\''+id+'\','+i+')">Buscar questões '+DAX()+'</button>')}
 var _as=UI.asTick;if(_as)UI.asTick=function(id,i,el){var r=_as.apply(this,arguments);onDone(id,i);var a=app(),b=a&&a.querySelector('.k-asq');var p=P();
-  if(p.t&&p.t[id+':'+i]){if(!b&&el)el.insertAdjacentHTML('afterend',' <button class="x-b k-asq" onclick="UI.qAssunto(\''+id+'\','+i+')">🎯 Buscar questões da UECE</button>')}else if(b)b.remove();return r};
+  if(p.t&&p.t[id+':'+i]){if(!b&&el)el.insertAdjacentHTML('afterend',' <button class="x-b k-asq" onclick="UI.qAssunto(\''+id+'\','+i+')">🎯 Buscar questões '+DAX()+'</button>')}else if(b)b.remove();return r};
 var _tk=UI.tick;if(_tk)UI.tick=function(id,i){var r=_tk.apply(this,arguments);onDone(id,i);return r};
 
 /* ---------- página Questões ---------- */
 UI.questoes=function(){build();var t=track(),p=P();
   var h='<h2>📝 Questões</h2><p class="x-mut">Escolha um assunto para ver as questões dele, ou use a busca lá em cima.</p>'
   +'<div class="k-res">'+(p.e&&p.e.length?'<button class="k-ra" onclick="UI.errors()"><span class="ic">📒</span><span><b>Caderno de erros</b><span class="m">'+p.e.length+' para revisar</span></span></button>':'')
-  +'<button class="k-ra" onclick="UI.provas()"><span class="ic">🏫</span><span><b>Questões reais: provas oficiais da UECE e do ENEM</b><span class="m">Com gabarito oficial</span></span></button>'
+  +'<button class="k-ra" onclick="UI.provas()"><span class="ic">🏫</span><span><b>Questões reais: provas oficiais '+DAX()+'</b><span class="m">Com gabarito oficial</span></span></button>'
   +'<button class="k-ra" onclick="UI.sim()"><span class="ic">✅</span><span><b>Simulado misturado</b><span class="m">10, 20 ou 40 questões</span></span></button></div>'
   +'<h3>Por matéria e assunto</h3><div class="k-list">'+trIds(t).map(function(id){var w=byId(id),pg=PG[id]||[];if(!pg.length)return'';
     return'<details class="x-card"><summary style="cursor:pointer;font-weight:600">'+(w.icone||'')+' '+esc(w.nome)+' <span class="x-mut">· '+pg.length+' assuntos</span></summary><div class="k-res" style="margin-top:10px">'
