@@ -5,7 +5,8 @@ var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){re
 var nl=function(s){return esc(s).replace(/\n/g,'<br>')};
 var LS='uece-quiz-progresso';
 function P(){try{return JSON.parse(localStorage.getItem(LS))||{}}catch(e){return{}}}
-var ST={};
+var EXK='agatha-exercicios',ST={};try{ST=JSON.parse(localStorage.getItem(EXK))||{}}catch(e){}
+function stSave(){try{localStorage.setItem(EXK,JSON.stringify(ST))}catch(e){}}
 function W(id){return(D.worlds||[]).find(function(w){return w.id===id})}
 function exOf(id,i){var c=cont(id,i);if(c&&c.exercicios&&c.exercicios.length)return c.exercicios;var w=W(id),ex=[];(w&&w.fases||[]).forEach(function(f){ex=ex.concat((f.questions||[]).map(function(q){return{q:q.q,a:q.a,c:q.c,res:q.exp}}))});return ex.slice(0,8)}
 function cont(id,i){var c=(window.CONT||{})[id];return c&&c[i]?c[i]:null}
@@ -52,10 +53,10 @@ UI.assunto=function(id,i,tab){tab=tab||0;var w=W(id),t=(PG[id]||[])[i]||'',c=con
   }
   window.UI._show(h,'home');try{window.scrollTo(0,0)}catch(e){}
 };
-UI.asResp=function(id,i,k,j){var key=id+':'+i;ST[key]=ST[key]||{};if(ST[key][k]!=null)return;ST[key][k]=j;
+UI.asResp=function(id,i,k,j){var key=id+':'+i;ST[key]=ST[key]||{};if(ST[key][k]!=null)return;ST[key][k]=j;stSave();
   var q=exOf(id,i)[k];if(window.UI._score&&q)window.UI._score(j===q.c);
   var y=window.scrollY;UI.assunto(id,i,1);window.scrollTo(0,y)};
-UI.asReset=function(id,i){ST[id+':'+i]={};UI.assunto(id,i,1)};
+UI.asReset=function(id,i){ST[id+':'+i]={};stSave();UI.assunto(id,i,1)};
 UI.asTick=function(id,i,el){if(!window.UI._tickKey)return;var on=window.UI._tickKey(id+':'+i);el.classList.toggle('on',on);el.textContent=on?'✓ Estudado':'Marcar como estudado'};
 })();
 (function(){var UI=window.UI;if(!UI)return;
