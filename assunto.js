@@ -140,7 +140,7 @@ var om=UI.metodos;if(om)UI.metodos=function(){om.apply(this,arguments);var M=win
 .ag-worked{background:#f4edf9;border-left:5px solid #8d64a9;padding:18px;border-radius:12px;margin:20px 0}
 .ag-worked ol{padding-left:24px}
 .ag-check{border:1px solid #b9a1cc;border-radius:12px;padding:15px;margin:18px 0}
-.ag-check summary{cursor:pointer;font-weight:700}
+.ag-check summary{cursor:pointer;font-weight:700;display:list-item!important;position:static!important;float:none!important;width:auto!important;max-width:100%!important;overflow-wrap:anywhere!important;white-space:normal!important;line-height:1.6!important;color:#382a40!important}.ag-check{clear:both;display:block;overflow:visible!important}.ag-check p{color:#382a40!important}
 .ag-note{font-size:12px!important;color:#716677}
 @media(max-width:480px){.ag-circle{width:56%;height:180px}.ag-venn{height:205px}.ag-only-a{left:13%}.ag-only-b{right:13%}.ag-both{top:82px}.ag-only-a,.ag-only-b{top:95px;font-size:12px}.ag-deep-lesson p,.ag-deep-lesson li{font-size:15px}}
 `;document.head.appendChild(st)})();
