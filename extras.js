@@ -96,12 +96,12 @@ UI.prova=function(id,mat){loadIdx(function(){var p=pv(id);if(!p)return UI.provas
   h+='<div class="x-cr"><div class="x-row" style="justify-content:space-between"><b>📝 Cartão-resposta'+(m?' · '+esc(m.nome):'')+'</b><span class="x-mut" id="x-crn"></span></div><div class="x-crg">';
   for(var q=de;q<=ate;q++){h+='<div class="x-crq"><span>'+q+'</span>';for(var a=0;a<(p.alts||5);a++)h+='<button data-q="'+q+'" data-a="'+LET[a]+'" class="'+(st.r[q]===LET[a]?'on':'')+'" onclick="UI.pMark(\''+id+'\','+q+',\''+LET[a]+'\',this)">'+LET[a]+'</button>';h+='</div>'}
   h+='</div><div class="x-row x-mt"><button class="x-b x-p" onclick="UI.pFim(\''+id+'\')">✅ Terminar e corrigir</button><button class="x-b" onclick="UI.pZerar(\''+id+'\')">↺ Recomeçar</button></div></div>';
-  go(h,'prov');cnt(id);if(p.fonte_prova)UI.provaPaginasIniciar(p.fonte_prova,p1,p.paginas)})};
+  go(h,'prov');cnt(id);if(p.fonte_prova)UI.provaPaginasIniciar(p.fonte_prova,p1,p.paginas,p.id)})};
 
 /* Renderização real de páginas de PDF. O iframe foi removido porque não exibia páginas em alguns navegadores. */
 var _provaPdf={url:'',page:1,total:1,doc:null,token:0};
-UI.provaPaginasIniciar=function(url,page,total){
- _provaPdf={url:url,page:page,total:total,doc:null,token:(_provaPdf.token||0)+1};
+UI.provaPaginasIniciar=function(url,page,total,id){
+ _provaPdf={url:url,page:page,total:total,id:id,doc:null,token:(_provaPdf.token||0)+1};
  UI.provaPagina(0);
 };
 UI.provaPagina=function(delta){
@@ -130,6 +130,10 @@ UI.provaPagina=function(delta){
    out.appendChild(canvas);
    return page.render({canvasContext:canvas.getContext('2d'),viewport:viewport}).promise.then(function(){if(token===st.token&&msg)msg.textContent='Página '+st.page+' carregada · imagem do caderno oficial'});
   }).catch(function(){fallback()});
+ }
+ if(st.id==='uece-2026-1-f1'){
+  var local='provas/paginas/uece-2026-1-f1/pagina-'+String(st.page).padStart(2,'0')+'.jpg';
+  var im=document.createElement('img');im.alt='Página '+st.page+' do caderno oficial UECE 2026.1';im.style.cssText='width:100%;height:auto;display:block;border-radius:10px;background:white';im.onload=function(){if(token===st.token&&msg)msg.textContent='Página '+st.page+' da prova oficial';};im.onerror=function(){if(token===st.token)fallback()};out.appendChild(im);im.src=local;return;
  }
  fallback();return; // PDF oficial direto: evita bloqueios CORS do PDF.js em servidores externos
  if(window.pdfjsLib){render();return}
