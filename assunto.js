@@ -32,6 +32,7 @@ UI.assunto=function(id,i,tab){tab=tab||0;var w=W(id),t=(PG[id]||[])[i]||'',c=con
    +'<div class="x-tabs x-as-tabs" role="tablist">'+tabs.map(function(n,k){return'<button role="tab" class="x-tab" aria-selected="'+(k===tab)+'" onclick="UI.assunto(\''+id+'\','+i+','+k+')">'+n+'</button>'}).join('')+'</div>';
   var busca=(c&&c.busca)||('aula '+t+' '+(w?w.nome:'')+' ENEM');
   if(tab===0){
+    if(c && /conjuntos/i.test(t) && /matem/i.test(w?w.nome:'')){h+='<section class="ag-deep-lesson"><div class="ag-kicker">MATEMÁTICA • DO ZERO</div><h3>Conjuntos: entenda antes de decorar</h3><p>Imagine duas listas de convidados: a lista A tem Ana, Bia e Caio; a lista B tem Bia, Caio e Davi. Um <b>conjunto</b> é apenas uma coleção de elementos. Usamos chaves para mostrar quem faz parte dela.</p><div class="ag-visual"><div class="ag-venn"><div class="ag-circle ag-a">A</div><div class="ag-circle ag-b">B</div><span class="ag-only-a">Ana</span><span class="ag-both">Bia<br>Caio</span><span class="ag-only-b">Davi</span></div><small>Diagrama ilustrativo: a região do meio contém quem aparece nas duas listas.</small></div><h4>1. Interseção (∩): quem está nas duas listas?</h4><p>Bia e Caio aparecem em A <b>e</b> em B. Logo, A ∩ B = {Bia, Caio}. A palavra-chave é <b>e</b>: só entram os elementos em comum.</p><h4>2. União (∪): quem está em pelo menos uma lista?</h4><p>Reunimos todos, sem repetir ninguém: A ∪ B = {Ana, Bia, Caio, Davi}. A palavra-chave é <b>ou</b>: basta pertencer a uma das listas.</p><h4>3. Diferença (−): quem está só em A?</h4><p>A − B = {Ana}, porque Ana está em A, mas não em B. Atenção: A − B pode ser diferente de B − A.</p><div class="ag-worked"><b>📝 Questão resolvida, passo a passo</b><p>Em uma turma de 100 alunos, 60 gostam de futebol, 50 gostam de vôlei e 20 gostam dos dois. Quantos não gostam de nenhum?</p><ol><li><b>Passo 1:</b> some os grupos: 60 + 50 = 110.</li><li><b>Passo 2:</b> os 20 que gostam dos dois foram contados duas vezes. Retire uma contagem: 110 − 20 = 90.</li><li><b>Passo 3:</b> 90 gostam de pelo menos um esporte. Então 100 − 90 = <b>10 alunos</b> não gostam de nenhum.</li></ol><p><b>Resposta: 10.</b> Fórmula: n(A ∪ B) = n(A) + n(B) − n(A ∩ B).</p></div><details class="ag-check"><summary>💡 Confira se entendeu: se A = {1, 2, 3} e B = {3, 4}, qual é A ∩ B?</summary><p>A interseção é <b>{3}</b>, porque 3 é o único elemento presente nos dois conjuntos.</p></details><p class="ag-note">Este é um exemplo didático criado para a aula, não uma reprodução de prova oficial.</p></section>';} 
     if(c){h+='<section class="ag-lesson-intro"><span>GUIA DE ESTUDO</span><h3>Vamos por partes</h3><p>Leia com calma. Cada bloco apresenta uma ideia; depois, use o resumo e o exemplo para fixar.</p></section>'
       +'<div class="ag-lesson-flow">'+c.aula.map(function(p,k){return lessonBlock(p,k)}).join('')+'</div>'
       +'<h3 class="ag-section-title">📌 O que vale guardar</h3><ul class="x-card x-as-res">'+c.resumo.map(function(p){return'<li>'+nl(p)+'</li>'}).join('')+'</ul>';
@@ -112,3 +113,34 @@ var om=UI.metodos;if(om)UI.metodos=function(){om.apply(this,arguments);var M=win
   a.insertAdjacentHTML('afterbegin','<div style="height:0"></div>');var h2=a.querySelector('h2');
   if(h2&&h2.nextSibling){var d=document.createElement('div');d.innerHTML=s;a.appendChild(d)}else a.insertAdjacentHTML('beforeend',s)};
 })();
+
+(function(){var st=document.createElement('style');st.textContent=`
+.ag-lesson-intro,.ag-exercise-intro{background:#fff!important;color:#24212a!important}
+.ag-lesson-intro h3,.ag-exercise-intro h3{color:#37283b!important}
+.ag-lesson-intro p,.ag-exercise-intro p{color:#4e4654!important;font-size:15px!important}
+.ag-lesson-paragraph{background:#f8f5fa!important;border-color:#e5dce9!important}
+.ag-lesson-paragraph>div{color:#29232e!important;font-size:16px!important;line-height:1.8!important}
+.ag-lesson-number{color:#51336a!important}
+.ag-question-card{background:#30212d!important;color:#fff!important}
+.ag-question-prompt{font-size:17px!important}
+.ag-question-meta{color:#f4c8e5!important}
+.ag-answer-hint{background:#fff!important;color:#3d3041!important;font-size:14px!important}
+.ag-deep-lesson{background:#fff;color:#29232e;padding:clamp(18px,3vw,30px);border-radius:20px;margin:14px 0;border:1px solid #e8deea}
+.ag-deep-lesson h3{font-size:26px;color:#3d2850;margin:8px 0 14px}
+.ag-deep-lesson h4{font-size:19px;color:#4a2c60;margin:22px 0 9px}
+.ag-deep-lesson p,.ag-deep-lesson li{font-size:16px;line-height:1.85}
+.ag-kicker{font-size:12px;letter-spacing:.12em;color:#715080;font-weight:700}
+.ag-visual{background:#f7f1fa;border-radius:16px;padding:20px;margin:20px 0;text-align:center}
+.ag-visual small{display:block;color:#54475d;margin-top:12px;font-size:13px}
+.ag-venn{position:relative;height:230px;max-width:440px;margin:auto}
+.ag-circle{position:absolute;top:12px;width:215px;height:205px;border:3px solid #7c5aa0;border-radius:50%;display:flex;align-items:flex-start;justify-content:center;padding-top:16px;font-size:19px;font-weight:bold;background:#aa88d333;color:#442b5e}
+.ag-a{left:4%}.ag-b{right:4%;border-color:#d36d91;background:#ed98b833;color:#79344d}
+.ag-only-a,.ag-only-b,.ag-both{position:absolute;top:105px;z-index:2;font-size:15px;font-weight:700;color:#302239}
+.ag-only-a{left:18%}.ag-only-b{right:18%}.ag-both{left:50%;transform:translateX(-50%);top:93px}
+.ag-worked{background:#f4edf9;border-left:5px solid #8d64a9;padding:18px;border-radius:12px;margin:20px 0}
+.ag-worked ol{padding-left:24px}
+.ag-check{border:1px solid #b9a1cc;border-radius:12px;padding:15px;margin:18px 0}
+.ag-check summary{cursor:pointer;font-weight:700}
+.ag-note{font-size:12px!important;color:#716677}
+@media(max-width:480px){.ag-circle{width:56%;height:180px}.ag-venn{height:205px}.ag-only-a{left:13%}.ag-only-b{right:13%}.ag-both{top:82px}.ag-only-a,.ag-only-b{top:95px;font-size:12px}.ag-deep-lesson p,.ag-deep-lesson li{font-size:15px}}
+`;document.head.appendChild(st)})();
