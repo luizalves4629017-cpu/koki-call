@@ -66,6 +66,8 @@ UI.tClose=function(){var o=document.getElementById('x-tov');if(o)o.style.display
 var PK='agatha-provas',PR=get(PK,{}),IDX=null;
 function psave(){put(PK,PR)}
 var PB=window.PROVAS_BASE||'';
+var official=function(p){return p.exame==='ENEM'?'https://www.gov.br/inep/pt-br/areas-de-atuacao/avaliacao-e-exames-educacionais/enem/provas-e-gabaritos':'https://www.cev.uece.br/'};
+
 function loadIdx(cb){if(IDX)return cb(IDX);if(window.PROVAS_IDX){IDX=window.PROVAS_IDX;return cb(IDX)}fetch('provas/index.json').then(function(r){return r.json()}).then(function(j){IDX=j;cb(j)}).catch(function(){cb([])})}
 function pv(id){return(IDX||[]).find(function(p){return p.id===id})}
 function score(p,st){var ok=0,tot=0,pm={};(p.materias||[{nome:'Geral',de:1,ate:p.questoes}]).forEach(function(m){pm[m.nome]={ok:0,tot:0}});
@@ -79,7 +81,7 @@ UI.provas=function(){loadIdx(function(L){var by={};L.forEach(function(p){(by[p.e
   Object.keys(by).forEach(function(ex){h+='<h3>'+(ex==='UECE'?'🏫 UECE':'📘 ENEM')+'</h3>';
     by[ex].forEach(function(p){var st=PR[p.id],n=st?Object.keys(st.r||{}).length:0,s=st&&st.fim?score(p,st):null;
       h+='<div class="x-card x-pv"><div><b>'+esc(p.nome)+'</b><p class="x-mut" style="margin:4px 0">'+p.questoes+' questões · '+dur(p.tempo_min)+(s?' · <b>'+s.ok+'/'+s.tot+' acertos</b>':n?' · '+n+' respondidas':'')+'</p></div>'
-      +'<div class="x-row"><button class="x-b x-p" onclick="UI.prova(\''+p.id+'\')">'+(n&&!s?'Continuar':s?'Ver resultado':'Fazer prova')+'</button><a class="x-b" href="'+esc(PB+p.pdf)+'" target="_blank" rel="noopener">🖨️ PDF</a></div></div>'})});
+      +'<div class="x-row"><button class="x-b x-p" onclick="UI.prova(\''+p.id+'\')">'+(n&&!s?'Continuar':s?'Ver resultado':'Fazer prova')+'</button><a class="x-b" href="'+esc(official(p))+'" target="_blank" rel="noopener">📄 Prova oficial</a></div></div>'})});
   h+='<h3>🖨️ Listas pra imprimir</h3><p class="x-mut">Exercícios de cada matéria com gabarito no final. Toque, depois em Imprimir (ou Salvar como PDF).</p><div class="x-tpre">'
    +(D.worlds||[]).map(function(w){return'<button class="x-b" onclick="UI.imprimir(\''+w.id+'\')">'+(w.icone||'')+' '+esc(w.nome)+'</button>'}).join('')+'</div>';
   go(h,'prov')})};
@@ -88,11 +90,10 @@ UI.prova=function(id,mat){loadIdx(function(){var p=pv(id);if(!p)return UI.provas
   var M=p.materias||[],m=mat!=null?M[mat]:null,R=rng(p),de=m?m.de:R[0],ate=m?m.ate:R[1];
   var p1=m?(p.q2p[de]||1):1,p2=m&&ate<R[1]?(p.q2p[ate+1]||p.paginas):p.paginas;
   var h='<button class="x-b x-back" onclick="UI.provas()">← Provas</button><h2>'+esc(p.nome)+'</h2>'
-   +'<div class="x-row"><button class="x-b" onclick="UI.tSet('+(m?Math.max(10,Math.round((p.tempo_min||240)*(ate-de+1)/p.questoes)):(p.tempo_min||240))+',\''+esc(p.nome).replace(/'/g,'')+'\');UI.tStart()">⏱ Iniciar tempo '+(m?'da parte':'oficial')+'</button><a class="x-b" href="'+esc(PB+p.pdf)+'" target="_blank" rel="noopener">🖨️ Imprimir PDF</a></div>'
+   +'<div class="x-row"><button class="x-b" onclick="UI.tSet('+(m?Math.max(10,Math.round((p.tempo_min||240)*(ate-de+1)/p.questoes)):(p.tempo_min||240))+',\''+esc(p.nome).replace(/'/g,'')+'\');UI.tStart()">⏱ Iniciar tempo '+(m?'da parte':'oficial')+'</button><a class="x-b" href="'+esc(official(p))+'" target="_blank" rel="noopener">📄 Consultar PDF oficial</a></div>'
    +(M.length>1?'<div class="x-tpre" style="margin-top:10px"><button class="x-b'+(m?'':' x-p')+'" onclick="UI.prova(\''+id+'\')">Prova inteira</button>'+M.map(function(x,k){return'<button class="x-b'+(mat===k?' x-p':'')+'" onclick="UI.prova(\''+id+'\','+k+')">'+esc(x.nome)+' ('+x.de+'–'+x.ate+')</button>'}).join('')+'</div>':'')
-   +'<p class="x-mut">Leia na prova e marque no cartão-resposta embaixo. Toque numa página para ampliar.</p><div class="x-pgs">';
-  for(var i=p1;i<=p2;i++)h+='<img loading="lazy" src="'+PB+'provas/'+id+'/p'+i+'.jpg" alt="Página '+i+' da prova" onclick="window.open(this.src,\'_blank\')">';
-  h+='</div><div class="x-cr"><div class="x-row" style="justify-content:space-between"><b>📝 Cartão-resposta'+(m?' · '+esc(m.nome):'')+'</b><span class="x-mut" id="x-crn"></span></div><div class="x-crg">';
+   +'<div class="x-card" style="margin:14px 0;background:#fff;color:#29232d"><h3 style="color:#392c44">📄 Caderno oficial da prova</h3><p>As imagens desta prova ainda não estão disponíveis no aplicativo. Para não mostrar páginas quebradas ou inventadas, consulte o PDF verdadeiro no portal oficial e marque suas respostas no cartão abaixo.</p><p><a class="x-b x-p" href="'+esc(official(p))+'" target="_blank" rel="noopener">Abrir portal oficial de provas e gabaritos ↗</a></p><p style="font-size:13px">No portal, selecione o ano e o caderno correspondente. Use a opção de imprimir ou salvar como PDF do próprio documento oficial.</p></div>';
+  h+='<div class="x-cr"><div class="x-row" style="justify-content:space-between"><b>📝 Cartão-resposta'+(m?' · '+esc(m.nome):'')+'</b><span class="x-mut" id="x-crn"></span></div><div class="x-crg">';
   for(var q=de;q<=ate;q++){h+='<div class="x-crq"><span>'+q+'</span>';for(var a=0;a<(p.alts||5);a++)h+='<button data-q="'+q+'" data-a="'+LET[a]+'" class="'+(st.r[q]===LET[a]?'on':'')+'" onclick="UI.pMark(\''+id+'\','+q+',\''+LET[a]+'\',this)">'+LET[a]+'</button>';h+='</div>'}
   h+='</div><div class="x-row x-mt"><button class="x-b x-p" onclick="UI.pFim(\''+id+'\')">✅ Terminar e corrigir</button><button class="x-b" onclick="UI.pZerar(\''+id+'\')">↺ Recomeçar</button></div></div>';
   go(h,'prov');cnt(id)})};
