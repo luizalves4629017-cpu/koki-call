@@ -58,7 +58,7 @@
       "#agatha-momento-especial .am-phase{font-size:12px;color:#887b94;margin:0 0 22px}",
       "#agatha-momento-especial .am-message{font-size:16px;line-height:1.75;color:#51465b;margin:0 auto 26px;max-width:410px}",
       "#agatha-momento-especial .am-sign{font-size:13px;color:#8a719f;margin:0 0 22px}",
-      "#agatha-momento-especial button{border:0;border-radius:999px;padding:14px 24px;background:#76539a;color:white;font:600 14px inherit;cursor:pointer;box-shadow:0 8px 22px rgba(118,83,154,.23)}",
+      "#agatha-momento-especial button{border:0;border-radius:999px;padding:14px 24px;background:#76539a;color:white;font:600 14px/1.2 Geist,system-ui,sans-serif;cursor:pointer;box-shadow:0 8px 22px rgba(118,83,154,.23)}",
       "#agatha-momento-especial button:focus-visible{outline:3px solid #c5a8e8;outline-offset:4px}",
       "@media(prefers-reduced-motion:no-preference){#agatha-momento-especial .am-card{animation:am-in .45s ease-out}@keyframes am-in{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}}"
     ].join("");
