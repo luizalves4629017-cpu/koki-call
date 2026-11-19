@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "description": "Catálogo de questões oficiais com validação obrigatória de prova, número, página, assunto e gabarito. Entradas não verificadas não devem ser exibidas como questões classificadas.",
+  "sources": [
+    {
+      "exam": "ENEM",
+      "year": 2024,
+      "day": 1,
+      "booklet": "Caderno 1 Azul",
+      "pdf": "https://download.inep.gov.br/enem/provas_e_gabaritos/2024_PV_impresso_D1_CD1.pdf",
+      "answerKey": "https://download.inep.gov.br/enem/provas_e_gabaritos/2024_GB_impresso_D1_CD1.pdf",
+      "ranges": [
+        {
+          "from": 1,
+          "to": 45,
+          "area": "Linguagens"
+        },
+        {
+          "from": 46,
+          "to": 90,
+          "area": "Ciências Humanas"
+        }
+      ]
+    },
+    {
+      "exam": "ENEM",
+      "year": 2024,
+      "day": 2,
+      "booklet": "Caderno 5 Amarelo",
+      "pdf": "https://download.inep.gov.br/enem/provas_e_gabaritos/2024_PV_impresso_D2_CD5.pdf",
+      "ranges": [
+        {
+          "from": 91,
+          "to": 135,
+          "area": "Ciências da Natureza"
+        },
+        {
+          "from": 136,
+          "to": 180,
+          "area": "Matemática"
+        }
+      ]
+    }
+  ],
+  "questions": [],
+  "requiredFields": [
+    "exam",
+    "year",
+    "booklet",
+    "questionNumber",
+    "pdfPage",
+    "subjectId",
+    "topicId",
+    "answer",
+    "verifiedBySource"
+  ]
+}
