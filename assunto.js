@@ -37,6 +37,13 @@ UI.assunto=function(id,i,tab){tab=tab||0;var w=W(id),t=(PG[id]||[])[i]||'',c=con
        +q.a.map(function(a,j){var cls='';if(r!=null){if(j===q.c)cls=' ok';else if(j===r)cls=' bad'}
          return'<button class="x-as-alt'+cls+'"'+(r!=null?' disabled':'')+' onclick="UI.asResp(\''+id+'\','+i+','+k+','+j+')"><span>'+LET[j]+'</span>'+esc(a)+'</button>'}).join('')+'</div>'
        +(r!=null?'<div class="x-as-exp '+(r===q.c?'ok':'bad')+'"><b>'+(r===q.c?'✅ Acertou!':'❌ Resposta certa: '+LET[q.c])+'</b><p>'+nl(q.res||'')+'</p></div>':'')+'</div>'});
+    if(c && c.resumo && c.resumo.length){
+      var tips=c.resumo.slice(),start=(new Date().getDate()+i)%tips.length;
+      tips=tips.slice(start).concat(tips.slice(0,start)).slice(0,Math.min(5,tips.length));
+      h+='<section class="ag-active-recall"><div class="ag-recall-head"><span>🌱 REVISÃO ATIVA</span><h3>Mais um jeito de fixar o conteúdo</h3><p>Antes de revelar, tente explicar a ideia com suas próprias palavras. São desafios extras, além das questões de múltipla escolha.</p></div>'
+       +tips.map(function(t,k){return '<details class="ag-recall-card"><summary><b>Desafio '+(k+1)+'</b><span>Explique esta ideia sem consultar a aula</span></summary><p>'+nl(t)+'</p></details>'}).join('')
+       +'</section>';
+    }
     h+='<div class="x-row x-mt"><button class="x-b" onclick="UI.asReset(\''+id+'\','+i+')">↺ Refazer</button><button class="x-b" onclick="UI.assunto(\''+id+'\','+i+',0)">📖 Rever a aula</button></div>';
   }else if(tab===2){
     h+='<p class="x-mut">Abre no YouTube com a busca pronta. Dica: assista em 1,25x e pause para anotar.</p><div class="x-list">'
@@ -58,6 +65,13 @@ UI.asResp=function(id,i,k,j){var key=id+':'+i;ST[key]=ST[key]||{};if(ST[key][k]!
   var y=window.scrollY;UI.assunto(id,i,1);window.scrollTo(0,y)};
 UI.asReset=function(id,i){ST[id+':'+i]={};stSave();UI.assunto(id,i,1)};
 UI.asTick=function(id,i,el){if(!window.UI._tickKey)return;var on=window.UI._tickKey(id+':'+i);el.classList.toggle('on',on);el.textContent=on?'✓ Estudado':'Marcar como estudado'};
+})();
+
+/* Revisão ativa complementar — respeita os cartões e tokens visuais existentes. */
+(function(){
+ var s=document.createElement('style');
+ s.textContent='.ag-active-recall{margin:22px 0}.ag-recall-head{margin:0 0 10px}.ag-recall-head>span{font-size:10px;letter-spacing:.13em;font-weight:700;color:#9275aa}.ag-recall-head h3{margin:5px 0;font-size:17px}.ag-recall-head p{margin:0;color:var(--text-secondary,#777);font-size:13px;line-height:1.55}.ag-recall-card{margin:8px 0;border:1px solid var(--stroke-primary,#ddd);border-radius:14px;background:var(--mat-regular,#fff);padding:13px 15px}.ag-recall-card summary{cursor:pointer;list-style:none;display:grid;gap:4px}.ag-recall-card summary::-webkit-details-marker{display:none}.ag-recall-card summary b{font-size:13px}.ag-recall-card summary span{font-size:12px;color:var(--text-secondary,#777)}.ag-recall-card[open]{border-color:#cdb9df}.ag-recall-card p{font-size:13px;line-height:1.65;margin:12px 0 2px;color:var(--text-primary,#333)}';
+ document.head.appendChild(s);
 })();
 (function(){var UI=window.UI;if(!UI)return;
 var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
