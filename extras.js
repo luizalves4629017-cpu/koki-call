@@ -10,7 +10,7 @@ var LET='ABCDE';
 
 /* ---------- 1. Salvamento ---------- */
 try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
-var KEYS=['uece-quiz-progresso','agatha-exercicios','redacao-agatha','agatha-provas','agatha-timer','fundo-i','hark-theme'];
+var KEYS=['uece-quiz-progresso','agatha-exercicios','agatha-questoes','redacao-agatha','agatha-provas','agatha-timer','fundo-i','hark-theme'];
 var okStore=put('agatha-teste',1);
 UI.backup=function(){var o={app:'agatha',v:1,em:new Date().toISOString(),d:{}};
   KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v!=null)o.d[k]=v});
