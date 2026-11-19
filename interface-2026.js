@@ -25,7 +25,7 @@ UI.timer=function(){
 var css=document.createElement('style');css.textContent=`
 html:not(.ag-ready) #app{visibility:hidden}
 html.ag-ready #app{visibility:visible}
-.x-head,.x-ics,.foot{display:none!important}
+.x-head,.x-ics,.foot,.k-side,.k-top,.k-bnav,.k-ov{display:none!important}.k-mainw,.page,.wrap,main,.main{margin-left:0!important;width:100%!important;max-width:none!important;min-width:0!important}.k-mainw{display:block!important}.page{padding:0!important}body{background:#f9edf0!important}#app{width:100%!important}
 #app{max-width:900px;margin:0 auto;padding-bottom:94px}
 .ag-home{max-width:680px;margin:0 auto;padding:16px 4px 30px;color:#4a253a}
 .ag-welcome{display:flex;justify-content:space-between;align-items:center}
@@ -68,5 +68,6 @@ html.ag-ready #app{visibility:visible}
 .ag-reset{background:none;border:0;color:#c9bde5;margin:15px}
 @media(min-width:900px){.ag-nav{left:50%;transform:translateX(-50%);max-width:720px;border-radius:20px 20px 0 0}}
 `;document.head.appendChild(css);
+UI.dash=function(){UI.home()};
 UI.home();document.documentElement.classList.add('ag-ready');
 })();
