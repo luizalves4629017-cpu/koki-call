@@ -116,11 +116,19 @@ function build(){if(QB)return;QB=[];TOP=[];var seen={},C=window.CONT||{};
 var STOP=' para pelo pela como sobre entre com sem dos das nos nas uma uns umas que suas seus sua seu este esta isso aos the and estudo estudos conceito conceitos nocoes nocao introducao geral gerais tipos principais basico basicos aplicacoes aplicacao '; 
 function kws(t){var o=[];norm(t).split(/[^a-z0-9]+/).forEach(function(x){if(x.length<4||STOP.indexOf(' '+x+' ')>-1)return;var k=x.length>6?x.slice(0,x.length>8?6:5):x;if(o.indexOf(k)<0)o.push(k)});return o}
 var QA={};
+function qVisual(o){
+var q=norm(o.q||''),t=norm(o.tt||''),svg='',label='';
+if(o.w==='mat'&&(/porcent|desconto|aumento percentual|[0-9]+%/.test(q))){label='Visualização didática: porcentagem';svg='<rect x="18" y="48" width="324" height="32" rx="8" fill="#ddd2e9"/><rect x="18" y="48" width="81" height="32" rx="8" fill="#8b64aa"/><text x="22" y="36" fill="#3b294d" font-size="16">100% = total</text><text x="22" y="104" fill="#3b294d" font-size="14">Exemplo: 25% é 1/4 do total</text>'}
+else if(o.w==='mat'&&(/conjunt|interse|uni[aã]o/.test(q+' '+t))){label='Visualização didática: conjuntos';svg='<circle cx="143" cy="77" r="60" fill="#a9c5ee" fill-opacity=".7" stroke="#537eb4" stroke-width="3"/><circle cx="211" cy="77" r="60" fill="#eeb3ce" fill-opacity=".7" stroke="#bc6b98" stroke-width="3"/><text x="112" y="82" font-size="20" fill="#30253d">A</text><text x="178" y="82" font-size="20" fill="#30253d">A ∩ B</text><text x="236" y="82" font-size="20" fill="#30253d">B</text>'}
+else if(o.w==='geo'&&/latitude|longitude|coordenad/.test(q)){label='Visualização didática: coordenadas';svg='<ellipse cx="180" cy="72" rx="110" ry="54" fill="#d8e7f5" stroke="#567eac" stroke-width="2"/><path d="M70 72H290 M180 18V126 M95 45H265 M95 99H265" stroke="#6088a6" stroke-width="2" fill="none"/><text x="185" y="20" fill="#294a69" font-size="13">N</text>'}
+if(!svg)return '';
+return '<figure class="k-diagram" aria-label="'+esc(label)+'"><svg role="img" aria-label="'+esc(label)+'" viewBox="0 0 360 140" xmlns="http://www.w3.org/2000/svg"><rect width="360" height="140" rx="14" fill="#f8f3fb"/>'+svg+'</svg><figcaption>'+esc(label)+' · imagem autoral ilustrativa, não retirada de prova oficial</figcaption></figure>';
+}
 function qCard(o,hlw){if(hlw!==undefined)o._hl=hlw;else hlw=o._hl;var st=QA[o.uid],w=byId(o.w),ans=st!=null;
   var hl=function(s){var h=nl(s);(hlw||[]).forEach(function(k){if(k.length<3)return;try{h=h.replace(new RegExp('('+k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>')}catch(e){}});return h};
   var src=o.ti!=null?'Exercício do app':'Prática do app';
   return'<div class="k-card k-q" id="'+o.uid+'"><div class="hd"><span class="k-tag">'+(w?(w.icone||'')+' '+esc(w.nome):'')+'</span><span class="k-tag">'+esc(o.tt||'')+'</span><span class="k-tag" title="Questão escrita para o app, imitando o formato da UECE. Não é questão de prova oficial.">'+src+' · prática autoral (não oficial)</span></div>'
-  +'<p class="qt">'+(hlw?hl(o.q):nl(o.q))+'</p><div class="al">'+o.a.map(function(a,j){var c='';if(ans){if(j===o.c)c=' ok';else if(j===st)c=' bad'}
+  +'<p class="qt">'+(hlw?hl(o.q):nl(o.q))+'</p>'+qVisual(o)+'<div class="al">'+o.a.map(function(a,j){var c='';if(ans){if(j===o.c)c=' ok';else if(j===st)c=' bad'}
     return'<button class="'+c.trim()+'"'+(ans?' disabled':'')+' onclick="KUI.ans(\''+o.uid+'\','+j+')"><span>'+LET[j]+'</span>'+esc(a)+'</button>'}).join('')+'</div>'
   +(ans?'<div class="ex"><b>'+(st===o.c?'✅ Isso mesmo! 💗':'❌ Resposta certa: '+LET[o.c])+'</b><br>'+nl(o.res||'')+'</div>':'')+'</div>'}
 KUI.ans=function(uid,j){build();var o=QB.find(function(x){return x.uid===uid});if(!o||QA[uid]!=null)return;QA[uid]=j;if(UI._score)UI._score(j===o.c);
@@ -216,3 +224,5 @@ KUI.theme=function(){if(UI.theme)UI.theme();try{localStorage.setItem('hark-theme
 addEventListener('keydown',function(e){if(e.key==='Escape')KUI.drawer(0)});
 UI.dash();
 })();
+
+(function(){var st=document.createElement('style');st.textContent='.k-diagram{background:#faf7fc;border:1px solid #e4d9e9;border-radius:14px;padding:10px;margin:14px 0}.k-diagram svg{display:block;width:100%;height:auto;max-height:220px}.k-diagram figcaption{color:#65576b;font-size:12px;line-height:1.5;margin:6px 2px 0}';document.head.appendChild(st)})();
