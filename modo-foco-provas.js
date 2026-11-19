@@ -9,16 +9,16 @@ function render(){
  host.innerHTML='<div class="ag-focus-top"><span>'+p.nome+' · Questão '+q+' de '+state.to+'</span><span>'+(Object.keys(selected).length)+'/'+p.questoes+' respondidas</span></div><div class="ag-focus-progress"><i style="width:'+Math.round(100*(q-state.from+1)/(state.to-state.from+1))+'%"></i></div><p class="ag-focus-help">Leia a questão na imagem do caderno acima e escolha sua resposta.</p><div class="ag-focus-options">'+letter.slice(0,n).split('').map(function(a){return '<button type="button" class="ag-focus-option'+(selected[q]===a?' chosen':'')+'" data-answer="'+a+'"><b>'+a+'</b><span>Alternativa '+a+'</span></button>'}).join('')+'</div><div class="ag-focus-nav"><button type="button" id="ag-prev">← Anterior</button><button type="button" id="ag-next">'+(q===state.to?'Ver respostas':'Próxima →')+'</button></div><button class="ag-focus-finish" type="button" id="ag-finish">Finalizar e corrigir</button>';
  host.querySelectorAll('[data-answer]').forEach(function(b){b.onclick=function(){var card=document.querySelector('.x-crq button[data-q="'+q+'"][data-a="'+b.dataset.answer+'"]');if(card){card.click()}else{var storage=JSON.parse(localStorage.getItem('agatha-provas')||'{}');storage[state.id]=storage[state.id]||{r:{},ini:Date.now()};storage[state.id].r[q]=b.dataset.answer;localStorage.setItem('agatha-provas',JSON.stringify(storage))}render()}});
  host.querySelector('#ag-prev').onclick=function(){move(-1)};
- host.querySelector('#ag-next').onclick=function(){if(q===state.to){document.querySelector('.ag-focus-hidden')?.classList.toggle('ag-focus-hidden');return}move(1)};
+ host.querySelector('#ag-next').onclick=function(){if(q===state.to){document.querySelector('.x-cr')?.classList.toggle('ag-focus-hidden');return}move(1)};
  host.querySelector('#ag-finish').onclick=function(){UI.pFim(state.id)};
 }
-function move(d){state.q=Math.max(state.from,Math.min(state.to,state.q+d));var pg=state.p.q2p&&state.p.q2p[state.q];if(pg&&window.UI.provaPagina){var lbl=document.getElementById('x-page-label');var current=lbl&&parseInt((lbl.textContent.match(/\d+/)||[])[0],10);if(current&&current!==pg)UI.provaPagina(pg-current)}render();document.getElementById('ag-focus-quiz')?.scrollIntoView({behavior:'smooth',block:'start'})}
+function move(d){state.q=Math.max(state.from,Math.min(state.to,state.q+d));var pg=state.p.q2p&&state.p.q2p[state.q];if(pg&&window.UI.provaPagina){var lbl=document.getElementById('x-page-label');var current=lbl&&parseInt((lbl.textContent.match(/\d+/)||[])[0],10);if(current&&current!==pg)UI.provaPagina(pg-current)}render();document.getElementById('x-page-image')?.scrollIntoView({behavior:'smooth',block:'start'})}
 UI.prova=function(id,mat){
  original.apply(this,arguments);
  var attempts=0;function attach(){
  var grid=document.querySelector('#app .x-cr');var page=document.getElementById('x-page-image');
- if(!grid||!page){if(attempts++<20)setTimeout(attach,120);return}
- var data=window.__ag_provas||null;
+ if(!grid||!page){if(attempts++<45)setTimeout(attach,120);return}
+ 
  fetch('provas/index.json').then(function(r){return r.json()}).then(function(all){
  var p=all.find(function(v){return v.id===id});if(!p||!document.getElementById('x-page-image'))return;
  var m=mat!=null&&p.materias?p.materias[mat]:null;
