@@ -15,10 +15,10 @@ var gg=function(q){return'https://www.google.com/search?q='+encodeURIComponent(q
 var LET='ABCDE';
 function resolutionBlocks(text){
   var value=String(text||'');
-  var matches=value.match(/(?:Passo\\s+\\d+|Etapa\\s+\\d+)\\s*:/gi);
+  var matches=value.match(/(?:Passo\s+\\d+|Etapa\s+\\d+)\s*:/gi);
   if(!matches || !matches.length) return '<p>'+nl(value)+'</p>';
-  var parts=value.split(/(?=(?:Passo\\s+\\d+|Etapa\\s+\\d+)\\s*:)/i).filter(Boolean);
-  return '<ol class="ag-solution-steps">'+parts.map(function(part){var m=part.match(/^((?:Passo|Etapa)\\s+\\d+)\\s*:\\s*/i);return '<li><b>'+esc(m?m[1]:'Explicação')+'</b><p>'+nl(m?part.slice(m[0].length):part)+'</p></li>'}).join('')+'</ol>';
+  var parts=value.split(/(?=(?:Passo\s+\\d+|Etapa\s+\\d+)\s*:)/i).filter(Boolean);
+  return '<ol class="ag-solution-steps">'+parts.map(function(part){var m=part.match(/^((?:Passo|Etapa)\s+\\d+)\s*:\s*/i);return '<li><b>'+esc(m?m[1]:'Explicação')+'</b><p>'+nl(m?part.slice(m[0].length):part)+'</p></li>'}).join('')+'</ol>';
 }
 function lessonBlock(text,index){
   return '<article class="ag-lesson-paragraph"><span class="ag-lesson-number">'+String(index+1).padStart(2,'0')+'</span><div>'+nl(text)+'</div></article>';
