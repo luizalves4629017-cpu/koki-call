@@ -114,8 +114,8 @@ UI.provaPagina=function(delta){
  var token=++st.token;
  function fallback(reason){
   if(token!==st.token||!document.getElementById('x-page-image'))return;
-  if(msg)msg.textContent='Não foi possível transformar esta página em imagem neste navegador. Use o visualizador abaixo ou abra o PDF original.';
-  out.innerHTML='<iframe title="Caderno oficial completo" loading="lazy" style="width:100%;height:680px;border:1px solid #ddd;border-radius:12px" src="https://docs.google.com/gview?embedded=1&url='+encodeURIComponent(st.url)+'"></iframe><p><a target="_blank" rel="noopener" href="'+esc(st.url)+'#page='+st.page+'">Abrir a página no PDF oficial ↗</a></p>';
+  if(msg)msg.textContent='Visualizador direto da prova oficial. Use os controles do PDF para trocar de página.';
+  out.innerHTML='<object type="application/pdf" data="'+esc(st.url)+'#page='+st.page+'&toolbar=1" style="width:100%;height:700px;border:1px solid #ddd;border-radius:12px"><iframe title="Caderno oficial" src="'+esc(st.url)+'#page='+st.page+'" style="width:100%;height:700px;border:0"></iframe></object><p><a target="_blank" rel="noopener" href="'+esc(st.url)+'#page='+st.page+'">Abrir página '+st.page+' no PDF original ↗</a></p>';
  }
  function render(){
   if(token!==st.token)return;
@@ -131,6 +131,7 @@ UI.provaPagina=function(delta){
    return page.render({canvasContext:canvas.getContext('2d'),viewport:viewport}).promise.then(function(){if(token===st.token&&msg)msg.textContent='Página '+st.page+' carregada · imagem do caderno oficial'});
   }).catch(function(){fallback()});
  }
+ fallback();return; // PDF oficial direto: evita bloqueios CORS do PDF.js em servidores externos
  if(window.pdfjsLib){render();return}
  var script=document.getElementById('ag-pdfjs');
  if(!script){script=document.createElement('script');script.id='ag-pdfjs';script.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';script.onload=function(){window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';render()};script.onerror=function(){fallback()};document.head.appendChild(script)}
