@@ -92,11 +92,50 @@ UI.prova=function(id,mat){loadIdx(function(){var p=pv(id);if(!p)return UI.provas
   var h='<button class="x-b x-back" onclick="UI.provas()">← Provas</button><h2>'+esc(p.nome)+'</h2>'
    +'<div class="x-row"><button class="x-b" onclick="UI.tSet('+(m?Math.max(10,Math.round((p.tempo_min||240)*(ate-de+1)/p.questoes)):(p.tempo_min||240))+',\''+esc(p.nome).replace(/'/g,'')+'\');UI.tStart()">⏱ Iniciar tempo '+(m?'da parte':'oficial')+'</button><a class="x-b" href="'+esc(official(p))+'" target="_blank" rel="noopener">📄 Consultar PDF oficial</a></div>'
    +(M.length>1?'<div class="x-tpre" style="margin-top:10px"><button class="x-b'+(m?'':' x-p')+'" onclick="UI.prova(\''+id+'\')">Prova inteira</button>'+M.map(function(x,k){return'<button class="x-b'+(mat===k?' x-p':'')+'" onclick="UI.prova(\''+id+'\','+k+')">'+esc(x.nome)+' ('+x.de+'–'+x.ate+')</button>'}).join('')+'</div>':'')
-   +'<div class="x-card" style="margin:14px 0;background:#fff;color:#29232d"><h3 style="color:#392c44">📄 Páginas da prova oficial</h3><p>Leia as questões abaixo e marque as respostas no cartão. '+(m?'Páginas correspondentes à matéria selecionada.':'Caderno completo.')+'</p>'+(p.fonte_prova?'<div class="x-official-pages"><iframe title="Caderno oficial da prova" loading="lazy" src="'+esc(p.fonte_prova)+'#page='+p1+'&toolbar=1" style="width:100%;height:640px;border:1px solid #d6cbd9;border-radius:12px;background:#f7f5f8"></iframe><p><a class="x-b x-p" target="_blank" rel="noopener" href="'+esc(p.fonte_prova)+'#page='+p1+'">📄 Abrir prova oficial na página '+p1+' ↗</a></p>'+(m?'<p style="font-size:13px">Esta matéria ocupa aproximadamente as páginas '+p1+' a '+p2+'. Use a navegação do PDF para avançar.</p>':'')+'</div>':'<p>Este caderno ainda não tem um endereço direto de PDF verificado. Use o portal oficial.</p>')+'<p style="font-size:13px">Se o PDF não aparecer dentro do aplicativo, toque em abrir prova oficial. As respostas continuam sendo marcadas aqui.</p></div>';
+   +'<section class="x-card" style="margin:14px 0;background:#fff;color:#29232d"><h3 style="color:#392c44">📖 Páginas do caderno oficial</h3><p>Veja a página da prova, depois marque a alternativa no cartão-resposta.</p>'+(p.fonte_prova?'<div class="x-page-controls"><button class="x-b" onclick="UI.provaPagina(-1)">← Anterior</button><span id="x-page-label">Página '+p1+' de '+p.paginas+'</span><button class="x-b" onclick="UI.provaPagina(1)">Próxima →</button></div><div id="x-page-status" style="padding:8px;font-size:13px">Carregando página...</div><div id="x-page-image" style="text-align:center;min-height:240px"></div><p><a class="x-b x-p" href="'+esc(p.fonte_prova)+'#page='+p1+'" target="_blank" rel="noopener">Abrir PDF original ↗</a></p>'+(m?'<p style="font-size:13px">Esta matéria começa na página '+p1+' e vai aproximadamente até a '+p2+'.</p>':'')+'</div>':'<p>PDF direto não cadastrado para este caderno.</p>')+'</section>';
   h+='<div class="x-cr"><div class="x-row" style="justify-content:space-between"><b>📝 Cartão-resposta'+(m?' · '+esc(m.nome):'')+'</b><span class="x-mut" id="x-crn"></span></div><div class="x-crg">';
   for(var q=de;q<=ate;q++){h+='<div class="x-crq"><span>'+q+'</span>';for(var a=0;a<(p.alts||5);a++)h+='<button data-q="'+q+'" data-a="'+LET[a]+'" class="'+(st.r[q]===LET[a]?'on':'')+'" onclick="UI.pMark(\''+id+'\','+q+',\''+LET[a]+'\',this)">'+LET[a]+'</button>';h+='</div>'}
   h+='</div><div class="x-row x-mt"><button class="x-b x-p" onclick="UI.pFim(\''+id+'\')">✅ Terminar e corrigir</button><button class="x-b" onclick="UI.pZerar(\''+id+'\')">↺ Recomeçar</button></div></div>';
-  go(h,'prov');cnt(id)})};
+  go(h,'prov');cnt(id);if(p.fonte_prova)UI.provaPaginasIniciar(p.fonte_prova,p1,p.paginas)})};
+
+/* Renderização real de páginas de PDF. O iframe foi removido porque não exibia páginas em alguns navegadores. */
+var _provaPdf={url:'',page:1,total:1,doc:null,token:0};
+UI.provaPaginasIniciar=function(url,page,total){
+ _provaPdf={url:url,page:page,total:total,doc:null,token:(_provaPdf.token||0)+1};
+ UI.provaPagina(0);
+};
+UI.provaPagina=function(delta){
+ var st=_provaPdf;if(!st.url)return;
+ st.page=Math.max(1,Math.min(st.total,st.page+delta));
+ var label=document.getElementById('x-page-label'),out=document.getElementById('x-page-image'),msg=document.getElementById('x-page-status');
+ if(!out)return;
+ if(label)label.textContent='Página '+st.page+' de '+st.total;
+ out.innerHTML='';if(msg)msg.textContent='Preparando imagem da página '+st.page+'...';
+ var token=++st.token;
+ function fallback(reason){
+  if(token!==st.token||!document.getElementById('x-page-image'))return;
+  if(msg)msg.textContent='Não foi possível transformar esta página em imagem neste navegador. Use o visualizador abaixo ou abra o PDF original.';
+  out.innerHTML='<iframe title="Página da prova" loading="lazy" style="width:100%;height:620px;border:1px solid #ddd;border-radius:12px" src="https://docs.google.com/gview?embedded=1&url='+encodeURIComponent(st.url)+'"></iframe><p><a target="_blank" rel="noopener" href="'+esc(st.url)+'#page='+st.page+'">Abrir a página no PDF oficial ↗</a></p>';
+ }
+ function render(){
+  if(token!==st.token)return;
+  if(!window.pdfjsLib){fallback();return}
+  var ready=st.doc?Promise.resolve(st.doc):window.pdfjsLib.getDocument({url:st.url,withCredentials:false}).promise;
+  ready.then(function(doc){if(token!==st.token)return;st.doc=doc;return doc.getPage(st.page)}).then(function(page){
+   if(!page||token!==st.token)return;
+   var scale=Math.min(2.2,Math.max(1.2,(out.clientWidth||700)/page.getViewport({scale:1}).width));
+   var viewport=page.getViewport({scale:scale}),canvas=document.createElement('canvas');
+   canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+   canvas.style.cssText='width:100%;height:auto;display:block;border:1px solid #ddd;border-radius:9px;background:white';
+   out.appendChild(canvas);
+   return page.render({canvasContext:canvas.getContext('2d'),viewport:viewport}).promise.then(function(){if(token===st.token&&msg)msg.textContent='Página '+st.page+' carregada · imagem do caderno oficial'});
+  }).catch(function(){fallback()});
+ }
+ if(window.pdfjsLib){render();return}
+ var script=document.getElementById('ag-pdfjs');
+ if(!script){script=document.createElement('script');script.id='ag-pdfjs';script.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';script.onload=function(){window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';render()};script.onerror=function(){fallback()};document.head.appendChild(script)}
+ else{script.addEventListener('load',render,{once:true});script.addEventListener('error',fallback,{once:true})}
+};
 function cnt(id){var e=document.getElementById('x-crn'),p=pv(id);if(e&&p)e.textContent=Object.keys(PR[id].r).length+'/'+p.questoes+' marcadas'}
 UI.pMark=function(id,q,a,b){var st=PR[id];if(st.r[q]===a)delete st.r[q];else st.r[q]=a;psave();
   b.parentNode.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',st.r[q]===x.dataset.a)});cnt(id)};
