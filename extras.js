@@ -115,7 +115,7 @@ UI.provaPagina=function(delta){
  function fallback(reason){
   if(token!==st.token||!document.getElementById('x-page-image'))return;
   if(msg)msg.textContent='Não foi possível transformar esta página em imagem neste navegador. Use o visualizador abaixo ou abra o PDF original.';
-  out.innerHTML='<iframe title="Página da prova" loading="lazy" style="width:100%;height:620px;border:1px solid #ddd;border-radius:12px" src="https://docs.google.com/gview?embedded=1&url='+encodeURIComponent(st.url)+'"></iframe><p><a target="_blank" rel="noopener" href="'+esc(st.url)+'#page='+st.page+'">Abrir a página no PDF oficial ↗</a></p>';
+  out.innerHTML='<iframe title="Caderno oficial completo" loading="lazy" style="width:100%;height:680px;border:1px solid #ddd;border-radius:12px" src="https://docs.google.com/gview?embedded=1&url='+encodeURIComponent(st.url)+'"></iframe><p><a target="_blank" rel="noopener" href="'+esc(st.url)+'#page='+st.page+'">Abrir a página no PDF oficial ↗</a></p>';
  }
  function render(){
   if(token!==st.token)return;
