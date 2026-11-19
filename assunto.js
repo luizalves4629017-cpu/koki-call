@@ -13,6 +13,16 @@ function cont(id,i){var c=(window.CONT||{})[id];return c&&c[i]?c[i]:null}
 var yt=function(q){return'https://www.youtube.com/results?search_query='+encodeURIComponent(q)};
 var gg=function(q){return'https://www.google.com/search?q='+encodeURIComponent(q)};
 var LET='ABCDE';
+function resolutionBlocks(text){
+  var value=String(text||'');
+  var matches=value.match(/(?:Passo\\s+\\d+|Etapa\\s+\\d+)\\s*:/gi);
+  if(!matches || !matches.length) return '<p>'+nl(value)+'</p>';
+  var parts=value.split(/(?=(?:Passo\\s+\\d+|Etapa\\s+\\d+)\\s*:)/i).filter(Boolean);
+  return '<ol class="ag-solution-steps">'+parts.map(function(part){var m=part.match(/^((?:Passo|Etapa)\\s+\\d+)\\s*:\\s*/i);return '<li><b>'+esc(m?m[1]:'Explicação')+'</b><p>'+nl(m?part.slice(m[0].length):part)+'</p></li>'}).join('')+'</ol>';
+}
+function lessonBlock(text,index){
+  return '<article class="ag-lesson-paragraph"><span class="ag-lesson-number">'+String(index+1).padStart(2,'0')+'</span><div>'+nl(text)+'</div></article>';
+}
 UI.assunto=function(id,i,tab){tab=tab||0;var w=W(id),t=(PG[id]||[])[i]||'',c=cont(id,i);
   var key=id+':'+i,pp=window.UI._P?window.UI._P():null,on=pp?!!pp.t[key]:false;
   var tabs=['📖 Aula','📝 Exercícios','🎥 Vídeos','📄 Provas'];
@@ -22,21 +32,22 @@ UI.assunto=function(id,i,tab){tab=tab||0;var w=W(id),t=(PG[id]||[])[i]||'',c=con
    +'<div class="x-tabs x-as-tabs" role="tablist">'+tabs.map(function(n,k){return'<button role="tab" class="x-tab" aria-selected="'+(k===tab)+'" onclick="UI.assunto(\''+id+'\','+i+','+k+')">'+n+'</button>'}).join('')+'</div>';
   var busca=(c&&c.busca)||('aula '+t+' '+(w?w.nome:'')+' ENEM');
   if(tab===0){
-    if(c){h+='<div class="x-card x-as-aula">'+c.aula.map(function(p){return'<p>'+nl(p)+'</p>'}).join('')+'</div>'
-      +'<h3>📌 Resumo pra revisar</h3><ul class="x-card x-as-res">'+c.resumo.map(function(p){return'<li>'+nl(p)+'</li>'}).join('')+'</ul>';
-      if(c.exemplo)h+='<h3>✏️ Exemplo resolvido</h3><div class="x-card"><p><b>'+nl(c.exemplo.q)+'</b></p><details><summary>Ver resolução</summary><p>'+nl(c.exemplo.res)+'</p></details></div>';
+    if(c){h+='<section class="ag-lesson-intro"><span>GUIA DE ESTUDO</span><h3>Vamos por partes</h3><p>Leia com calma. Cada bloco apresenta uma ideia; depois, use o resumo e o exemplo para fixar.</p></section>'
+      +'<div class="ag-lesson-flow">'+c.aula.map(function(p,k){return lessonBlock(p,k)}).join('')+'</div>'
+      +'<h3 class="ag-section-title">📌 O que vale guardar</h3><ul class="x-card x-as-res">'+c.resumo.map(function(p){return'<li>'+nl(p)+'</li>'}).join('')+'</ul>';
+      if(c.exemplo)h+='<h3 class="ag-section-title">✏️ Exemplo resolvido</h3><div class="x-card ag-example-card"><p class="ag-example-question"><b>'+nl(c.exemplo.q)+'</b></p><details class="ag-solution"><summary>Ver resolução passo a passo</summary>'+resolutionBlocks(c.exemplo.res)+'</details></div>';
     }else{var ls=[];(w&&w.fases||[]).forEach(function(f){ls=ls.concat(f.lessons||[])});
       h+='<div class="x-card x-as-aula">'+(ls.length?ls.map(function(p){return'<p>'+nl(p)+'</p>'}).join(''):'<p>Conteúdo em preparação. Use as videoaulas enquanto isso.</p>')+'</div>'}
     h+='<div class="x-row x-mt"><button class="x-b x-p" onclick="UI.assunto(\''+id+'\','+i+',1)">Fazer exercícios →</button><a class="x-b" href="'+yt(busca)+'" target="_blank" rel="noopener">🎥 Ver videoaula ↗</a></div>';
   }else if(tab===1){var ex=exOf(id,i);ST[key]=ST[key]||{};
     var ok=0,feito=0;Object.keys(ST[key]).forEach(function(k){feito++;if(ST[key][k]===ex[k].c)ok++});
-    h+='<p class="x-mut">'+ex.length+' questões no estilo UECE/ENEM, com resolução. Toque na alternativa.</p>'
+    h+='<section class="ag-exercise-intro"><span>PRATIQUE SEM PRESSA</span><h3>Uma questão de cada vez</h3><p>'+ex.length+' questões disponíveis neste conteúdo. Leia o enunciado, identifique o que ele pede e só então escolha uma alternativa. A explicação aparece depois da resposta.</p></section>'
      +(feito?'<div class="x-card x-as-placar"><b>'+ok+' de '+feito+'</b> certas até agora'+(feito===ex.length?(ok===ex.length?' · gabaritou! 🌸':' · '+(ok/feito>=.6?'muito bem! 💗':'revise a aula e tente de novo 🌱')):'')+'</div>':'');
     ex.forEach(function(q,k){var r=ST[key][k];
-      h+='<div class="x-card x-as-q"><p><b>'+(k+1)+'.</b> '+nl(q.q)+'</p><div class="x-as-alts">'
+      h+='<article class="x-card x-as-q ag-question-card"><div class="ag-question-meta"><span>QUESTÃO '+String(k+1).padStart(2,'0')+'</span><span>'+esc(w?w.nome:'Exercício')+'</span></div><p class="ag-question-prompt"><b>'+nl(q.q)+'</b></p><div class="ag-answer-hint">💡 <span>Antes de marcar, tente explicar por que as outras alternativas não respondem ao enunciado.</span></div><div class="x-as-alts">'
        +q.a.map(function(a,j){var cls='';if(r!=null){if(j===q.c)cls=' ok';else if(j===r)cls=' bad'}
          return'<button class="x-as-alt'+cls+'"'+(r!=null?' disabled':'')+' onclick="UI.asResp(\''+id+'\','+i+','+k+','+j+')"><span>'+LET[j]+'</span>'+esc(a)+'</button>'}).join('')+'</div>'
-       +(r!=null?'<div class="x-as-exp '+(r===q.c?'ok':'bad')+'"><b>'+(r===q.c?'✅ Acertou!':'❌ Resposta certa: '+LET[q.c])+'</b><p>'+nl(q.res||'')+'</p></div>':'')+'</div>'});
+       +(r!=null?'<div class="x-as-exp '+(r===q.c?'ok':'bad')+'"><b>'+(r===q.c?'✅ Acertou!':'❌ Resposta certa: '+LET[q.c])+'</b><div class="ag-resolution-label">Entenda o raciocínio</div>'+resolutionBlocks(q.res||'')+'</div>':'')+'</article>'});
     if(c && c.resumo && c.resumo.length){
       var tips=c.resumo.slice(),start=(new Date().getDate()+i)%tips.length;
       tips=tips.slice(start).concat(tips.slice(0,start)).slice(0,Math.min(5,tips.length));
@@ -65,6 +76,13 @@ UI.asResp=function(id,i,k,j){var key=id+':'+i;ST[key]=ST[key]||{};if(ST[key][k]!
   var y=window.scrollY;UI.assunto(id,i,1);window.scrollTo(0,y)};
 UI.asReset=function(id,i){ST[id+':'+i]={};stSave();UI.assunto(id,i,1)};
 UI.asTick=function(id,i,el){if(!window.UI._tickKey)return;var on=window.UI._tickKey(id+':'+i);el.classList.toggle('on',on);el.textContent=on?'✓ Estudado':'Marcar como estudado'};
+})();
+
+/* Leitura guiada, questões mais confortáveis e resoluções estruturadas. */
+(function(){
+ var s=document.createElement('style');
+ s.textContent='.ag-lesson-intro,.ag-exercise-intro{padding:19px 20px;margin:16px 0 14px;border:1px solid var(--stroke-primary,#e9e4ed);border-radius:18px;background:linear-gradient(135deg,#fbf8ff,#fff)}.ag-lesson-intro>span,.ag-exercise-intro>span{font-size:10px;letter-spacing:.14em;font-weight:700;color:#9275aa}.ag-lesson-intro h3,.ag-exercise-intro h3{font-size:19px;margin:6px 0}.ag-lesson-intro p,.ag-exercise-intro p{font-size:13px;line-height:1.65;color:var(--text-secondary,#777);margin:0}.ag-lesson-flow{display:grid;gap:10px;margin:12px 0 22px}.ag-lesson-paragraph{display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px;align-items:start;padding:16px 17px;border:1px solid var(--stroke-secondary,#eee);border-radius:16px;background:var(--mat-regular,#fff)}.ag-lesson-number{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#f3edf8;color:#806398;font-size:11px;font-weight:700}.ag-lesson-paragraph>div{font-size:14px;line-height:1.8;color:var(--text-primary,#39333f)}.ag-section-title{margin:22px 0 10px;font-size:17px}.ag-example-card{padding:17px}.ag-example-question{font-size:14px;line-height:1.7}.ag-solution{margin-top:13px;border-top:1px solid var(--stroke-secondary,#eee);padding-top:12px}.ag-solution summary{cursor:pointer;font-size:13px;font-weight:650;color:#806398}.ag-solution-steps{padding:0 0 0 22px;margin:13px 0;display:grid;gap:12px}.ag-solution-steps li{padding-left:4px}.ag-solution-steps li::marker{color:#9275aa;font-weight:700}.ag-solution-steps li b{font-size:12px;color:#806398}.ag-solution-steps p,.ag-solution>p{font-size:13px;line-height:1.75;margin:4px 0 0}.ag-question-card{padding:17px;margin:12px 0}.ag-question-meta{display:flex;justify-content:space-between;gap:8px;margin-bottom:12px;color:#9275aa;font-size:10px;letter-spacing:.1em;font-weight:700}.ag-question-prompt{font-size:15px;line-height:1.75;margin:0 0 14px}.ag-answer-hint{display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:#faf7fc;color:#756481;font-size:12px;line-height:1.55;margin:0 0 13px}.ag-resolution-label{margin:12px 0 4px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.8}.x-as-exp .ag-solution-steps{margin-bottom:3px}.x-as-exp .ag-solution-steps p{line-height:1.75}@media(max-width:520px){.ag-lesson-paragraph{padding:13px;grid-template-columns:29px minmax(0,1fr);gap:9px}.ag-lesson-number{width:27px;height:27px}.ag-lesson-paragraph>div{font-size:13px}.ag-question-card{padding:14px}.ag-question-prompt{font-size:14px}}';
+ document.head.appendChild(s);
 })();
 
 /* Revisão ativa complementar — respeita os cartões e tokens visuais existentes. */
