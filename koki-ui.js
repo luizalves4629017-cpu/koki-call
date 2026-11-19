@@ -119,7 +119,7 @@ var QA={};
 function qCard(o,hlw){if(hlw!==undefined)o._hl=hlw;else hlw=o._hl;var st=QA[o.uid],w=byId(o.w),ans=st!=null;
   var hl=function(s){var h=nl(s);(hlw||[]).forEach(function(k){if(k.length<3)return;try{h=h.replace(new RegExp('('+k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>')}catch(e){}});return h};
   var src=o.ti!=null?'Exercício do app':'Prática do app';
-  return'<div class="k-card k-q" id="'+o.uid+'"><div class="hd"><span class="k-tag">'+(w?(w.icone||'')+' '+esc(w.nome):'')+'</span><span class="k-tag">'+esc(o.tt||'')+'</span><span class="k-tag" title="Questão escrita para o app, imitando o formato da UECE. Não é questão de prova oficial.">'+src+' · no estilo UECE</span></div>'
+  return'<div class="k-card k-q" id="'+o.uid+'"><div class="hd"><span class="k-tag">'+(w?(w.icone||'')+' '+esc(w.nome):'')+'</span><span class="k-tag">'+esc(o.tt||'')+'</span><span class="k-tag" title="Questão escrita para o app, imitando o formato da UECE. Não é questão de prova oficial.">'+src+' · prática autoral (não oficial)</span></div>'
   +'<p class="qt">'+(hlw?hl(o.q):nl(o.q))+'</p><div class="al">'+o.a.map(function(a,j){var c='';if(ans){if(j===o.c)c=' ok';else if(j===st)c=' bad'}
     return'<button class="'+c.trim()+'"'+(ans?' disabled':'')+' onclick="KUI.ans(\''+o.uid+'\','+j+')"><span>'+LET[j]+'</span>'+esc(a)+'</button>'}).join('')+'</div>'
   +(ans?'<div class="ex"><b>'+(st===o.c?'✅ Isso mesmo! 💗':'❌ Resposta certa: '+LET[o.c])+'</b><br>'+nl(o.res||'')+'</div>':'')+'</div>'}
@@ -135,15 +135,15 @@ function realHTML(id,cb){var key=NM[id];if(!key)return cb('');idx(function(L){va
   if(p.exame==='UECE'&&n.indexOf('natureza')>-1)return;
   if((track()==='enem')!==(p.exame!=='UECE'))return;(p.exame==='UECE'?u:e).push('<button class="x-b" onclick="UI.prova(\''+p.id+'\','+k+')">'+esc(p.nome)+' · '+esc(m.nome)+' (questões '+m.de+'–'+m.ate+')</button>')})});
   if(!u.length&&!e.length)return cb('');
-  cb('<h3>🏫 Questões reais de provas oficiais</h3><div class="k-note"><span class="k-tag real">Provas oficiais</span> As provas oficiais não vêm separadas por assunto, então aqui ficam <b>todas as questões desta matéria</b> em cada prova. Você lê na prova, marca no cartão-resposta e corrige com o <b>gabarito oficial</b> (sem resolução comentada).</div>'
+  cb('<h3>🏫 Questões reais de provas oficiais</h3><div class="k-note"><span class="k-tag real">Provas oficiais</span> As provas oficiais aqui estão organizadas por <b>matéria, não por tópico</b>. Você lê na prova, marca no cartão-resposta e corrige com o <b>gabarito oficial</b> (sem resolução comentada).</div>'
    +(u.length?'<p class="x-mut" style="margin:10px 0 6px">UECE</p><div class="k-prv">'+u.join('')+'</div>':'')+(e.length?'<p class="x-mut" style="margin:12px 0 6px">ENEM</p><div class="k-prv">'+e.join('')+'</div>':''))})}
 function extHTML(t,w){var nm=w?w.nome:'';return'<h3>🔎 Buscar na internet</h3><div class="k-res">'
   +(EXN()==='ENEM'?[['Questões do ENEM sobre o assunto (QConcursos e site do INEP)','questões ENEM "'+t+'" site:qconcursos.com OR site:gov.br/inep'],['Busca geral: questões do ENEM com gabarito','questões ENEM '+t+' '+nm+' gabarito comentado']]:[['Questões da UECE sobre o assunto (QConcursos e site da UECE)','questões UECE "'+t+'" site:qconcursos.com OR site:uece.br'],['Busca geral: questões de vestibular UECE com gabarito','questões vestibular UECE '+t+' '+nm+' gabarito comentado']])
    .map(function(x){return'<a class="k-ra" href="'+gg(x[1])+'" target="_blank" rel="noopener"><span class="ic">🔎</span><span>'+esc(x[0])+' ↗<span class="m">'+esc(x[1])+'</span></span></a>'}).join('')
   +'<a class="k-ra" href="'+yt(t+' questão '+EXN()+' resolvida')+'" target="_blank" rel="noopener"><span class="ic">🎥</span><span>Questões '+DAX()+' resolvidas em vídeo ↗<span class="m">'+esc(t)+' questão '+EXN()+' resolvida</span></span></a></div>'}
-function qPage(id,t,back,own,head){build();var w=byId(id),r=related(id,t,own),mine=own?QB.filter(own):[];KUI._hl=r.k;
+function qPage(id,t,back,own,head){build();var w=byId(id),r={k:[],L:[]},mine=own?QB.filter(own):[];KUI._hl=[];
   var h='<button class="x-b x-back" onclick="'+back+'">← Voltar</button><p class="x-tag" style="margin-top:10px">'+(w?(w.icone||'')+' '+esc(w.nome):'')+'</p><h2 style="margin-top:4px">Questões sobre: '+esc(t)+'</h2>'
-  +'<div class="k-note">As questões do app foram escritas <b>no estilo UECE</b> (4 alternativas, mesmo formato e assuntos do edital), com resolução. Não são questões de provas oficiais. As <b>questões reais</b> estão nas provas oficiais, logo abaixo. 💗</div>'
+  +'<div class="k-note">As questões desta seção são <b>autorais e vinculadas ao tópico selecionado</b>. Não são retiradas de provas oficiais. Para estudar para a UECE ou o ENEM, use as opções de busca e as provas oficiais abaixo. 💗</div>'
   +(head||'')+'<div id="k-real" style="margin-top:14px"></div>'
   +(mine.length?'<h3>📝 Questões deste assunto ('+mine.length+')</h3><div class="k-list">'+mine.map(function(o){return qCard(o)}).join('')+'</div>':'')
   +(r.L.length?'<h3>🧩 Mais questões relacionadas ('+r.L.length+')</h3><p class="x-mut">Encontradas em outras partes de '+esc(w?w.nome:'')+' pelas palavras-chave: '+r.k.map(esc).join(', ')+'</p><div class="k-list">'+r.L.map(function(o){return qCard(o,r.k)}).join('')+'</div>':'')
