@@ -23,6 +23,21 @@ function resolutionBlocks(text){
 function lessonBlock(text,index){
   return '<article class="ag-lesson-paragraph"><span class="ag-lesson-number">'+String(index+1).padStart(2,'0')+'</span><div>'+nl(text)+'</div></article>';
 }
+function visual(id,t,q){
+var tx=(t+' '+(q||'')).toLowerCase(),z='',caption='';
+if(id==='port'){caption='Linguagem: emissor, mensagem e receptor';z='<rect x="12" y="42" width="90" height="52" rx="10" fill="#ddd0f3"/><rect x="130" y="42" width="100" height="52" rx="10" fill="#cfe7f7"/><rect x="258" y="42" width="90" height="52" rx="10" fill="#d6eedc"/><path d="M102 68H128 M230 68H256" stroke="#77528b" stroke-width="3"/><text x="23" y="73" font-size="14">Emissor</text><text x="142" y="73" font-size="14">Mensagem</text><text x="267" y="73" font-size="14">Receptor</text>'}
+else if(id==='mat'){caption='Representação visual de quantidades';z='<rect x="20" y="45" width="320" height="42" rx="9" fill="#dcd0e8"/><rect x="20" y="45" width="80" height="42" rx="9" fill="#9269b6"/><text x="24" y="31" font-size="16">Parte e todo</text><text x="24" y="112" font-size="13">Exemplo ilustrativo: 1/4 do total</text>'}
+else if(id==='hist'){caption='Linha do tempo para organizar acontecimentos';z='<path d="M24 70H336" stroke="#8b69a5" stroke-width="4"/>'+[70,180,290].map(function(x,k){return '<circle cx="'+x+'" cy="70" r="9" fill="#8b69a5"/><text x="'+(x-25)+'" y="'+(k%2?108:42)+'" font-size="13">Etapa '+(k+1)+'</text>'}).join('')}
+else if(id==='geo'){caption='Esquema de localização geográfica';z='<ellipse cx="180" cy="69" rx="115" ry="51" fill="#d9e9f5" stroke="#6684a5" stroke-width="2"/><path d="M65 69H295 M180 18V120 M90 43H270 M90 95H270" fill="none" stroke="#7395b5" stroke-width="2"/>'}
+else if(id==='bio'){caption='Esquema simplificado de célula';z='<ellipse cx="180" cy="70" rx="130" ry="55" fill="#d8efdc" stroke="#5c9671" stroke-width="3"/><ellipse cx="180" cy="70" rx="42" ry="30" fill="#bdc5ee" stroke="#777db6" stroke-width="2"/><text x="164" y="75" font-size="13">Núcleo</text>'}
+else if(id==='qui'){caption='Modelo ilustrativo de partículas';z='<circle cx="125" cy="70" r="28" fill="#b8d7ed"/><circle cx="191" cy="48" r="23" fill="#e8bfd4"/><circle cx="215" cy="95" r="24" fill="#c8e3c3"/><path d="M148 60L168 52 M149 82L193 91" stroke="#6b648a" stroke-width="5"/>'}
+else if(id==='fis'){caption='Diagrama ilustrativo de forças';z='<rect x="125" y="53" width="90" height="55" rx="6" fill="#b7d5ed"/><path d="M170 53V13 M170 108V131 M125 80H65 M215 80H275" stroke="#805caa" stroke-width="4"/><text x="179" y="28" font-size="13">F</text>'}
+else if(id==='ing'){caption='Estrutura de comunicação em inglês';z='<rect x="35" y="34" width="290" height="73" rx="14" fill="#e0d9f3"/><text x="57" y="62" font-size="16">Read → Understand → Answer</text><text x="57" y="89" font-size="13">Ler → Compreender → Responder</text>'}
+else if(id==='filo'||id==='socio'){caption='Esquema para comparar ideias';z='<rect x="18" y="28" width="145" height="85" rx="12" fill="#e0d8ef"/><rect x="197" y="28" width="145" height="85" rx="12" fill="#d8e7f1"/><text x="55" y="73" font-size="17">Ideia A</text><text x="232" y="73" font-size="17">Ideia B</text><path d="M164 70H196" stroke="#8165a3" stroke-width="3"/>'}
+else if(id==='artes'){caption='Elementos visuais: formas e cores';z='<circle cx="92" cy="70" r="35" fill="#e8b4c9"/><rect x="154" y="35" width="70" height="70" rx="8" fill="#b7d8ed"/><path d="M275 33L318 105H232Z" fill="#d2c2e9"/>'}
+else if(id==='edf'){caption='Esquema de movimento e atividade física';z='<circle cx="170" cy="32" r="17" fill="#b7d8ed"/><path d="M170 50L165 94 M165 67L124 82 M165 67L209 51 M165 94L135 126 M165 94L205 124" stroke="#8a69ad" stroke-width="7" stroke-linecap="round"/>'}
+if(!z)return '';return '<figure class="ag-topic-visual"><svg viewBox="0 0 360 140" role="img" aria-label="'+esc(caption)+'" xmlns="http://www.w3.org/2000/svg"><rect width="360" height="140" rx="14" fill="#f9f5fc"/>'+z+'</svg><figcaption>'+esc(caption)+' · esquema didático geral, não é imagem de prova nem representa necessariamente os dados da questão</figcaption></figure>'
+}
 UI.assunto=function(id,i,tab){tab=tab||0;var w=W(id),t=(PG[id]||[])[i]||'',c=cont(id,i);
   var key=id+':'+i,pp=window.UI._P?window.UI._P():null,on=pp?!!pp.t[key]:false;
   var tabs=['📖 Aula','📝 Exercícios','🎥 Vídeos','📄 Provas'];
@@ -144,3 +159,5 @@ var om=UI.metodos;if(om)UI.metodos=function(){om.apply(this,arguments);var M=win
 .ag-note{font-size:12px!important;color:#716677}
 @media(max-width:480px){.ag-circle{width:56%;height:180px}.ag-venn{height:205px}.ag-only-a{left:13%}.ag-only-b{right:13%}.ag-both{top:82px}.ag-only-a,.ag-only-b{top:95px;font-size:12px}.ag-deep-lesson p,.ag-deep-lesson li{font-size:15px}}
 `;document.head.appendChild(st)})();
+
+(function(){var st=document.createElement('style');st.textContent='.ag-topic-visual{margin:14px 0 18px;padding:12px;border:1px solid #e3d6e8;background:#fff;border-radius:16px}.ag-topic-visual svg{display:block;width:100%;max-height:240px}.ag-topic-visual figcaption{font-size:12px;color:#65576d;margin-top:8px;line-height:1.5}';document.head.appendChild(st)})();
