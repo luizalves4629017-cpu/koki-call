@@ -23,6 +23,17 @@ function resolutionBlocks(text){
 function lessonBlock(text,index){
   return '<article class="ag-lesson-paragraph"><span class="ag-lesson-number">'+String(index+1).padStart(2,'0')+'</span><div>'+nl(text)+'</div></article>';
 }
+function richLesson(id,t,c){
+ var title=esc(t),parts=(c.aula||[]),tips=(c.resumo||[]);
+ var h='<section class="ag-deep-lesson ag-universal-lesson"><div class="ag-kicker">'+esc((W(id)||{}).nome||'MATÉRIA')+' · AULA COMPLETA</div><h3>'+title+': entenda antes de decorar</h3><p class="ag-lead">Vamos estudar '+title.toLowerCase()+' em etapas, com explicações, um esquema visual e uma questão resolvida.</p>';
+ if(parts.length){h+='<h4>1. Entenda o conceito</h4>'+parts.slice(0,2).map(function(p){return'<p>'+nl(p)+'</p>'}).join('');}
+ h+=visual(id,t);
+ if(parts.length>2)h+='<h4>2. Aprofunde o assunto</h4>'+parts.slice(2).map(function(p){return'<p>'+nl(p)+'</p>'}).join('');
+ if(tips.length)h+='<div class="ag-worked"><b>📌 O que você precisa lembrar</b><ul>'+tips.map(function(p){return'<li>'+nl(p)+'</li>'}).join('')+'</ul></div>';
+ if(c.exemplo){h+='<h4>3. Veja uma aplicação resolvida</h4><div class="ag-worked"><p><b>'+nl(c.exemplo.q)+'</b></p><details class="ag-solution"><summary>Mostrar raciocínio e resolução</summary>'+resolutionBlocks(c.exemplo.res)+'</details></div>';}
+ h+='<details class="ag-check"><summary>💡 Confira se entendeu</summary><p>Explique com suas palavras a ideia principal de '+title+'. Depois, resolva os exercícios para testar sua compreensão.</p></details><p class="ag-note">Esquema didático ilustrativo. Os exercícios autorais não são questões oficiais.</p></section>';
+ return h;
+}
 function visual(id,t,q){
 var tx=(t+' '+(q||'')).toLowerCase(),z='',caption='';
 if(id==='port'){caption='Linguagem: emissor, mensagem e receptor';z='<rect x="12" y="42" width="90" height="52" rx="10" fill="#ddd0f3"/><rect x="130" y="42" width="100" height="52" rx="10" fill="#cfe7f7"/><rect x="258" y="42" width="90" height="52" rx="10" fill="#d6eedc"/><path d="M102 68H128 M230 68H256" stroke="#77528b" stroke-width="3"/><text x="23" y="73" font-size="14">Emissor</text><text x="142" y="73" font-size="14">Mensagem</text><text x="267" y="73" font-size="14">Receptor</text>'}
@@ -48,10 +59,7 @@ UI.assunto=function(id,i,tab){tab=tab||0;var w=W(id),t=(PG[id]||[])[i]||'',c=con
   var busca=(c&&c.busca)||('aula '+t+' '+(w?w.nome:'')+' ENEM');
   if(tab===0){
     if(c && /conjuntos/i.test(t) && /matem/i.test(w?w.nome:'')){h+='<section class="ag-deep-lesson"><div class="ag-kicker">MATEMÁTICA • DO ZERO</div><h3>Conjuntos: entenda antes de decorar</h3><p>Imagine duas listas de convidados: a lista A tem Ana, Bia e Caio; a lista B tem Bia, Caio e Davi. Um <b>conjunto</b> é apenas uma coleção de elementos. Usamos chaves para mostrar quem faz parte dela.</p><div class="ag-visual"><div class="ag-venn"><div class="ag-circle ag-a">A</div><div class="ag-circle ag-b">B</div><span class="ag-only-a">Ana</span><span class="ag-both">Bia<br>Caio</span><span class="ag-only-b">Davi</span></div><small>Diagrama ilustrativo: a região do meio contém quem aparece nas duas listas.</small></div><h4>1. Interseção (∩): quem está nas duas listas?</h4><p>Bia e Caio aparecem em A <b>e</b> em B. Logo, A ∩ B = {Bia, Caio}. A palavra-chave é <b>e</b>: só entram os elementos em comum.</p><h4>2. União (∪): quem está em pelo menos uma lista?</h4><p>Reunimos todos, sem repetir ninguém: A ∪ B = {Ana, Bia, Caio, Davi}. A palavra-chave é <b>ou</b>: basta pertencer a uma das listas.</p><h4>3. Diferença (−): quem está só em A?</h4><p>A − B = {Ana}, porque Ana está em A, mas não em B. Atenção: A − B pode ser diferente de B − A.</p><div class="ag-worked"><b>📝 Questão resolvida, passo a passo</b><p>Em uma turma de 100 alunos, 60 gostam de futebol, 50 gostam de vôlei e 20 gostam dos dois. Quantos não gostam de nenhum?</p><ol><li><b>Passo 1:</b> some os grupos: 60 + 50 = 110.</li><li><b>Passo 2:</b> os 20 que gostam dos dois foram contados duas vezes. Retire uma contagem: 110 − 20 = 90.</li><li><b>Passo 3:</b> 90 gostam de pelo menos um esporte. Então 100 − 90 = <b>10 alunos</b> não gostam de nenhum.</li></ol><p><b>Resposta: 10.</b> Fórmula: n(A ∪ B) = n(A) + n(B) − n(A ∩ B).</p></div><details class="ag-check"><summary>💡 Confira se entendeu: se A = {1, 2, 3} e B = {3, 4}, qual é A ∩ B?</summary><p>A interseção é <b>{3}</b>, porque 3 é o único elemento presente nos dois conjuntos.</p></details><p class="ag-note">Este é um exemplo didático criado para a aula, não uma reprodução de prova oficial.</p></section>';} 
-    if(c){h+='<section class="ag-lesson-intro"><span>GUIA DE ESTUDO</span><h3>Vamos por partes</h3><p>Leia com calma. Cada bloco apresenta uma ideia; depois, use o resumo e o exemplo para fixar.</p></section>'
-      +'<div class="ag-lesson-flow">'+c.aula.map(function(p,k){return lessonBlock(p,k)}).join('')+'</div>'
-      +'<h3 class="ag-section-title">📌 O que vale guardar</h3><ul class="x-card x-as-res">'+c.resumo.map(function(p){return'<li>'+nl(p)+'</li>'}).join('')+'</ul>';
-      if(c.exemplo)h+='<h3 class="ag-section-title">✏️ Exemplo resolvido</h3><div class="x-card ag-example-card"><p class="ag-example-question"><b>'+nl(c.exemplo.q)+'</b></p><details class="ag-solution"><summary>Ver resolução passo a passo</summary>'+resolutionBlocks(c.exemplo.res)+'</details></div>';
+    if(c){h+=richLesson(id,t,c);
     }else{var ls=[];(w&&w.fases||[]).forEach(function(f){ls=ls.concat(f.lessons||[])});
       h+='<div class="x-card x-as-aula">'+(ls.length?ls.map(function(p){return'<p>'+nl(p)+'</p>'}).join(''):'<p>Conteúdo em preparação. Use as videoaulas enquanto isso.</p>')+'</div>'}
     h+='<div class="x-row x-mt"><button class="x-b x-p" onclick="UI.assunto(\''+id+'\','+i+',1)">Fazer exercícios →</button><a class="x-b" href="'+yt(busca)+'" target="_blank" rel="noopener">🎥 Ver videoaula ↗</a></div>';
@@ -59,11 +67,14 @@ UI.assunto=function(id,i,tab){tab=tab||0;var w=W(id),t=(PG[id]||[])[i]||'',c=con
     var ok=0,feito=0;Object.keys(ST[key]).forEach(function(k){feito++;if(ST[key][k]===ex[k].c)ok++});
     h+='<section class="ag-exercise-intro"><span>PRATIQUE SEM PRESSA</span><h3>Uma questão de cada vez</h3><p>'+ex.length+' questões disponíveis neste conteúdo. Leia o enunciado, identifique o que ele pede e só então escolha uma alternativa. A explicação aparece depois da resposta.</p></section>'
      +(feito?'<div class="x-card x-as-placar"><b>'+ok+' de '+feito+'</b> certas até agora'+(feito===ex.length?(ok===ex.length?' · gabaritou! 🌸':' · '+(ok/feito>=.6?'muito bem! 💗':'revise a aula e tente de novo 🌱')):'')+'</div>':'');
-    ex.forEach(function(q,k){var r=ST[key][k];
+    var current=window.AG_QUESTION_INDEX&&window.AG_QUESTION_INDEX[key]||0;current=Math.min(Math.max(0,current),Math.max(0,ex.length-1));
+    h+='<div class="ag-question-navigation"><span>Questão '+(current+1)+' de '+ex.length+'</span><div class="ag-question-meter"><i style="width:'+((current+1)/Math.max(1,ex.length)*100)+'%"></i></div></div>';
+    ex.forEach(function(q,k){if(k!==current)return;var r=ST[key][k];
       h+='<article class="x-card x-as-q ag-question-card"><div class="ag-question-meta"><span>QUESTÃO '+String(k+1).padStart(2,'0')+'</span><span>'+esc(w?w.nome:'Exercício')+'</span></div><p class="ag-question-prompt"><b>'+nl(q.q)+'</b></p><div class="ag-answer-hint">💡 <span>Antes de marcar, tente explicar por que as outras alternativas não respondem ao enunciado.</span></div><div class="x-as-alts">'
        +q.a.map(function(a,j){var cls='';if(r!=null){if(j===q.c)cls=' ok';else if(j===r)cls=' bad'}
          return'<button class="x-as-alt'+cls+'"'+(r!=null?' disabled':'')+' onclick="UI.asResp(\''+id+'\','+i+','+k+','+j+')"><span>'+LET[j]+'</span>'+esc(a)+'</button>'}).join('')+'</div>'
        +(r!=null?'<div class="x-as-exp '+(r===q.c?'ok':'bad')+'"><b>'+(r===q.c?'✅ Acertou!':'❌ Resposta certa: '+LET[q.c])+'</b><div class="ag-resolution-label">Entenda o raciocínio</div>'+resolutionBlocks(q.res||'')+'</div>':'')+'</article>'});
+    h+='<div class="ag-question-actions"><button class="x-b" onclick="UI.asMove(\''+id+'\','+i+',-1)">← Anterior</button><button class="x-b x-p" onclick="UI.asMove(\''+id+'\','+i+',1)">Próxima →</button></div>';
     if(c && c.resumo && c.resumo.length){
       var tips=c.resumo.slice(),start=(new Date().getDate()+i)%tips.length;
       tips=tips.slice(start).concat(tips.slice(0,start)).slice(0,Math.min(5,tips.length));
@@ -87,6 +98,7 @@ UI.assunto=function(id,i,tab){tab=tab||0;var w=W(id),t=(PG[id]||[])[i]||'',c=con
   }
   window.UI._show(h,'home');try{window.scrollTo(0,0)}catch(e){}
 };
+UI.asMove=function(id,i,d){var key=id+':'+i;var ex=exOf(id,i);window.AG_QUESTION_INDEX=window.AG_QUESTION_INDEX||{};window.AG_QUESTION_INDEX[key]=Math.max(0,Math.min(ex.length-1,(window.AG_QUESTION_INDEX[key]||0)+d));UI.assunto(id,i,1)};
 UI.asResp=function(id,i,k,j){var key=id+':'+i;ST[key]=ST[key]||{};if(ST[key][k]!=null)return;ST[key][k]=j;stSave();
   var q=exOf(id,i)[k];if(window.UI._score&&q)window.UI._score(j===q.c);
   var y=window.scrollY;UI.assunto(id,i,1);window.scrollTo(0,y)};
@@ -161,3 +173,5 @@ var om=UI.metodos;if(om)UI.metodos=function(){om.apply(this,arguments);var M=win
 `;document.head.appendChild(st)})();
 
 (function(){var st=document.createElement('style');st.textContent='.ag-topic-visual{margin:14px 0 18px;padding:12px;border:1px solid #e3d6e8;background:#fff;border-radius:16px}.ag-topic-visual svg{display:block;width:100%;max-height:240px}.ag-topic-visual figcaption{font-size:12px;color:#65576d;margin-top:8px;line-height:1.5}';document.head.appendChild(st)})();
+
+(function(){var style=document.createElement('style');style.textContent='.ag-universal-lesson{max-width:940px;margin:16px auto!important;background:#fff!important;color:#33273c!important;border-radius:20px;padding:clamp(18px,3vw,32px)!important;line-height:1.8}.ag-universal-lesson h3,.ag-universal-lesson h4{color:#633d7d!important}.ag-universal-lesson h4{margin-top:26px}.ag-universal-lesson p{margin:12px 0}.ag-universal-lesson .ag-topic-visual{background:#f6f0fa}.ag-question-navigation,.ag-question-actions{max-width:940px;margin:14px auto;display:flex;align-items:center;justify-content:space-between;gap:12px}.ag-question-navigation{flex-wrap:wrap}.ag-question-meter{height:8px;border-radius:20px;background:#e9dce9;flex:1;min-width:100px;overflow:hidden}.ag-question-meter i{display:block;height:100%;background:#dc6b9d}.ag-question-actions button{flex:1;max-width:260px}.ag-question-card{max-width:940px;margin:12px auto!important}';document.head.appendChild(style)})();
