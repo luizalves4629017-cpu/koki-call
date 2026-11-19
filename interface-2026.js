@@ -49,7 +49,7 @@ html.ag-ready #app{visibility:visible}
 .ag-subjects .x-sc .x-sn{color:#513047!important}
 .ag-subjects .x-sc .x-bar{width:100%}
 .ag-focus-shortcut{margin-top:20px;background:#805b9f}
-.ag-nav{position:fixed;z-index:100;bottom:0;left:0;right:0;display:flex;justify-content:space-around;background:#fff;color:#64455b;border-top:1px solid #eadfe6;padding:8px 8px calc(8px + env(safe-area-inset-bottom));box-shadow:0 -5px 22px #0001}
+.ag-return{display:block;margin:16px auto 12px 0;padding:12px 18px;border-radius:14px;border:1px solid #d6bac9;background:#fff;color:#673650;font-weight:700;cursor:pointer}.ag-nav{position:fixed;z-index:100;bottom:0;left:0;right:0;display:flex;justify-content:space-around;background:#fff;color:#64455b;border-top:1px solid #eadfe6;padding:8px 8px calc(8px + env(safe-area-inset-bottom));box-shadow:0 -5px 22px #0001}
 .ag-nav button{border:0;background:transparent;color:#64455b;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:22px;min-width:55px}
 .ag-nav small{font-size:11px}
 .ag-focus-screen{background:#10152c;color:#fff;border-radius:24px;min-height:80vh;padding:24px 18px 110px;text-align:center;max-width:680px;margin:auto}
@@ -69,5 +69,19 @@ html.ag-ready #app{visibility:visible}
 @media(min-width:900px){.ag-nav{left:50%;transform:translateX(-50%);max-width:720px;border-radius:20px 20px 0 0}}
 `;document.head.appendChild(css);
 UI.dash=function(){UI.home()};
+var _show=UI._show;
+UI._show=function(html,section){
+ _show.apply(this,arguments);
+ var app=document.getElementById('app');
+ if(!app)return;
+ var existing=app.querySelector('.ag-nav');
+ if(existing)existing.remove();
+ if(!app.querySelector('.ag-return') && !app.querySelector('.ag-home') && !app.querySelector('.ag-focus-screen')){
+  var back=document.createElement('button');back.className='ag-return';back.textContent='← Voltar ao início';back.onclick=function(){UI.home()};
+  app.insertBefore(back,app.firstChild);
+ }
+ app.insertAdjacentHTML('beforeend',nav());
+};
+
 UI.home();document.documentElement.classList.add('ag-ready');
 })();
